@@ -6,6 +6,7 @@
 
 // Import from new google-places.ts (mock data)
 import { getMockActivities } from './google-places';
+import { getCachedUnsplashImage } from './unsplash';
 import type { User } from '@/types/database';
 import type { Activity } from '@/types/activity';
 
@@ -316,10 +317,18 @@ export async function generateRecommendations(
       scoreBreakdown,
     });
 
-    // Get photo URL
-    const photoUrl = place.photos?.[0]
-      ? getPlacePhotoUrl(place.photos[0].photo_reference)
-      : undefined;
+    // Get photo URL with Unsplash fallback
+    let photoUrl = '';
+
+    // First, try Google Places photo
+    if (place.photos?.[0]) {
+      photoUrl = getPlacePhotoUrl(place.photos[0].photo_reference);
+    }
+
+    // If no Google photo, use Unsplash fallback
+    if (!photoUrl) {
+      photoUrl = await getCachedUnsplashImage(category);
+    }
 
     scoredRecommendations.push({
       place,
