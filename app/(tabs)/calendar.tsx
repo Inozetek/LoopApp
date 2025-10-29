@@ -735,6 +735,9 @@ export default function CalendarScreen() {
                         {
                           color: newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text,
                           marginTop: 4,
+                          lineHeight: 14,
+                          textAlign: 'center',
+                          textAlignVertical: 'center',
                         },
                       ]}
                     >
@@ -970,6 +973,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 2,
+    padding: Spacing.xs,
   },
   createButton: {
     borderRadius: BorderRadius.lg,
