@@ -41,3 +41,9 @@ app-example
 # generated native folders
 /ios
 /android
+
+# Environment variables (DO NOT COMMIT)
+.env
+.env.local
+.env*.local
+*.env
