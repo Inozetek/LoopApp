@@ -71,10 +71,18 @@ function mapPlaceTypeToCategory(types: string[]): string {
   return 'Other';
 }
 
-// Helper function: Get photo URL
+// Helper function: Get photo URL from Google Places API (NEW v1)
 function getPlacePhotoUrl(photoReference: string): string {
-  // For mock data, return placeholder
-  return `https://via.placeholder.com/400x300?text=Activity`;
+  const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+
+  if (!API_KEY || !photoReference) {
+    // Return undefined so we can fallback to Unsplash
+    return '';
+  }
+
+  // NEW API photo URL format: https://places.googleapis.com/v1/{name}/media
+  // photoReference is the 'name' field like "places/ChIJ.../photos/..."
+  return `https://places.googleapis.com/v1/${photoReference}/media?key=${API_KEY}&maxHeightPx=400&maxWidthPx=600`;
 }
 
 // Convert Activity to PlaceResult (for mock data compatibility)
@@ -127,8 +135,8 @@ async function searchNearbyPlaces(params: {
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': API_KEY,
-        // Simplified field mask - only request essential fields to avoid errors
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount',
+        // Request essential fields including photos for visual feed
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.photos,places.currentOpeningHours',
       },
       body: JSON.stringify({
         locationRestriction: {
@@ -176,9 +184,11 @@ async function searchNearbyPlaces(params: {
       rating: place.rating || 0,
       user_ratings_total: place.userRatingCount || 0,
       price_level: 2, // Default to moderate since we didn't request priceLevel
-      photos: [], // We didn't request photos to keep it simple
+      photos: place.photos?.map((photo: any) => ({
+        photo_reference: photo.name || '', // NEW API uses 'name' field for photo reference
+      })) || [],
       opening_hours: {
-        open_now: true, // Default to open
+        open_now: place.currentOpeningHours?.openNow ?? true, // Use actual data or default to open
       },
     }));
 
