@@ -1,6 +1,6 @@
 /**
- * Activity Card - Intelligent & Data-Dense
- * Shows WHY Loop recommends this, not just pretty pictures
+ * Activity Card - Instagram-Style Image-First Design
+ * Beautiful visual feed with hero images and minimal circular CTA
  */
 
 import { useState, useRef, useEffect } from 'react';
@@ -10,12 +10,19 @@ import {
   StyleSheet,
   Pressable,
   Animated,
+  Image,
+  Dimensions,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Activity, Recommendation } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { LinearGradient } from 'expo-linear-gradient';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const CARD_WIDTH = SCREEN_WIDTH - (Spacing.md * 2);
+const IMAGE_HEIGHT = 400; // 60% of typical card
 
 interface ActivityCardIntelligentProps {
   recommendation: Recommendation;
@@ -33,7 +40,7 @@ export function ActivityCardIntelligent({
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
 
-  // Use flat Recommendation structure (not nested activity)
+  // Use flat Recommendation structure
   const score = recommendation.scoreBreakdown || {
     baseScore: 0,
     locationScore: 0,
@@ -47,6 +54,7 @@ export function ActivityCardIntelligent({
   // Animation
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -72,34 +80,27 @@ export function ActivityCardIntelligent({
 
   const getDistanceText = (distanceStr?: string) => {
     if (!distanceStr) return 'Nearby';
-    return distanceStr; // Already formatted as "X mi" from recommendation
+    return distanceStr;
   };
 
-  // Confidence score color
-  const getScoreColor = (finalScore: number) => {
-    if (finalScore >= 80) return BrandColors.success;
-    if (finalScore >= 60) return BrandColors.loopBlue;
-    if (finalScore >= 40) return BrandColors.warning;
-    return BrandColors.error;
-  };
+  // Score breakdown for AI explanation (simplified)
+  const getAIExplanation = () => {
+    const reasons = [];
+    if (score.baseScore >= 30) reasons.push('Matches your interests');
+    if (score.locationScore >= 15) reasons.push('Very close by');
+    if (score.timeScore >= 12) reasons.push('Perfect timing');
 
-  // Score breakdown for transparency
-  const getScoreBreakdown = () => {
-    const breakdown = [];
-    if (score.baseScore >= 30) breakdown.push(`Matches your interests`);
-    if (score.locationScore >= 15) breakdown.push(`Very close by`);
-    if (score.timeScore >= 12) breakdown.push(`Perfect timing`);
-    if (score.feedbackScore >= 10) breakdown.push(`You liked similar places`);
-
-    // Ensure we always have at least one reason
-    if (breakdown.length === 0) {
-      breakdown.push(`Recommended for you`);
+    if (reasons.length === 0) {
+      return recommendation.aiExplanation || 'Recommended for you';
     }
 
-    return breakdown;
+    return reasons.join(' • ');
   };
 
-  const scoreBreakdown = getScoreBreakdown();
+  // Fallback image if no imageUrl provided
+  const imageSource = !imageError && recommendation.imageUrl
+    ? { uri: recommendation.imageUrl }
+    : require('@/assets/images/loop-logo6.png'); // Default fallback
 
   return (
     <Animated.View
@@ -116,102 +117,90 @@ export function ActivityCardIntelligent({
         onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
         style={[styles.card, { backgroundColor: colors.card }]}
       >
-        {/* Header Row */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={[styles.name, Typography.titleLarge, { color: colors.text }]} numberOfLines={2}>
-              {recommendation.title}
-            </Text>
-            <View style={styles.metadata}>
-              {recommendation.rating != null && recommendation.rating > 0 && (
-                <>
-                  <View style={styles.metaItem}>
-                    <IconSymbol name="star.fill" size={14} color={BrandColors.star} />
-                    <Text style={[styles.metaText, { color: colors.text }]}>
-                      {recommendation.rating.toFixed(1)}
-                    </Text>
-                  </View>
-                  <View style={styles.metaDivider} />
-                </>
-              )}
-              <Text style={[styles.metaText, { color: colors.text }]}>
-                {getPriceDisplay(recommendation.priceRange)}
-              </Text>
-              <View style={styles.metaDivider} />
-              <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-                {getDistanceText(recommendation.distance)}
-              </Text>
+        {/* HERO IMAGE (60% of card) */}
+        <View style={styles.imageContainer}>
+          <Image
+            source={imageSource}
+            style={styles.image}
+            resizeMode="cover"
+            onError={() => setImageError(true)}
+          />
+
+          {/* Gradient overlay for better badge/text visibility */}
+          <LinearGradient
+            colors={['transparent', 'rgba(0,0,0,0.3)']}
+            style={styles.imageGradient}
+          />
+
+          {/* BADGES OVERLAY ON IMAGE */}
+          <View style={styles.badgeContainer}>
+            {/* Open Now Badge */}
+            {recommendation.openNow && (
+              <View style={styles.openNowBadge}>
+                <View style={styles.greenDot} />
+                <Text style={styles.openNowText}>Open Now</Text>
+              </View>
+            )}
+
+            {/* Sponsored Badge */}
+            {recommendation.isSponsored && (
+              <View style={styles.sponsoredBadge}>
+                <Text style={styles.sponsoredText}>Sponsored</Text>
+              </View>
+            )}
+          </View>
+
+          {/* Category Badge (bottom left of image) */}
+          <View style={styles.categoryBadgeOverlay}>
+            <View style={[styles.categoryBadge, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}>
+              <Text style={styles.categoryText}>{recommendation.category}</Text>
             </View>
           </View>
-
-          {/* Confidence Score Badge */}
-          <View style={[styles.scoreBadge, { backgroundColor: `${getScoreColor(score.finalScore || 0)}15` }]}>
-            <Text style={[styles.scoreNumber, { color: getScoreColor(score.finalScore || 0) }]}>
-              {Math.round(score.finalScore || 0)}
-            </Text>
-            <Text style={[styles.scoreLabel, { color: getScoreColor(score.finalScore || 0) }]}>
-              match
-            </Text>
-          </View>
         </View>
 
-        {/* Category Badge */}
-        <View style={[styles.categoryBadge, { backgroundColor: colors.backgroundSecondary }]}>
-          <Text style={[styles.categoryText, { color: colors.textSecondary }]}>
-            {recommendation.category}
+        {/* CONTENT SECTION (30% of card) */}
+        <View style={styles.content}>
+          {/* Title */}
+          <Text style={[styles.title, Typography.titleLarge, { color: colors.text }]} numberOfLines={2}>
+            {recommendation.title}
           </Text>
-        </View>
 
-        {/* Why Loop Recommends This */}
-        <View style={[styles.reasonContainer, { backgroundColor: colors.backgroundSecondary }]}>
-          <View style={styles.reasonHeader}>
-            <IconSymbol name="sparkles" size={16} color={colors.primary} />
-            <Text style={[styles.reasonTitle, { color: colors.text }]}>
-              Why we recommend this
+          {/* Metadata Row */}
+          <View style={styles.metadata}>
+            {recommendation.rating != null && recommendation.rating > 0 && (
+              <>
+                <IconSymbol name="star.fill" size={14} color={BrandColors.star} />
+                <Text style={[styles.metaText, { color: colors.text }]}>
+                  {recommendation.rating.toFixed(1)}
+                </Text>
+                <View style={styles.metaDivider} />
+              </>
+            )}
+            <Text style={[styles.metaText, { color: colors.text }]}>
+              {getPriceDisplay(recommendation.priceRange)}
+            </Text>
+            <View style={styles.metaDivider} />
+            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+              {getDistanceText(recommendation.distance)}
             </Text>
           </View>
-          {scoreBreakdown.map((reason, idx) => (
-            <View key={idx} style={styles.reasonItem}>
-              <View style={[styles.reasonDot, { backgroundColor: colors.primary }]} />
-              <Text style={[styles.reasonText, { color: colors.textSecondary }]}>
-                {reason}
-              </Text>
-            </View>
-          ))}
-        </View>
 
-        {/* Score Breakdown (Expandable) */}
-        <View style={styles.scoreDetails}>
-          <Text style={[styles.scoreDetailsLabel, { color: colors.textSecondary }]}>
-            Score Breakdown:
-          </Text>
-          <View style={styles.scoreBar}>
-            <View style={[styles.scoreSegment, { width: `${((score.baseScore || 0) / 100) * 100}%`, backgroundColor: '#4CAF50' }]} />
-            <View style={[styles.scoreSegment, { width: `${((score.locationScore || 0) / 100) * 100}%`, backgroundColor: '#2196F3' }]} />
-            <View style={[styles.scoreSegment, { width: `${((score.timeScore || 0) / 100) * 100}%`, backgroundColor: '#FF9800' }]} />
-            <View style={[styles.scoreSegment, { width: `${((score.feedbackScore || 0) / 100) * 100}%`, backgroundColor: '#9C27B0' }]} />
-          </View>
-          <View style={styles.scoreLabels}>
-            <Text style={[styles.scoreLabelItem, { color: colors.textSecondary }]}>
-              Interest {score.baseScore || 0}
-            </Text>
-            <Text style={[styles.scoreLabelItem, { color: colors.textSecondary }]}>
-              Location {score.locationScore || 0}
-            </Text>
-            <Text style={[styles.scoreLabelItem, { color: colors.textSecondary }]}>
-              Timing {score.timeScore || 0}
+          {/* AI Explanation (One Line) */}
+          <View style={styles.aiExplanation}>
+            <IconSymbol name="sparkles" size={14} color={colors.primary} />
+            <Text style={[styles.aiText, { color: colors.textSecondary }]} numberOfLines={2}>
+              {getAIExplanation()}
             </Text>
           </View>
         </View>
 
-        {/* Action Button */}
+        {/* CIRCULAR CTA BUTTON (10% - bottom right corner) */}
         <Pressable
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
+          style={[styles.circularButton, { backgroundColor: colors.primary }]}
           onPress={onAddToCalendar}
-          onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+          onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
         >
-          <IconSymbol name="plus" size={18} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add to Calendar</Text>
+          <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
         </Pressable>
       </Pressable>
     </Animated.View>
@@ -221,39 +210,108 @@ export function ActivityCardIntelligent({
 const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.md,
-    // Removed paddingHorizontal - let parent FlatList handle horizontal spacing
   },
   card: {
     borderRadius: BorderRadius.lg,
-    padding: Spacing.md,
+    overflow: 'hidden',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4,
   },
-  header: {
+
+  // IMAGE SECTION (60%)
+  imageContainer: {
+    width: '100%',
+    height: IMAGE_HEIGHT,
+    position: 'relative',
+  },
+  image: {
+    width: '100%',
+    height: '100%',
+  },
+  imageGradient: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 100,
+  },
+
+  // BADGES ON IMAGE
+  badgeContainer: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Spacing.sm,
+    flexDirection: 'column',
+    gap: Spacing.xs,
+  },
+  openNowBadge: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: Spacing.sm,
+    alignItems: 'center',
+    backgroundColor: 'rgba(76, 175, 80, 0.95)',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
   },
-  headerLeft: {
-    flex: 1,
-    marginRight: Spacing.md,
+  greenDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
   },
-  name: {
+  openNowText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
+  sponsoredBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  sponsoredText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  categoryBadgeOverlay: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+  },
+  categoryBadge: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+  },
+  categoryText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+
+  // CONTENT SECTION (30%)
+  content: {
+    padding: Spacing.md,
+    paddingBottom: Spacing.lg, // Extra space for circular button
+  },
+  title: {
     marginBottom: Spacing.xs,
+    fontWeight: '700',
   },
   metadata: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
-  },
-  metaItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+    marginBottom: Spacing.sm,
   },
   metaText: {
     fontSize: 14,
@@ -265,114 +323,31 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: '#999',
   },
-  scoreBadge: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    borderRadius: BorderRadius.md,
-    minWidth: 60,
-  },
-  scoreNumber: {
-    fontSize: 28,
-    fontWeight: '700',
-    lineHeight: 32,
-  },
-  scoreLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  categoryBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs,
-    borderRadius: BorderRadius.full,
-    marginBottom: Spacing.md,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  reasonContainer: {
-    padding: Spacing.md,
-    borderRadius: BorderRadius.md,
-    marginBottom: Spacing.md,
-  },
-  reasonHeader: {
+  aiExplanation: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: Spacing.xs,
-    marginBottom: Spacing.sm,
   },
-  reasonTitle: {
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  reasonItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: Spacing.xs,
-    gap: Spacing.sm,
-  },
-  reasonDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  reasonText: {
+  aiText: {
     fontSize: 13,
     flex: 1,
+    lineHeight: 18,
   },
-  scoreDetails: {
-    marginBottom: Spacing.md,
-  },
-  scoreDetailsLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: Spacing.xs,
-  },
-  scoreBar: {
-    height: 8,
-    backgroundColor: '#f0f0f0',
-    borderRadius: 4,
-    flexDirection: 'row',
-    overflow: 'hidden',
-    marginBottom: Spacing.xs,
-  },
-  scoreSegment: {
-    height: '100%',
-  },
-  scoreLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: Spacing.xs,
-  },
-  scoreLabelItem: {
-    fontSize: 11,
-  },
-  addButton: {
-    flexDirection: 'row',
+
+  // CIRCULAR CTA BUTTON (10%)
+  circularButton: {
+    position: 'absolute',
+    bottom: Spacing.md,
+    right: Spacing.md,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
     shadowColor: BrandColors.loopBlue,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 2,
-    minHeight: 48,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
-    lineHeight: 18,
-    textAlignVertical: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
 });
