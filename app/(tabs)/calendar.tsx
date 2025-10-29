@@ -724,27 +724,29 @@ export default function CalendarScreen() {
                       setNewTaskCategory(cat.id);
                     }}
                   >
-                    <Ionicons
-                      name={cat.icon as any}
-                      size={24}
-                      color={newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text}
-                    />
-                    <Text
-                      numberOfLines={1}
-                      adjustsFontSizeToFit
-                      style={[
-                        {
-                          color: newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text,
-                          marginTop: 2,
-                          fontSize: 10,
-                          lineHeight: 12,
-                          textAlign: 'center',
-                          fontWeight: '500',
-                        },
-                      ]}
-                    >
-                      {cat.label}
-                    </Text>
+                    <View style={styles.categoryButtonContent}>
+                      <Ionicons
+                        name={cat.icon as any}
+                        size={24}
+                        color={newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text}
+                      />
+                      <Text
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        style={[
+                          {
+                            color: newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text,
+                            marginTop: 2,
+                            fontSize: 10,
+                            lineHeight: 12,
+                            textAlign: 'center',
+                            fontWeight: '500',
+                          },
+                        ]}
+                      >
+                        {cat.label}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 ))}
               </View>
@@ -976,6 +978,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 2,
     padding: Spacing.xs,
+  },
+  categoryButtonContent: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
   },
   createButton: {
     borderRadius: BorderRadius.lg,
