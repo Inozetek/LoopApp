@@ -726,18 +726,20 @@ export default function CalendarScreen() {
                   >
                     <Ionicons
                       name={cat.icon as any}
-                      size={20}
+                      size={24}
                       color={newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text}
                     />
                     <Text
+                      numberOfLines={1}
+                      adjustsFontSizeToFit
                       style={[
-                        Typography.bodySmall,
                         {
                           color: newTaskCategory === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text,
-                          marginTop: 4,
-                          lineHeight: 14,
+                          marginTop: 2,
+                          fontSize: 10,
+                          lineHeight: 12,
                           textAlign: 'center',
-                          textAlignVertical: 'center',
+                          fontWeight: '500',
                         },
                       ]}
                     >
