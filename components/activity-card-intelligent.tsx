@@ -497,7 +497,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingTop: Spacing.sm, // Less top padding since tile takes space
     paddingBottom: Spacing.lg, // Extra space for circular button
-    paddingRight: 88, // Prevent text from overlapping tile (64px + 16px + 8px buffer)
+    paddingRight: 94, // Prevent text from overlapping tile (70px + 16px + 8px buffer)
   },
   title: {
     marginBottom: Spacing.xs,
@@ -531,31 +531,32 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // AI MATCH SCORE TILE (Soft tinted background style)
+  // AI MATCH SCORE TILE (Soft tinted background style - matches screenshots)
   matchScoreTile: {
     position: 'absolute',
     top: IMAGE_HEIGHT + Spacing.sm,
     right: Spacing.md,
-    width: 64,
-    height: 64,
-    borderRadius: 16,
+    width: 70,
+    height: 70,
+    borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 4,
+    paddingHorizontal: 6,
   },
   matchScoreNumber: {
-    fontSize: 36,
-    fontWeight: '900',
-    letterSpacing: -2,
+    fontSize: 30,
+    fontWeight: '700',
+    letterSpacing: -0.5,
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
   matchScoreLabel: {
-    fontSize: 9,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.8,
     textTransform: 'uppercase',
-    marginTop: -4,
+    marginTop: -2,
+    opacity: 0.9,
   },
 
   // CIRCULAR CTA BUTTON (10%)
