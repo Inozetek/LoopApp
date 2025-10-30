@@ -348,45 +348,43 @@ export function ActivityCardIntelligent({
 
         {/* AI MATCH SCORE TILE (Top right of card) */}
         {recommendation.score && (
-          <View style={styles.matchScoreTileContainer}>
-            {/* Soft glow background layer */}
-            <View style={[
-              styles.matchScoreGlow,
+          <View style={[
+            styles.matchScoreTile,
+            {
+              backgroundColor:
+                recommendation.score >= 85 ? 'rgba(52, 211, 153, 0.12)' : // Mint tint (85-100%)
+                recommendation.score >= 75 ? 'rgba(96, 165, 250, 0.12)' : // Sky tint (75-85%)
+                recommendation.score >= 60 ? 'rgba(167, 139, 250, 0.12)' : // Lavender tint (60-75%)
+                recommendation.score >= 35 ? 'rgba(251, 191, 36, 0.12)' : // Golden tint (35-60%)
+                'rgba(251, 113, 133, 0.12)' // Rose tint (20-35%)
+            }
+          ]}>
+            <Text style={[
+              styles.matchScoreNumber,
               {
-                backgroundColor:
-                  recommendation.score >= 85 ? '#34d399' : // Neon mint green
-                  recommendation.score >= 75 ? '#60a5fa' : // Neon sky blue
-                  recommendation.score >= 60 ? '#a78bfa' : // Neon lavender
-                  recommendation.score >= 35 ? '#fbbf24' : // Neon golden
-                  '#fb7185' // Neon rose (softer than red)
+                color:
+                  recommendation.score >= 85 ? '#34d399' : // Mint
+                  recommendation.score >= 75 ? '#60a5fa' : // Sky
+                  recommendation.score >= 60 ? '#a78bfa' : // Lavender
+                  recommendation.score >= 35 ? '#fbbf24' : // Golden
+                  '#fb7185' // Rose
               }
-            ]} />
-
-            <LinearGradient
-              colors={
-                recommendation.score >= 85 ? ['#6ee7b7', '#34d399'] : // Mint pastel gradient (85-100%)
-                recommendation.score >= 75 ? ['#93c5fd', '#60a5fa'] : // Sky pastel gradient (75-85%)
-                recommendation.score >= 60 ? ['#c4b5fd', '#a78bfa'] : // Lavender pastel gradient (60-75%)
-                recommendation.score >= 35 ? ['#fcd34d', '#fbbf24'] : // Golden pastel gradient (35-60%)
-                ['#fda4af', '#fb7185'] // Rose pastel gradient (20-35%)
+            ]}>
+              {Math.round(recommendation.score)}
+            </Text>
+            <Text style={[
+              styles.matchScoreLabel,
+              {
+                color:
+                  recommendation.score >= 85 ? '#34d399' : // Mint
+                  recommendation.score >= 75 ? '#60a5fa' : // Sky
+                  recommendation.score >= 60 ? '#a78bfa' : // Lavender
+                  recommendation.score >= 35 ? '#fbbf24' : // Golden
+                  '#fb7185' // Rose
               }
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.matchScoreTile}
-            >
-              {/* Subtle glass overlay effect */}
-              <View style={styles.glassOverlay} />
-
-              <View style={styles.matchScoreContent}>
-                <Text style={styles.matchScoreNumber}>
-                  {Math.round(recommendation.score)}
-                </Text>
-                <View style={styles.matchScoreLabelContainer}>
-                  <IconSymbol name="sparkles" size={10} color="rgba(255,255,255,0.95)" />
-                  <Text style={styles.matchScoreLabel}>MATCH</Text>
-                </View>
-              </View>
-            </LinearGradient>
+            ]}>
+              MATCH
+            </Text>
           </View>
         )}
 
@@ -533,64 +531,31 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // AI MATCH SCORE TILE (Modern glassmorphism design)
-  matchScoreTileContainer: {
+  // AI MATCH SCORE TILE (Soft tinted background style)
+  matchScoreTile: {
     position: 'absolute',
     top: IMAGE_HEIGHT + Spacing.sm,
     right: Spacing.md,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  matchScoreGlow: {
-    position: 'absolute',
     width: 64,
     height: 64,
     borderRadius: 16,
-    opacity: 0.4,
-    transform: [{ scale: 1.1 }],
-  },
-  matchScoreTile: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  glassOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 16,
-  },
-  matchScoreContent: {
-    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
   },
   matchScoreNumber: {
-    color: '#FFFFFF',
-    fontSize: 34,
+    fontSize: 36,
     fontWeight: '900',
     letterSpacing: -2,
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
-  matchScoreLabelContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 2,
-    marginTop: -4,
-  },
   matchScoreLabel: {
-    color: 'rgba(255, 255, 255, 1)',
-    fontSize: 7.5,
-    fontWeight: '800',
-    letterSpacing: 1,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
     textTransform: 'uppercase',
+    marginTop: -4,
   },
 
   // CIRCULAR CTA BUTTON (10%)
