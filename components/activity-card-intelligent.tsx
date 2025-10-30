@@ -346,23 +346,31 @@ export function ActivityCardIntelligent({
           )}
         </View>
 
-        {/* LARGE SQUARE MATCH SCORE TILE (Top right of card) */}
+        {/* AI MATCH SCORE TILE (Top right of card) */}
         {recommendation.score && (
-          <View style={[
-            styles.matchScoreTile,
-            {
-              backgroundColor:
-                recommendation.score >= 85 ? '#059669' : // Dark green (85-100%)
-                recommendation.score >= 75 ? '#10b981' : // Light green (75-85%)
-                recommendation.score >= 60 ? '#3b82f6' : // Blue (60-75%)
-                recommendation.score >= 35 ? '#f59e0b' : // Orange/yellow (35-60%)
-                '#ef4444' // Red (20-35%)
-            }
-          ]}>
-            <Text style={styles.matchScoreNumber}>
-              {Math.round(recommendation.score)}%
-            </Text>
-            <Text style={styles.matchScoreLabel}>MATCH</Text>
+          <View style={styles.matchScoreTileContainer}>
+            <LinearGradient
+              colors={
+                recommendation.score >= 85 ? ['#10b981', '#059669'] : // Green gradient (85-100%)
+                recommendation.score >= 75 ? ['#3b82f6', '#2563eb'] : // Blue gradient (75-85%)
+                recommendation.score >= 60 ? ['#8b5cf6', '#7c3aed'] : // Purple gradient (60-75%)
+                recommendation.score >= 35 ? ['#f59e0b', '#d97706'] : // Orange gradient (35-60%)
+                ['#ef4444', '#dc2626'] // Red gradient (20-35%)
+              }
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.matchScoreTile}
+            >
+              <View style={styles.matchScoreContent}>
+                <Text style={styles.matchScoreNumber}>
+                  {Math.round(recommendation.score)}
+                </Text>
+                <View style={styles.matchScoreLabelContainer}>
+                  <IconSymbol name="sparkles" size={10} color="rgba(255,255,255,0.9)" />
+                  <Text style={styles.matchScoreLabel}>MATCH</Text>
+                </View>
+              </View>
+            </LinearGradient>
           </View>
         )}
 
@@ -473,9 +481,9 @@ const styles = StyleSheet.create({
   // CONTENT SECTION (30%)
   content: {
     padding: Spacing.md,
-    paddingTop: Spacing.sm, // Less top padding since square tile takes space
+    paddingTop: Spacing.sm, // Less top padding since tile takes space
     paddingBottom: Spacing.lg, // Extra space for circular button
-    paddingRight: 96, // Prevent text from overlapping square tile (80px + 16px)
+    paddingRight: 88, // Prevent text from overlapping tile (64px + 16px + 8px buffer)
   },
   title: {
     marginBottom: Spacing.xs,
@@ -509,34 +517,52 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // LARGE SQUARE MATCH SCORE TILE
-  matchScoreTile: {
+  // AI MATCH SCORE TILE (Modern, gradient design)
+  matchScoreTileContainer: {
     position: 'absolute',
-    top: IMAGE_HEIGHT + Spacing.sm, // Just below image
+    top: IMAGE_HEIGHT + Spacing.sm,
     right: Spacing.md,
-    width: 80,
-    height: 80,
-    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  matchScoreTile: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  matchScoreContent: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    paddingHorizontal: 4,
   },
   matchScoreNumber: {
     color: '#FFFFFF',
-    fontSize: 28,
-    fontWeight: '800',
-    letterSpacing: -0.5,
+    fontSize: 32,
+    fontWeight: '900',
+    letterSpacing: -1.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  matchScoreLabelContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: -2,
   },
   matchScoreLabel: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-    letterSpacing: 1,
-    marginTop: 2,
+    color: 'rgba(255, 255, 255, 0.95)',
+    fontSize: 8,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
   },
 
   // CIRCULAR CTA BUTTON (10%)
