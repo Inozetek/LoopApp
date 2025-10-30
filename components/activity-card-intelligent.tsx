@@ -88,10 +88,10 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
 }
 
 /**
- * Compact 3-Bar Score Graph Component
- * Shows Interest, Location, and Timing scores visually
+ * Stacked Score Bar Component
+ * Shows Interest, Location, and Timing scores in ONE segmented bar
  */
-interface CompactScoreGraphProps {
+interface StackedScoreBarProps {
   scoreBreakdown: {
     baseScore: number;
     locationScore: number;
@@ -99,34 +99,63 @@ interface CompactScoreGraphProps {
   };
 }
 
-function CompactScoreGraph({ scoreBreakdown }: CompactScoreGraphProps) {
-  const bars = [
-    { label: 'Interest', value: scoreBreakdown.baseScore, max: 40, color: '#3b82f6' },
-    { label: 'Location', value: scoreBreakdown.locationScore, max: 20, color: '#10b981' },
-    { label: 'Timing', value: scoreBreakdown.timeScore, max: 15, color: '#f59e0b' },
-  ];
+function StackedScoreBar({ scoreBreakdown }: StackedScoreBarProps) {
+  const totalPossible = 40 + 20 + 15; // 75 max
+  const interestPercent = (scoreBreakdown.baseScore / totalPossible) * 100;
+  const locationPercent = (scoreBreakdown.locationScore / totalPossible) * 100;
+  const timePercent = (scoreBreakdown.timeScore / totalPossible) * 100;
 
   return (
-    <View style={styles.compactGraph}>
-      {bars.map((bar, index) => {
-        const percentage = (bar.value / bar.max) * 100;
-        return (
-          <View key={index} style={styles.barContainer}>
-            <View style={styles.barBackground}>
-              <View
-                style={[
-                  styles.barFill,
-                  {
-                    width: `${percentage}%`,
-                    backgroundColor: bar.color,
-                  }
-                ]}
-              />
-            </View>
-            <Text style={styles.barLabel}>{bar.label}</Text>
-          </View>
-        );
-      })}
+    <View style={styles.stackedBar}>
+      {/* Single bar with colored segments */}
+      <View style={styles.stackedBarContainer}>
+        {/* Interest segment (blue) */}
+        <View
+          style={[
+            styles.stackedBarSegment,
+            {
+              width: `${interestPercent}%`,
+              backgroundColor: '#3b82f6',
+            }
+          ]}
+        />
+        {/* Location segment (green) */}
+        <View
+          style={[
+            styles.stackedBarSegment,
+            {
+              width: `${locationPercent}%`,
+              backgroundColor: '#10b981',
+            }
+          ]}
+        />
+        {/* Timing segment (orange) */}
+        <View
+          style={[
+            styles.stackedBarSegment,
+            {
+              width: `${timePercent}%`,
+              backgroundColor: '#f59e0b',
+            }
+          ]}
+        />
+      </View>
+
+      {/* Legend */}
+      <View style={styles.stackedBarLegend}>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
+          <Text style={styles.legendText}>Interest</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
+          <Text style={styles.legendText}>Location</Text>
+        </View>
+        <View style={styles.legendItem}>
+          <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
+          <Text style={styles.legendText}>Timing</Text>
+        </View>
+      </View>
     </View>
   );
 }
@@ -311,16 +340,16 @@ export function ActivityCardIntelligent({
             </Text>
           </View>
 
-          {/* Compact 3-Bar Score Graph */}
+          {/* Stacked Score Bar */}
           {score && (
-            <CompactScoreGraph scoreBreakdown={score} />
+            <StackedScoreBar scoreBreakdown={score} />
           )}
         </View>
 
-        {/* COLOR-CODED MATCH SCORE BADGE (Above button) */}
+        {/* LARGE SQUARE MATCH SCORE TILE (Top right of card) */}
         {recommendation.score && (
           <View style={[
-            styles.matchScoreBadge,
+            styles.matchScoreTile,
             {
               backgroundColor:
                 recommendation.score >= 85 ? '#059669' : // Dark green (85-100%)
@@ -330,9 +359,10 @@ export function ActivityCardIntelligent({
                 '#ef4444' // Red (20-35%)
             }
           ]}>
-            <Text style={styles.matchScoreText}>
-              {Math.round(recommendation.score)}% Match
+            <Text style={styles.matchScoreNumber}>
+              {Math.round(recommendation.score)}%
             </Text>
+            <Text style={styles.matchScoreLabel}>MATCH</Text>
           </View>
         )}
 
@@ -443,8 +473,9 @@ const styles = StyleSheet.create({
   // CONTENT SECTION (30%)
   content: {
     padding: Spacing.md,
+    paddingTop: Spacing.sm, // Less top padding since square tile takes space
     paddingBottom: Spacing.lg, // Extra space for circular button
-    paddingRight: 80, // Prevent text from overlapping circular button (56px + 16px + 8px buffer)
+    paddingRight: 96, // Prevent text from overlapping square tile (80px + 16px)
   },
   title: {
     marginBottom: Spacing.xs,
@@ -478,26 +509,34 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // COLOR-CODED MATCH SCORE BADGE
-  matchScoreBadge: {
+  // LARGE SQUARE MATCH SCORE TILE
+  matchScoreTile: {
     position: 'absolute',
-    bottom: Spacing.md + 56 + 8, // Button height (56) + gap (8)
+    top: IMAGE_HEIGHT + Spacing.sm, // Just below image
     right: Spacing.md,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 6,
+    width: 80,
+    height: 80,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
-  matchScoreText: {
+  matchScoreNumber: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 28,
+    fontWeight: '800',
+    letterSpacing: -0.5,
+  },
+  matchScoreLabel: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginTop: 2,
   },
 
   // CIRCULAR CTA BUTTON (10%)
@@ -549,31 +588,39 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // COMPACT 3-BAR SCORE GRAPH
-  compactGraph: {
+  // STACKED SCORE BAR
+  stackedBar: {
     marginTop: Spacing.sm,
-    gap: Spacing.xs,
   },
-  barContainer: {
+  stackedBarContainer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.xs,
-  },
-  barBackground: {
-    flex: 1,
-    height: 6,
+    height: 8,
     backgroundColor: '#E5E7EB',
-    borderRadius: 3,
+    borderRadius: 4,
     overflow: 'hidden',
   },
-  barFill: {
+  stackedBarSegment: {
     height: '100%',
-    borderRadius: 3,
   },
-  barLabel: {
+  stackedBarLegend: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    gap: Spacing.md,
+    marginTop: Spacing.xs,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  legendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  legendText: {
     fontSize: 11,
     fontWeight: '600',
     color: '#6B7280',
-    width: 60,
   },
 });
