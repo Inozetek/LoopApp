@@ -354,21 +354,21 @@ export function ActivityCardIntelligent({
               styles.matchScoreGlow,
               {
                 backgroundColor:
-                  recommendation.score >= 85 ? '#10b981' :
-                  recommendation.score >= 75 ? '#3b82f6' :
-                  recommendation.score >= 60 ? '#8b5cf6' :
-                  recommendation.score >= 35 ? '#f59e0b' :
-                  '#ef4444'
+                  recommendation.score >= 85 ? '#34d399' : // Neon mint green
+                  recommendation.score >= 75 ? '#60a5fa' : // Neon sky blue
+                  recommendation.score >= 60 ? '#a78bfa' : // Neon lavender
+                  recommendation.score >= 35 ? '#fbbf24' : // Neon golden
+                  '#fb7185' // Neon rose (softer than red)
               }
             ]} />
 
             <LinearGradient
               colors={
-                recommendation.score >= 85 ? ['#10b981', '#059669'] : // Green gradient (85-100%)
-                recommendation.score >= 75 ? ['#3b82f6', '#2563eb'] : // Blue gradient (75-85%)
-                recommendation.score >= 60 ? ['#8b5cf6', '#7c3aed'] : // Purple gradient (60-75%)
-                recommendation.score >= 35 ? ['#f59e0b', '#d97706'] : // Orange gradient (35-60%)
-                ['#ef4444', '#dc2626'] // Red gradient (20-35%)
+                recommendation.score >= 85 ? ['#6ee7b7', '#34d399'] : // Mint pastel gradient (85-100%)
+                recommendation.score >= 75 ? ['#93c5fd', '#60a5fa'] : // Sky pastel gradient (75-85%)
+                recommendation.score >= 60 ? ['#c4b5fd', '#a78bfa'] : // Lavender pastel gradient (60-75%)
+                recommendation.score >= 35 ? ['#fcd34d', '#fbbf24'] : // Golden pastel gradient (35-60%)
+                ['#fda4af', '#fb7185'] // Rose pastel gradient (20-35%)
               }
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
