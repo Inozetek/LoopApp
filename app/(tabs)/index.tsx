@@ -7,6 +7,7 @@ import { EmptyState } from '@/components/empty-state';
 import { SuccessAnimation } from '@/components/success-animation';
 import { LoopHeader } from '@/components/loop-header';
 import { SchedulePlanModal } from '@/components/schedule-plan-modal';
+import { SeeDetailsModal } from '@/components/see-details-modal';
 import { SwipeableLayout } from './swipeable-layout';
 import { Recommendation } from '@/types/activity';
 import { generateRecommendations, type RecommendationParams } from '@/services/recommendations';
@@ -30,6 +31,7 @@ export default function RecommendationFeedScreen() {
   const [loading, setLoading] = useState(true);
   const [selectedRecommendation, setSelectedRecommendation] = useState<Recommendation | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
 
   // Fetch recommendations
@@ -86,6 +88,7 @@ export default function RecommendationFeedScreen() {
         imageUrl: s.photoUrl || '',
         photos: s.photoUrls, // Array of photos for carousel (only if 3+ photos)
         aiExplanation: s.aiExplanation,
+        description: s.place.description, // Editorial summary from Google Places
         openNow: s.place.opening_hours?.open_now,
         isSponsored: s.isSponsored,
         score: s.score,
@@ -102,6 +105,7 @@ export default function RecommendationFeedScreen() {
           id: s.place.place_id || `act-${index}`,
           name: s.place.name,
           category: s.category,
+          description: s.place.description,
           location: {
             latitude: s.place.geometry.location.lat,
             longitude: s.place.geometry.location.lng,
@@ -137,8 +141,9 @@ export default function RecommendationFeedScreen() {
 
   // Handle see details
   const handleSeeDetails = (recommendation: Recommendation, index: number) => {
-    console.log('See details:', recommendation.title);
-    // TODO: Navigate to details screen
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedRecommendation(recommendation);
+    setShowDetailsModal(true);
   };
 
   // Handle schedule confirmation
@@ -261,6 +266,19 @@ export default function RecommendationFeedScreen() {
             onClose={() => setShowScheduleModal(false)}
             onSchedule={handleScheduleConfirm}
             activity={selectedRecommendation.activity || null}
+          />
+        )}
+
+        {/* See Details Modal */}
+        {selectedRecommendation && (
+          <SeeDetailsModal
+            visible={showDetailsModal}
+            recommendation={selectedRecommendation}
+            onClose={() => setShowDetailsModal(false)}
+            onAddToCalendar={() => {
+              setShowDetailsModal(false);
+              setShowScheduleModal(true);
+            }}
           />
         )}
 

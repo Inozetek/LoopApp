@@ -548,7 +548,7 @@ export async function searchNearbyActivities(
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.photos,places.currentOpeningHours',
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.photos,places.currentOpeningHours,places.editorialSummary,places.reviews',
       },
       body: JSON.stringify(requestBody),
     });
@@ -585,7 +585,7 @@ export async function getPlaceDetails(placeId: string): Promise<GooglePlaceDetai
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-        'X-Goog-FieldMask': 'id,displayName,formattedAddress,internationalPhoneNumber,websiteUri,rating,userRatingCount,priceLevel,location,photos,currentOpeningHours,types,reviews',
+        'X-Goog-FieldMask': 'id,displayName,formattedAddress,internationalPhoneNumber,websiteUri,rating,userRatingCount,priceLevel,location,photos,currentOpeningHours,types,reviews,editorialSummary',
       },
     });
 
@@ -741,7 +741,7 @@ function convertNewAPIPlaceToActivity(
     id: place.id,
     name: place.displayName?.text || place.name || 'Unknown Place',
     category,
-    description: '',
+    description: place.editorialSummary?.text || '',
     location: {
       latitude: place.location.latitude,
       longitude: place.location.longitude,

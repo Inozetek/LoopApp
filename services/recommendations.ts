@@ -40,6 +40,7 @@ export interface PlaceResult {
   name: string;
   vicinity?: string;
   formatted_address?: string;
+  description?: string; // Editorial summary from Google Places
   geometry: {
     location: {
       lat: number;
@@ -138,6 +139,7 @@ function activityToPlaceResult(activity: Activity): PlaceResult {
     name: activity.name,
     vicinity: activity.location.address,
     formatted_address: activity.location.address,
+    description: activity.description,
     geometry: {
       location: {
         lat: activity.location.latitude,

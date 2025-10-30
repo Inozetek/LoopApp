@@ -87,6 +87,50 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
   );
 }
 
+/**
+ * Compact 3-Bar Score Graph Component
+ * Shows Interest, Location, and Timing scores visually
+ */
+interface CompactScoreGraphProps {
+  scoreBreakdown: {
+    baseScore: number;
+    locationScore: number;
+    timeScore: number;
+  };
+}
+
+function CompactScoreGraph({ scoreBreakdown }: CompactScoreGraphProps) {
+  const bars = [
+    { label: 'Interest', value: scoreBreakdown.baseScore, max: 40, color: '#3b82f6' },
+    { label: 'Location', value: scoreBreakdown.locationScore, max: 20, color: '#10b981' },
+    { label: 'Timing', value: scoreBreakdown.timeScore, max: 15, color: '#f59e0b' },
+  ];
+
+  return (
+    <View style={styles.compactGraph}>
+      {bars.map((bar, index) => {
+        const percentage = (bar.value / bar.max) * 100;
+        return (
+          <View key={index} style={styles.barContainer}>
+            <View style={styles.barBackground}>
+              <View
+                style={[
+                  styles.barFill,
+                  {
+                    width: `${percentage}%`,
+                    backgroundColor: bar.color,
+                  }
+                ]}
+              />
+            </View>
+            <Text style={styles.barLabel}>{bar.label}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 interface ActivityCardIntelligentProps {
   recommendation: Recommendation;
   onAddToCalendar: () => void;
@@ -266,7 +310,31 @@ export function ActivityCardIntelligent({
               {getAIExplanation()}
             </Text>
           </View>
+
+          {/* Compact 3-Bar Score Graph */}
+          {score && (
+            <CompactScoreGraph scoreBreakdown={score} />
+          )}
         </View>
+
+        {/* COLOR-CODED MATCH SCORE BADGE (Above button) */}
+        {recommendation.score && (
+          <View style={[
+            styles.matchScoreBadge,
+            {
+              backgroundColor:
+                recommendation.score >= 85 ? '#059669' : // Dark green (85-100%)
+                recommendation.score >= 75 ? '#10b981' : // Light green (75-85%)
+                recommendation.score >= 60 ? '#3b82f6' : // Blue (60-75%)
+                recommendation.score >= 35 ? '#f59e0b' : // Orange/yellow (35-60%)
+                '#ef4444' // Red (20-35%)
+            }
+          ]}>
+            <Text style={styles.matchScoreText}>
+              {Math.round(recommendation.score)}% Match
+            </Text>
+          </View>
+        )}
 
         {/* CIRCULAR CTA BUTTON (10% - bottom right corner) */}
         <Pressable
@@ -410,6 +478,28 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  // COLOR-CODED MATCH SCORE BADGE
+  matchScoreBadge: {
+    position: 'absolute',
+    bottom: Spacing.md + 56 + 8, // Button height (56) + gap (8)
+    right: Spacing.md,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  matchScoreText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+  },
+
   // CIRCULAR CTA BUTTON (10%)
   circularButton: {
     position: 'absolute',
@@ -457,5 +547,33 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 2,
     elevation: 2,
+  },
+
+  // COMPACT 3-BAR SCORE GRAPH
+  compactGraph: {
+    marginTop: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  barContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+  },
+  barBackground: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#E5E7EB',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  barFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  barLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6B7280',
+    width: 60,
   },
 });

@@ -51,6 +51,8 @@ export interface Recommendation {
   imageUrl: string;
   photos?: string[]; // Array of photo URLs for Instagram-style carousel
   aiExplanation: string;
+  description?: string; // Editorial summary from Google Places
+  reviewSummary?: string; // AI-generated summary of reviews
   openNow?: boolean;
   isSponsored: boolean;
   score?: number;
@@ -101,6 +103,7 @@ export interface GooglePlaceDetails {
   rating?: number;
   user_ratings_total?: number;
   price_level?: number;
+  editorial_summary?: string; // Editorial description from Google
   geometry: {
     location: {
       lat: number;
