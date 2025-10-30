@@ -20,6 +20,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LinearGradient } from 'expo-linear-gradient';
+import Svg, { Circle } from 'react-native-svg';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_WIDTH = SCREEN_WIDTH - (Spacing.md * 2);
@@ -84,6 +85,61 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
         ))}
       </View>
     </View>
+  );
+}
+
+/**
+ * Circular Progress Ring Component
+ * Shows match score as colored ring around CTA button
+ */
+interface CircularProgressRingProps {
+  score: number; // 0-100
+  size?: number;
+  strokeWidth?: number;
+}
+
+function CircularProgressRing({ score, size = 64, strokeWidth = 3 }: CircularProgressRingProps) {
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const progress = ((score || 0) / 100) * circumference;
+
+  // Color based on score (green for high, yellow for medium, gray for low)
+  const strokeColor = score >= 80 ? '#10b981' : score >= 60 ? '#f59e0b' : '#6b7280';
+
+  return (
+    <Svg
+      width={size}
+      height={size}
+      style={{
+        position: 'absolute',
+        top: -4, // Center around button
+        left: -4,
+      }}
+    >
+      {/* Background circle */}
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke="rgba(255, 255, 255, 0.2)"
+        strokeWidth={strokeWidth}
+        fill="none"
+      />
+      {/* Progress circle */}
+      <Circle
+        cx={size / 2}
+        cy={size / 2}
+        r={radius}
+        stroke={strokeColor}
+        strokeWidth={strokeWidth}
+        strokeDasharray={circumference}
+        strokeDashoffset={circumference - progress}
+        fill="none"
+        strokeLinecap="round"
+        rotation="-90"
+        origin={`${size / 2}, ${size / 2}`}
+      />
+    </Svg>
   );
 }
 
@@ -207,6 +263,14 @@ export function ActivityCardIntelligent({
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer}>
+            {/* Great Match Badge (for scores 80%+) */}
+            {recommendation.score && recommendation.score >= 80 && (
+              <View style={styles.greatMatchBadge}>
+                <IconSymbol name="sparkles" size={12} color="#FFD700" />
+                <Text style={styles.greatMatchText}>Great Match</Text>
+              </View>
+            )}
+
             {/* Open Now Badge */}
             {recommendation.openNow && (
               <View style={styles.openNowBadge}>
@@ -258,6 +322,16 @@ export function ActivityCardIntelligent({
             </Text>
           </View>
 
+          {/* Inline Match Score */}
+          {recommendation.score && (
+            <View style={styles.matchScoreRow}>
+              <IconSymbol name="target" size={14} color={colors.primary} />
+              <Text style={[styles.matchScoreText, { color: colors.primary }]}>
+                {Math.round(recommendation.score)}% match
+              </Text>
+            </View>
+          )}
+
           {/* AI Explanation (One Line) */}
           <View style={styles.aiExplanation}>
             <IconSymbol name="sparkles" size={14} color={colors.primary} />
@@ -267,14 +341,22 @@ export function ActivityCardIntelligent({
           </View>
         </View>
 
-        {/* CIRCULAR CTA BUTTON (10% - bottom right corner) */}
-        <Pressable
-          style={[styles.circularButton, { backgroundColor: colors.primary }]}
-          onPress={onAddToCalendar}
-          onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-        >
-          <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
-        </Pressable>
+        {/* CIRCULAR CTA BUTTON WITH PROGRESS RING (10% - bottom right corner) */}
+        <View style={styles.ctaContainer}>
+          {/* Circular progress ring showing match score */}
+          {recommendation.score && (
+            <CircularProgressRing score={recommendation.score} size={64} strokeWidth={3} />
+          )}
+
+          {/* Main CTA button */}
+          <Pressable
+            style={[styles.circularButton, { backgroundColor: colors.primary }]}
+            onPress={onAddToCalendar}
+            onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+          >
+            <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
+          </Pressable>
+        </View>
       </Pressable>
     </Animated.View>
   );
@@ -341,6 +423,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     letterSpacing: 0.5,
   },
+  greatMatchBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(139, 69, 255, 0.95)', // Purple gradient color
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+  greatMatchText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.5,
+  },
   sponsoredBadge: {
     backgroundColor: 'rgba(0, 0, 0, 0.7)',
     paddingHorizontal: Spacing.sm,
@@ -397,6 +494,18 @@ const styles = StyleSheet.create({
     borderRadius: 1,
     backgroundColor: '#999',
   },
+  matchScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.xs,
+  },
+  matchScoreText: {
+    fontSize: 13,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
   aiExplanation: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -409,11 +518,17 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // CIRCULAR CTA BUTTON (10%)
-  circularButton: {
+  // CIRCULAR CTA BUTTON WITH PROGRESS RING (10%)
+  ctaContainer: {
     position: 'absolute',
     bottom: Spacing.md,
     right: Spacing.md,
+    width: 64,
+    height: 64,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  circularButton: {
     width: 56,
     height: 56,
     borderRadius: 28,
