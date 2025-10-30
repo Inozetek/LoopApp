@@ -277,10 +277,11 @@ export function ActivityCardIntelligent({
           <LinearGradient
             colors={['transparent', 'rgba(0,0,0,0.3)']}
             style={styles.imageGradient}
+            pointerEvents="none"
           />
 
           {/* BADGES OVERLAY ON IMAGE */}
-          <View style={styles.badgeContainer}>
+          <View style={styles.badgeContainer} pointerEvents="box-none">
             {/* Open Now Badge */}
             {recommendation.openNow && (
               <View style={styles.openNowBadge}>
@@ -298,7 +299,7 @@ export function ActivityCardIntelligent({
           </View>
 
           {/* Category Badge (bottom left of image) */}
-          <View style={styles.categoryBadgeOverlay}>
+          <View style={styles.categoryBadgeOverlay} pointerEvents="box-none">
             <View style={[styles.categoryBadge, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}>
               <Text style={styles.categoryText}>{recommendation.category}</Text>
             </View>
