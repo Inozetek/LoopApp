@@ -10,6 +10,28 @@ import { getCachedUnsplashImage } from './unsplash';
 import type { User } from '@/types/database';
 import type { Activity } from '@/types/activity';
 
+// Generic place patterns to filter (unless user has positive feedback history)
+const GENERIC_PLACE_PATTERNS = [
+  // Big box retail
+  /walmart/i, /target/i, /costco/i, /sam'?s club/i, /bj'?s wholesale/i,
+  /home depot/i, /lowe'?s/i, /best buy/i,
+
+  // Fast food chains
+  /mcdonald'?s/i, /burger king/i, /wendy'?s/i, /taco bell/i, /kfc/i,
+  /subway/i, /dunkin'?/i, /domino'?s/i, /pizza hut/i, /papa john'?s/i,
+  /chipotle/i, /panera/i, /arby'?s/i, /popeyes/i, /sonic/i,
+
+  // Gas stations & convenience
+  /shell/i, /chevron/i, /bp/i, /exxon/i, /mobil/i, /texaco/i,
+  /7-eleven/i, /circle k/i, /wawa/i, /sheetz/i, /speedway/i,
+
+  // Pharmacies
+  /cvs/i, /walgreens/i, /rite aid/i,
+
+  // Banks
+  /chase bank/i, /bank of america/i, /wells fargo/i, /citibank/i,
+];
+
 // Type definitions (copied from legacy for compatibility)
 export type PlaceLocation = { lat: number; lng: number };
 
@@ -32,6 +54,29 @@ export interface PlaceResult {
   opening_hours?: {
     open_now?: boolean;
   };
+}
+
+// Helper function: Check if place name matches generic patterns
+function isGenericPlace(placeName: string): boolean {
+  return GENERIC_PLACE_PATTERNS.some(pattern => pattern.test(placeName));
+}
+
+// Helper function: Check if user has positive feedback history for generic place type
+function userFrequentsGenericPlace(place: PlaceResult, user: User): boolean {
+  // Check if user has favorite categories that match this place type
+  const userFavorites = user.ai_profile?.favorite_categories || [];
+  const placeCategory = mapPlaceTypeToCategory(place.types);
+
+  // If user has this category in favorites, allow generic places
+  if (userFavorites.includes(placeCategory)) {
+    return true;
+  }
+
+  // Check if user has positive feedback history for this specific place
+  // TODO: When feedback system is implemented, check database for thumbs up on this place
+  // For now, rely on favorite categories
+
+  return false;
 }
 
 // Helper function: Calculate distance between two points (Haversine formula)
@@ -221,7 +266,8 @@ export interface ScoredRecommendation {
   };
   distance: number; // miles
   category: string;
-  photoUrl?: string;
+  photoUrl?: string; // Primary photo (first one)
+  photoUrls?: string[]; // All photos for carousel (when 3+ available)
   aiExplanation: string;
   isSponsored: boolean;
 }
@@ -292,6 +338,12 @@ export async function generateRecommendations(
     const category = mapPlaceTypeToCategory(place.types);
     const distance = calculateDistance(userLocation, place.geometry.location);
 
+    // Filter out generic places (Walmart, McDonald's, etc.) unless user frequents them
+    if (isGenericPlace(place.name) && !userFrequentsGenericPlace(place, user)) {
+      console.log(`⏭️  Skipping generic place: ${place.name}`);
+      continue;
+    }
+
     // Calculate score
     const scoreBreakdown = calculateActivityScore({
       place,
@@ -317,15 +369,28 @@ export async function generateRecommendations(
       scoreBreakdown,
     });
 
-    // Get photo URL with Unsplash fallback
+    // Get photo URLs (single + array for carousel)
     let photoUrl = '';
+    let photoUrls: string[] | undefined;
 
-    // First, try Google Places photo
-    if (place.photos?.[0]) {
-      photoUrl = getPlacePhotoUrl(place.photos[0].photo_reference);
+    // Try to get multiple photos from Google Places
+    if (place.photos && place.photos.length > 0) {
+      // Get all available photos (up to 5 for performance)
+      const allPhotos = place.photos.slice(0, 5).map(photo =>
+        getPlacePhotoUrl(photo.photo_reference)
+      ).filter(Boolean);
+
+      if (allPhotos.length > 0) {
+        photoUrl = allPhotos[0]; // Primary photo
+
+        // Only populate photoUrls array if we have 3+ photos (for carousel)
+        if (allPhotos.length >= 3) {
+          photoUrls = allPhotos;
+        }
+      }
     }
 
-    // If no Google photo, use Unsplash fallback
+    // If no Google photo, use Unsplash fallback for primary
     if (!photoUrl) {
       photoUrl = await getCachedUnsplashImage(category);
     }
@@ -337,6 +402,7 @@ export async function generateRecommendations(
       distance,
       category,
       photoUrl,
+      photoUrls, // Only set if 3+ real photos available
       aiExplanation,
       isSponsored: false, // TODO: Check if business has sponsored tier
     });

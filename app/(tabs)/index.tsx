@@ -84,6 +84,7 @@ export default function RecommendationFeedScreen() {
         priceRange: s.place.price_level || 2,
         rating: s.place.rating || 0,
         imageUrl: s.photoUrl || '',
+        photos: s.photoUrls, // Array of photos for carousel (only if 3+ photos)
         aiExplanation: s.aiExplanation,
         openNow: s.place.opening_hours?.open_now,
         isSponsored: s.isSponsored,

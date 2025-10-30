@@ -49,6 +49,7 @@ export interface Recommendation {
   priceRange: number;
   rating: number;
   imageUrl: string;
+  photos?: string[]; // Array of photo URLs for Instagram-style carousel
   aiExplanation: string;
   openNow?: boolean;
   isSponsored: boolean;

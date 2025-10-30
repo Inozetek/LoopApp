@@ -12,6 +12,7 @@ import {
   Animated,
   Image,
   Dimensions,
+  FlatList,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Activity, Recommendation } from '@/types/activity';
@@ -23,6 +24,68 @@ import { LinearGradient } from 'expo-linear-gradient';
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_WIDTH = SCREEN_WIDTH - (Spacing.md * 2);
 const IMAGE_HEIGHT = 400; // 60% of typical card
+
+/**
+ * Instagram-Style Photo Carousel Component
+ * Horizontal scrollable photos with dot indicators
+ */
+interface PhotoCarouselProps {
+  photos: string[];
+  imageError: boolean;
+  onImageError: () => void;
+}
+
+function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps) {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  const viewabilityConfig = useRef({
+    viewAreaCoveragePercentThreshold: 50,
+  }).current;
+
+  const onViewRef = useRef((info: any) => {
+    if (info.viewableItems && info.viewableItems.length > 0) {
+      setCurrentIndex(info.viewableItems[0].index || 0);
+    }
+  });
+
+  return (
+    <View style={styles.carouselContainer}>
+      <FlatList
+        data={photos}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onViewableItemsChanged={onViewRef.current}
+        viewabilityConfig={viewabilityConfig}
+        renderItem={({ item }) => (
+          <Image
+            source={{ uri: item }}
+            style={styles.carouselImage}
+            resizeMode="cover"
+            onError={onImageError}
+          />
+        )}
+        keyExtractor={(item, index) => `photo-${index}`}
+        decelerationRate="fast"
+        snapToInterval={CARD_WIDTH}
+        snapToAlignment="center"
+      />
+
+      {/* Instagram-style dot indicators */}
+      <View style={styles.paginationContainer}>
+        {photos.map((_, index) => (
+          <View
+            key={index}
+            style={[
+              styles.paginationDot,
+              { opacity: index === currentIndex ? 1 : 0.4 }
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+}
 
 interface ActivityCardIntelligentProps {
   recommendation: Recommendation;
@@ -117,14 +180,24 @@ export function ActivityCardIntelligent({
         onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
         style={[styles.card, { backgroundColor: colors.card }]}
       >
-        {/* HERO IMAGE (60% of card) */}
+        {/* HERO IMAGE (60% of card) - Carousel if 3+ photos, single image otherwise */}
         <View style={styles.imageContainer}>
-          <Image
-            source={imageSource}
-            style={styles.image}
-            resizeMode="cover"
-            onError={() => setImageError(true)}
-          />
+          {recommendation.photos && recommendation.photos.length >= 3 ? (
+            // Instagram-style carousel for 3+ photos
+            <PhotoCarousel
+              photos={recommendation.photos}
+              imageError={imageError}
+              onImageError={() => setImageError(true)}
+            />
+          ) : (
+            // Single image (default)
+            <Image
+              source={imageSource}
+              style={styles.image}
+              resizeMode="cover"
+              onError={() => setImageError(true)}
+            />
+          )}
 
           {/* Gradient overlay for better badge/text visibility */}
           <LinearGradient
@@ -302,6 +375,7 @@ const styles = StyleSheet.create({
   content: {
     padding: Spacing.md,
     paddingBottom: Spacing.lg, // Extra space for circular button
+    paddingRight: 80, // Prevent text from overlapping circular button (56px + 16px + 8px buffer)
   },
   title: {
     marginBottom: Spacing.xs,
@@ -327,6 +401,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.xs,
+    marginBottom: Spacing.sm, // Extra safety margin to avoid button overlap
   },
   aiText: {
     fontSize: 13,
@@ -349,5 +424,37 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
+  },
+
+  // INSTAGRAM-STYLE CAROUSEL
+  carouselContainer: {
+    width: '100%',
+    height: IMAGE_HEIGHT,
+    position: 'relative',
+  },
+  carouselImage: {
+    width: CARD_WIDTH,
+    height: IMAGE_HEIGHT,
+  },
+  paginationContainer: {
+    position: 'absolute',
+    bottom: 12,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 6,
+  },
+  paginationDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.3,
+    shadowRadius: 2,
+    elevation: 2,
   },
 });
