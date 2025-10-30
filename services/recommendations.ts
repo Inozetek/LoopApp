@@ -591,10 +591,11 @@ function generateExplanation(params: {
   const topInterest = interests[0] || 'exploring new places';
 
   // Template-based explanations (will be replaced with OpenAI in Phase 2)
+  const formattedDistance = distance.toFixed(1);
   const templates = [
-    `Based on your love of ${topInterest}, this ${category} spot is just ${distance} miles away.`,
+    `Based on your love of ${topInterest}, this ${category} spot is just ${formattedDistance} mi away.`,
     `Perfect for ${topInterest} enthusiasts! ${place.name} has ${place.rating || 4.0}★ ratings.`,
-    `Only ${distance} miles from you - great for ${topInterest}.`,
+    `Only ${formattedDistance} mi from you - great for ${topInterest}.`,
     `This ${category} venue matches your interests in ${topInterest}.`,
   ];
 
