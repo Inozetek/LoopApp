@@ -349,6 +349,19 @@ export function ActivityCardIntelligent({
         {/* AI MATCH SCORE TILE (Top right of card) */}
         {recommendation.score && (
           <View style={styles.matchScoreTileContainer}>
+            {/* Soft glow background layer */}
+            <View style={[
+              styles.matchScoreGlow,
+              {
+                backgroundColor:
+                  recommendation.score >= 85 ? '#10b981' :
+                  recommendation.score >= 75 ? '#3b82f6' :
+                  recommendation.score >= 60 ? '#8b5cf6' :
+                  recommendation.score >= 35 ? '#f59e0b' :
+                  '#ef4444'
+              }
+            ]} />
+
             <LinearGradient
               colors={
                 recommendation.score >= 85 ? ['#10b981', '#059669'] : // Green gradient (85-100%)
@@ -361,12 +374,15 @@ export function ActivityCardIntelligent({
               end={{ x: 1, y: 1 }}
               style={styles.matchScoreTile}
             >
+              {/* Subtle glass overlay effect */}
+              <View style={styles.glassOverlay} />
+
               <View style={styles.matchScoreContent}>
                 <Text style={styles.matchScoreNumber}>
                   {Math.round(recommendation.score)}
                 </Text>
                 <View style={styles.matchScoreLabelContainer}>
-                  <IconSymbol name="sparkles" size={10} color="rgba(255,255,255,0.9)" />
+                  <IconSymbol name="sparkles" size={10} color="rgba(255,255,255,0.95)" />
                   <Text style={styles.matchScoreLabel}>MATCH</Text>
                 </View>
               </View>
@@ -517,24 +533,37 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
-  // AI MATCH SCORE TILE (Modern, gradient design)
+  // AI MATCH SCORE TILE (Modern glassmorphism design)
   matchScoreTileContainer: {
     position: 'absolute',
     top: IMAGE_HEIGHT + Spacing.sm,
     right: Spacing.md,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  matchScoreGlow: {
+    position: 'absolute',
+    width: 64,
+    height: 64,
+    borderRadius: 16,
+    opacity: 0.4,
+    transform: [{ scale: 1.1 }],
   },
   matchScoreTile: {
     width: 64,
     height: 64,
     borderRadius: 16,
     overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  glassOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderRadius: 16,
   },
   matchScoreContent: {
     flex: 1,
@@ -544,24 +573,23 @@ const styles = StyleSheet.create({
   },
   matchScoreNumber: {
     color: '#FFFFFF',
-    fontSize: 32,
+    fontSize: 34,
     fontWeight: '900',
-    letterSpacing: -1.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
+    letterSpacing: -2,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   matchScoreLabelContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 2,
-    marginTop: -2,
+    marginTop: -4,
   },
   matchScoreLabel: {
-    color: 'rgba(255, 255, 255, 0.95)',
-    fontSize: 8,
+    color: 'rgba(255, 255, 255, 1)',
+    fontSize: 7.5,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 1,
     textTransform: 'uppercase',
   },
 
