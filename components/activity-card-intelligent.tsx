@@ -497,7 +497,8 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingTop: Spacing.sm, // Less top padding since tile takes space
     paddingBottom: Spacing.lg, // Extra space for circular button
-    paddingRight: 94, // Prevent text from overlapping tile (70px + 16px + 8px buffer)
+    paddingRight: 84, // Prevent text from overlapping tile (60px + 16px + 8px buffer)
+    minHeight: 90, // Ensure minimum height to prevent crowding with tile
   },
   title: {
     marginBottom: Spacing.xs,
@@ -536,22 +537,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: IMAGE_HEIGHT + Spacing.sm,
     right: Spacing.md,
-    width: 70,
-    height: 70,
-    borderRadius: 18,
+    width: 60,
+    height: 60,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 6,
+    paddingHorizontal: 4,
   },
   matchScoreNumber: {
-    fontSize: 30,
+    fontSize: 26,
     fontWeight: '700',
     letterSpacing: -0.5,
     includeFontPadding: false,
     textAlignVertical: 'center',
   },
   matchScoreLabel: {
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '600',
     letterSpacing: 0.8,
     textTransform: 'uppercase',
