@@ -295,6 +295,13 @@ export function ActivityCardIntelligent({
               </View>
             )}
 
+            {/* Estimated Hours Warning */}
+            {recommendation.hasEstimatedHours && (
+              <View style={styles.estimatedHoursBadge}>
+                <Text style={styles.estimatedHoursText}>⚠️ Est. Hours</Text>
+              </View>
+            )}
+
             {/* Sponsored Badge */}
             {recommendation.isSponsored && (
               <View style={styles.sponsoredBadge}>
@@ -475,6 +482,18 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
+  },
+  estimatedHoursBadge: {
+    backgroundColor: 'rgba(255, 152, 0, 0.95)', // Orange warning color
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  estimatedHoursText: {
+    color: '#FFFFFF',
+    fontSize: 10,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   sponsoredBadge: {
     backgroundColor: 'rgba(0, 0, 0, 0.7)',

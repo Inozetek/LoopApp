@@ -14,10 +14,12 @@ import {
   TextInput,
   Animated,
   Platform,
+  Alert,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as Haptics from 'expo-haptics';
-import { Activity } from '@/types/activity';
+import { Activity, Recommendation } from '@/types/activity';
+import { getBusinessHours, isOpenAt, getTodayHours, formatBusinessHours } from '@/utils/business-hours';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -25,6 +27,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 interface SchedulePlanModalProps {
   visible: boolean;
   activity: Activity | null;
+  recommendation?: Recommendation | null; // Full recommendation with business hours
   onClose: () => void;
   onSchedule: (scheduledTime: Date, notes?: string) => void;
   onShareWithFriend?: (friendId: string) => void;
@@ -41,6 +44,7 @@ const MOCK_FRIENDS = [
 export function SchedulePlanModal({
   visible,
   activity,
+  recommendation,
   onClose,
   onSchedule,
   onShareWithFriend,
@@ -100,6 +104,44 @@ export function SchedulePlanModal({
   };
 
   const handleSchedule = () => {
+    // Validate business hours if recommendation data is available
+    if (recommendation?.businessHours || recommendation?.hasEstimatedHours) {
+      const businessHoursInfo = getBusinessHours(
+        recommendation.businessHours,
+        recommendation.category
+      );
+
+      const isOpen = isOpenAt(businessHoursInfo.hours, selectedDate);
+
+      if (!isOpen) {
+        const todayHours = getTodayHours(businessHoursInfo.hours, selectedDate);
+        const hoursText = todayHours ? formatBusinessHours(todayHours) : 'Closed';
+
+        const warningMessage = recommendation.hasEstimatedHours
+          ? `⚠️ This place may be closed at this time.\n\nEstimated hours: ${hoursText}\n\n(Hours are estimated - actual hours may vary)`
+          : `⚠️ This place appears to be closed at this time.\n\nHours: ${hoursText}\n\nSchedule anyway?`;
+
+        Alert.alert(
+          'Closed During This Time',
+          warningMessage,
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
+            {
+              text: 'Schedule Anyway',
+              onPress: () => {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                onSchedule(selectedDate, notes);
+              },
+            },
+          ]
+        );
+        return;
+      }
+    }
+
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     onSchedule(selectedDate, notes);
   };

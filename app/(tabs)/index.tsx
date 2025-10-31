@@ -390,6 +390,7 @@ export default function RecommendationFeedScreen() {
             onClose={() => setShowScheduleModal(false)}
             onSchedule={handleScheduleConfirm}
             activity={selectedRecommendation.activity || null}
+            recommendation={selectedRecommendation}
           />
         )}
 
