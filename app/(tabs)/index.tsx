@@ -279,6 +279,25 @@ export default function RecommendationFeedScreen() {
     }
   };
 
+  // Animated styles (must be defined before any conditional returns to follow Rules of Hooks)
+  const welcomeMessageStyle = useAnimatedStyle(() => ({
+    opacity: welcomeOpacity.value,
+    transform: [
+      {
+        translateY: interpolate(
+          welcomeOpacity.value,
+          [0, 1],
+          [-10, 0],
+          Extrapolate.CLAMP
+        )
+      }
+    ]
+  }));
+
+  const firstCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: firstCardTranslateY.value }]
+  }));
+
   // Render loading state
   if (loading) {
     return (
@@ -318,25 +337,6 @@ export default function RecommendationFeedScreen() {
       </SwipeableLayout>
     );
   }
-
-  // Animated styles
-  const welcomeMessageStyle = useAnimatedStyle(() => ({
-    opacity: welcomeOpacity.value,
-    transform: [
-      {
-        translateY: interpolate(
-          welcomeOpacity.value,
-          [0, 1],
-          [-10, 0],
-          Extrapolate.CLAMP
-        )
-      }
-    ]
-  }));
-
-  const firstCardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: firstCardTranslateY.value }]
-  }));
 
   // Render recommendations list
   return (
