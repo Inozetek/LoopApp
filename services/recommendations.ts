@@ -7,6 +7,7 @@
 // Import from new google-places.ts (mock data)
 import { getMockActivities } from './google-places';
 import { getCachedUnsplashImage } from './unsplash';
+import { getBusinessHours, suggestVisitTime } from '@/utils/business-hours';
 import type { User } from '@/types/database';
 import type { Activity } from '@/types/activity';
 
@@ -272,6 +273,9 @@ export interface ScoredRecommendation {
   photoUrls?: string[]; // All photos for carousel (when 3+ available)
   aiExplanation: string;
   isSponsored: boolean;
+  businessHours?: any; // Google opening_hours object
+  hasEstimatedHours?: boolean;
+  suggestedTime?: Date;
 }
 
 export interface RecommendationParams {
@@ -397,6 +401,12 @@ export async function generateRecommendations(
       photoUrl = await getCachedUnsplashImage(category);
     }
 
+    // Get business hours (from Google or estimated)
+    const businessHoursInfo = getBusinessHours(place.opening_hours, category);
+
+    // Suggest best time to visit based on business hours
+    const suggestedTime = suggestVisitTime(businessHoursInfo.hours, timeOfDay, new Date());
+
     scoredRecommendations.push({
       place,
       score: scoreBreakdown.finalScore,
@@ -407,6 +417,9 @@ export async function generateRecommendations(
       photoUrls, // Only set if 3+ real photos available
       aiExplanation,
       isSponsored: false, // TODO: Check if business has sponsored tier
+      businessHours: place.opening_hours, // Store Google hours data
+      hasEstimatedHours: businessHoursInfo.isEstimated,
+      suggestedTime,
     });
   }
 

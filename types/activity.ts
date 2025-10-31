@@ -57,6 +57,10 @@ export interface Recommendation {
   isSponsored: boolean;
   score?: number;
   scoreBreakdown?: RecommendationScore;
+  // Business hours
+  businessHours?: any; // Google opening_hours object
+  hasEstimatedHours?: boolean; // True if hours are estimated vs from Google
+  suggestedTime?: Date; // Recommended visit time when place is open
   // Legacy fields for backward compatibility
   activity?: Activity;
   reason?: string;

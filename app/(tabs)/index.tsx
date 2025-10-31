@@ -114,6 +114,9 @@ export default function RecommendationFeedScreen() {
         openNow: s.place.opening_hours?.open_now,
         isSponsored: s.isSponsored,
         score: s.score,
+        businessHours: s.businessHours,
+        hasEstimatedHours: s.hasEstimatedHours,
+        suggestedTime: s.suggestedTime,
         scoreBreakdown: {
           baseScore: s.scoreBreakdown.baseScore,
           locationScore: s.scoreBreakdown.locationScore,
