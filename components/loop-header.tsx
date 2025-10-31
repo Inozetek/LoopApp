@@ -128,20 +128,6 @@ export function LoopHeader({
     transform: [{ translateY: translateY.value }],
   }));
 
-  // Swipe hint fades out as user drags
-  const swipeHintStyle = useAnimatedStyle(() => {
-    const opacity = interpolate(
-      translateY.value,
-      [0, 30],
-      [0.6, 0],
-      Extrapolate.CLAMP
-    );
-
-    return {
-      opacity: isDragging.value ? opacity : 0.6,
-    };
-  });
-
   // Blinking arrow style
   const blinkingArrowStyle = useAnimatedStyle(() => ({
     opacity: arrowOpacity.value,
@@ -185,13 +171,6 @@ export function LoopHeader({
             {onDashboardOpen && (
               <Animated.View style={[styles.blinkingArrow, blinkingArrowStyle]}>
                 <Ionicons name="chevron-down" size={16} color={BrandColors.loopBlue} />
-              </Animated.View>
-            )}
-
-            {/* Swipe Hint (fades out while dragging) */}
-            {onDashboardOpen && (
-              <Animated.View style={[styles.swipeHint, swipeHintStyle]}>
-                <Ionicons name="chevron-down" size={12} color={BrandColors.loopBlue} />
               </Animated.View>
             )}
           </TouchableOpacity>
@@ -282,12 +261,5 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -20,
     alignSelf: 'center',
-  },
-  // Swipe Hint (subtle, fades on drag)
-  swipeHint: {
-    position: 'absolute',
-    bottom: -16,
-    alignSelf: 'center',
-    opacity: 0.6,
   },
 });

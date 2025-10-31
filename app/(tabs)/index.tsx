@@ -52,7 +52,8 @@ export default function RecommendationFeedScreen() {
 
   // Welcome message animation
   const welcomeOpacity = useSharedValue(0);
-  const firstCardTranslateY = useSharedValue(80); // Start below welcome message
+  const welcomeHeight = useSharedValue(80); // Height of welcome message space
+  const firstCardTranslateY = useSharedValue(0); // Card starts at normal position
   const flatListRef = useRef<FlatList>(null);
 
   // Fetch recommendations
@@ -223,14 +224,15 @@ export default function RecommendationFeedScreen() {
     if (recommendations.length > 0) {
       // Show welcome message
       welcomeOpacity.value = withTiming(1, { duration: 300 });
+      welcomeHeight.value = withTiming(80, { duration: 300 });
 
-      // After 5 seconds, fade out welcome and slide up first card
+      // After 5 seconds, fade out welcome and collapse the space
       welcomeOpacity.value = withDelay(
         5000,
         withTiming(0, { duration: 500 })
       );
 
-      firstCardTranslateY.value = withDelay(
+      welcomeHeight.value = withDelay(
         5000,
         withTiming(0, { duration: 500 })
       );
@@ -282,6 +284,7 @@ export default function RecommendationFeedScreen() {
   // Animated styles (must be defined before any conditional returns to follow Rules of Hooks)
   const welcomeMessageStyle = useAnimatedStyle(() => ({
     opacity: welcomeOpacity.value,
+    height: welcomeHeight.value,
     transform: [
       {
         translateY: interpolate(
@@ -292,10 +295,6 @@ export default function RecommendationFeedScreen() {
         )
       }
     ]
-  }));
-
-  const firstCardStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: firstCardTranslateY.value }]
   }));
 
   // Render loading state
@@ -349,7 +348,10 @@ export default function RecommendationFeedScreen() {
 
         {/* Welcome Message */}
         <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
-          <Text style={[styles.welcomeText, { color: colors.text }]}>
+          <Text style={[
+            styles.welcomeText,
+            { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.6)' }
+          ]}>
             Discover something great near you today
           </Text>
         </Animated.View>
@@ -357,30 +359,14 @@ export default function RecommendationFeedScreen() {
         <FlatList
           ref={flatListRef}
           data={recommendations}
-          renderItem={({ item, index }) => {
-            // First card has special animation
-            if (index === 0) {
-              return (
-                <Animated.View style={firstCardStyle}>
-                  <ActivityCardIntelligent
-                    recommendation={item}
-                    onAddToCalendar={() => handleAddToCalendar(item, index)}
-                    onSeeDetails={() => handleSeeDetails(item, index)}
-                    index={index}
-                  />
-                </Animated.View>
-              );
-            }
-
-            return (
-              <ActivityCardIntelligent
-                recommendation={item}
-                onAddToCalendar={() => handleAddToCalendar(item, index)}
-                onSeeDetails={() => handleSeeDetails(item, index)}
-                index={index}
-              />
-            );
-          }}
+          renderItem={({ item, index }) => (
+            <ActivityCardIntelligent
+              recommendation={item}
+              onAddToCalendar={() => handleAddToCalendar(item, index)}
+              onSeeDetails={() => handleSeeDetails(item, index)}
+              index={index}
+            />
+          )}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -440,16 +426,16 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 80,
+    overflow: 'hidden',
   },
   welcomeText: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 18,
+    fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0.3,
+    paddingVertical: Spacing.lg,
   },
   listContent: {
     paddingHorizontal: Spacing.md,

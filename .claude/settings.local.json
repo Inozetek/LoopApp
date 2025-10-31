@@ -37,7 +37,8 @@
       "Bash(npm search:*)",
       "Bash(git rm:*)",
       "Bash(git remote add:*)",
-      "Bash(del nul)"
+      "Bash(del nul)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
