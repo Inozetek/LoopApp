@@ -1,0 +1,44 @@
+MANUAL FIX FOR app/(tabs)/index.tsx
+
+PROBLEM: Lines 25-35 are corrupted with instruction text
+
+CURRENT (BROKEN):
+------------------
+Line 24: import { handleError, showErrorAlert } from '@/utils/error-handler';
+Line 25:   // Type for lat/lng coordinates
+Line 26:   type PlaceLocation = { lat: number; lng: number };
+Line 27:
+Line 28:   Insert it right after:
+Line 29:   import { handleError, showErrorAlert } from '@/utils/error-handler';
+Line 30:
+Line 31:   // ADD THIS LINE HERE ⬇️
+Line 32:   type PlaceLocation = { lat: number; lng: number };
+Line 33:
+Line 34: export default function RecommendationFeedScreen() {
+Line 35: import { handleError, showErrorAlert } from '@/utils/error-handler';
+Line 36:   const { user } = useAuth();
+
+SHOULD BE (FIXED):
+------------------
+Line 24: import { handleError, showErrorAlert } from '@/utils/error-handler';
+Line 25:
+Line 26: // Type for lat/lng coordinates
+Line 27: type PlaceLocation = { lat: number; lng: number };
+Line 28:
+Line 29: export default function RecommendationFeedScreen() {
+Line 30:   const { user } = useAuth();
+
+INSTRUCTIONS:
+1. Open app/(tabs)/index.tsx in VS Code
+2. DELETE lines 25-35 (11 lines total)
+3. ADD these 5 lines in their place:
+
+// Type for lat/lng coordinates
+type PlaceLocation = { lat: number; lng: number };
+
+export default function RecommendationFeedScreen() {
+  const { user } = useAuth();
+
+4. Save the file
+5. Run: npx tsc --noEmit
+6. Should show: Found 0 errors ✅

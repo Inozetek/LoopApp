@@ -3,13 +3,27 @@
  *
  * Snapchat-style header with centered Loop logo
  * Appears at the top of all main screens
+ * Features: Swipe-down gesture to open dashboard, notification badge, blinking arrow hint
  */
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withTiming,
+  withSequence,
+  withRepeat,
+  runOnJS,
+  interpolate,
+  Extrapolate
+} from 'react-native-reanimated';
+import * as Haptics from 'expo-haptics';
 import { BrandColors, Spacing, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -19,6 +33,8 @@ interface LoopHeaderProps {
   showSettingsButton?: boolean;
   onSettingsPress?: () => void;
   rightAction?: React.ReactNode;
+  onDashboardOpen?: () => void;
+  notificationCount?: number;
 }
 
 export function LoopHeader({
@@ -26,16 +42,110 @@ export function LoopHeader({
   showSettingsButton = true,
   onSettingsPress,
   rightAction,
+  onDashboardOpen,
+  notificationCount = 0,
 }: LoopHeaderProps) {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
 
+  // Animated values for swipe gesture
+  const translateY = useSharedValue(0);
+  const isDragging = useSharedValue(false);
+
+  // Blinking arrow animation - shows for 5 seconds every 1 minute
+  const arrowOpacity = useSharedValue(0);
+
+  useEffect(() => {
+    // Function to start the blinking animation
+    const startBlinking = () => {
+      arrowOpacity.value = withSequence(
+        withTiming(1, { duration: 300 }), // Fade in
+        withRepeat(
+          withSequence(
+            withTiming(0.4, { duration: 500 }),
+            withTiming(1, { duration: 500 })
+          ),
+          4, // Blink 4 times over ~4 seconds
+          false
+        ),
+        withTiming(0, { duration: 300 }) // Fade out
+      );
+    };
+
+    // Start immediately on mount
+    startBlinking();
+
+    // Repeat every 60 seconds
+    const interval = setInterval(() => {
+      startBlinking();
+    }, 60000); // 60 seconds
+
+    return () => clearInterval(interval);
+  }, []);
+
   const handleLogoPress = () => {
     // Tapping logo returns to For You feed (like Snapchat)
     router.push('/(tabs)');
   };
+
+  const handleDashboardOpen = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    if (onDashboardOpen) {
+      onDashboardOpen();
+    }
+  };
+
+  // Swipe-down gesture from logo area
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      isDragging.value = true;
+    })
+    .onUpdate((event) => {
+      // Only allow downward swipes
+      if (event.translationY > 0) {
+        translateY.value = event.translationY * 0.5; // Dampening effect
+      }
+    })
+    .onEnd((event) => {
+      isDragging.value = false;
+
+      // Trigger dashboard if swiped down more than 50px or fast velocity
+      if (event.translationY > 50 || event.velocityY > 800) {
+        runOnJS(handleDashboardOpen)();
+      }
+
+      // Reset position
+      translateY.value = withSpring(0, {
+        damping: 15,
+        stiffness: 150,
+      });
+    })
+    .runOnJS(true);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: translateY.value }],
+  }));
+
+  // Swipe hint fades out as user drags
+  const swipeHintStyle = useAnimatedStyle(() => {
+    const opacity = interpolate(
+      translateY.value,
+      [0, 30],
+      [0.6, 0],
+      Extrapolate.CLAMP
+    );
+
+    return {
+      opacity: isDragging.value ? opacity : 0.6,
+    };
+  });
+
+  // Blinking arrow style
+  const blinkingArrowStyle = useAnimatedStyle(() => ({
+    opacity: arrowOpacity.value,
+  }));
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
@@ -48,18 +158,45 @@ export function LoopHeader({
         )}
       </View>
 
-      {/* Center - Loop Logo */}
-      <TouchableOpacity
-        style={styles.logoContainer}
-        onPress={handleLogoPress}
-        activeOpacity={0.7}
-      >
-        <Image
-          source={require('@/assets/images/loop-logo6.png')}
-          style={styles.logo}
-          resizeMode="contain"
-        />
-      </TouchableOpacity>
+      {/* Center - Loop Logo with Swipe Gesture */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.logoContainer, animatedStyle]}>
+          <TouchableOpacity
+            onPress={handleLogoPress}
+            activeOpacity={0.7}
+            style={styles.logoTouchable}
+          >
+            <Image
+              source={require('@/assets/images/loop-logo6.png')}
+              style={styles.logo}
+              resizeMode="contain"
+            />
+
+            {/* Notification Badge */}
+            {notificationCount > 0 && (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </Text>
+              </View>
+            )}
+
+            {/* Blinking Arrow Hint (appears every 1 min for 5 sec) */}
+            {onDashboardOpen && (
+              <Animated.View style={[styles.blinkingArrow, blinkingArrowStyle]}>
+                <Ionicons name="chevron-down" size={16} color={BrandColors.loopBlue} />
+              </Animated.View>
+            )}
+
+            {/* Swipe Hint (fades out while dragging) */}
+            {onDashboardOpen && (
+              <Animated.View style={[styles.swipeHint, swipeHintStyle]}>
+                <Ionicons name="chevron-down" size={12} color={BrandColors.loopBlue} />
+              </Animated.View>
+            )}
+          </TouchableOpacity>
+        </Animated.View>
+      </GestureDetector>
 
       {/* Right Side */}
       <View style={styles.rightSection}>
@@ -98,6 +235,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  logoTouchable: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   logo: {
     height: 32,
     width: 80,
@@ -113,5 +255,39 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: Spacing.sm,
+  },
+  // Notification Badge
+  notificationBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -8,
+    backgroundColor: '#FF6B9D',
+    borderRadius: 10,
+    minWidth: 20,
+    height: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+  notificationBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  // Blinking Arrow (larger, more prominent)
+  blinkingArrow: {
+    position: 'absolute',
+    bottom: -20,
+    alignSelf: 'center',
+  },
+  // Swipe Hint (subtle, fades on drag)
+  swipeHint: {
+    position: 'absolute',
+    bottom: -16,
+    alignSelf: 'center',
+    opacity: 0.6,
   },
 });

@@ -1,5 +1,13 @@
-import { useState, useEffect } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl } from 'react-native';
+import { useState, useEffect, useRef } from 'react';
+import { View, FlatList, StyleSheet, RefreshControl, Text } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withDelay,
+  interpolate,
+  Extrapolate
+} from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { ActivityCardIntelligent } from '@/components/activity-card-intelligent';
 import { ActivityCardSkeleton } from '@/components/skeleton-loader';
@@ -8,6 +16,7 @@ import { SuccessAnimation } from '@/components/success-animation';
 import { LoopHeader } from '@/components/loop-header';
 import { SchedulePlanModal } from '@/components/schedule-plan-modal';
 import { SeeDetailsModal } from '@/components/see-details-modal';
+import { DailyDashboardModal } from '@/components/daily-dashboard-modal';
 import { SwipeableLayout } from './swipeable-layout';
 import { Recommendation } from '@/types/activity';
 import { generateRecommendations, type RecommendationParams } from '@/services/recommendations';
@@ -17,6 +26,8 @@ import { ThemeColors, Spacing, BrandColors } from '@/constants/brand';
 import { supabase } from '@/lib/supabase';
 import { getCurrentLocation } from '@/services/location-service';
 import { handleError } from '@/utils/error-handler';
+import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
+import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
@@ -33,6 +44,16 @@ export default function RecommendationFeedScreen() {
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
+
+  // Dashboard state
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [isFirstLoadToday, setIsFirstLoadToday] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  // Welcome message animation
+  const welcomeOpacity = useSharedValue(0);
+  const firstCardTranslateY = useSharedValue(80); // Start below welcome message
+  const flatListRef = useRef<FlatList>(null);
 
   // Fetch recommendations
   const fetchRecommendations = async (showRefreshIndicator = false) => {
@@ -193,15 +214,80 @@ export default function RecommendationFeedScreen() {
   useEffect(() => {
     if (user) {
       fetchRecommendations();
+      checkDashboardStatus();
     }
   }, [user]);
+
+  // Welcome message animation - shows for 5 seconds then fades, first card slides up
+  useEffect(() => {
+    if (recommendations.length > 0) {
+      // Show welcome message
+      welcomeOpacity.value = withTiming(1, { duration: 300 });
+
+      // After 5 seconds, fade out welcome and slide up first card
+      welcomeOpacity.value = withDelay(
+        5000,
+        withTiming(0, { duration: 500 })
+      );
+
+      firstCardTranslateY.value = withDelay(
+        5000,
+        withTiming(0, { duration: 500 })
+      );
+    }
+  }, [recommendations.length]);
+
+  // Check if dashboard should show on first load
+  const checkDashboardStatus = async () => {
+    if (!user) return;
+
+    try {
+      // Check if should show dashboard today
+      const shouldShow = await shouldShowDashboardNow();
+      setIsFirstLoadToday(shouldShow);
+      setShowDashboard(shouldShow);
+
+      // Fetch notification count
+      const count = await getUnreadNotificationCount(user.id);
+      setNotificationCount(count);
+
+      console.log(`📊 Dashboard status: shouldShow=${shouldShow}, notifications=${count}`);
+    } catch (error) {
+      console.error('❌ Error checking dashboard status:', error);
+    }
+  };
+
+  // Handle dashboard open (from swipe-down gesture)
+  const handleDashboardOpen = () => {
+    setShowDashboard(true);
+  };
+
+  // Handle dashboard close
+  const handleDashboardClose = async () => {
+    setShowDashboard(false);
+
+    // Mark as dismissed if it was first load
+    if (isFirstLoadToday) {
+      await markDashboardDismissedToday();
+      setIsFirstLoadToday(false);
+    }
+
+    // Refresh notification count
+    if (user) {
+      const count = await getUnreadNotificationCount(user.id);
+      setNotificationCount(count);
+    }
+  };
 
   // Render loading state
   if (loading) {
     return (
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <LoopHeader />
+          <LoopHeader
+            onDashboardOpen={handleDashboardOpen}
+            notificationCount={notificationCount}
+          />
           <FlatList
             data={[1, 2, 3]}
             renderItem={() => <ActivityCardSkeleton />}
@@ -219,7 +305,10 @@ export default function RecommendationFeedScreen() {
     return (
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <LoopHeader />
+          <LoopHeader
+            onDashboardOpen={handleDashboardOpen}
+            notificationCount={notificationCount}
+          />
           <EmptyState
             icon="sparkles"
             title="No recommendations yet"
@@ -230,22 +319,68 @@ export default function RecommendationFeedScreen() {
     );
   }
 
+  // Animated styles
+  const welcomeMessageStyle = useAnimatedStyle(() => ({
+    opacity: welcomeOpacity.value,
+    transform: [
+      {
+        translateY: interpolate(
+          welcomeOpacity.value,
+          [0, 1],
+          [-10, 0],
+          Extrapolate.CLAMP
+        )
+      }
+    ]
+  }));
+
+  const firstCardStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: firstCardTranslateY.value }]
+  }));
+
   // Render recommendations list
   return (
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <LoopHeader />
+        <LoopHeader
+          onDashboardOpen={handleDashboardOpen}
+          notificationCount={notificationCount}
+        />
+
+        {/* Welcome Message */}
+        <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
+          <Text style={[styles.welcomeText, { color: colors.text }]}>
+            Discover something great near you today
+          </Text>
+        </Animated.View>
 
         <FlatList
+          ref={flatListRef}
           data={recommendations}
-          renderItem={({ item, index }) => (
-            <ActivityCardIntelligent
-              recommendation={item}
-              onAddToCalendar={() => handleAddToCalendar(item, index)}
-              onSeeDetails={() => handleSeeDetails(item, index)}
-              index={index}
-            />
-          )}
+          renderItem={({ item, index }) => {
+            // First card has special animation
+            if (index === 0) {
+              return (
+                <Animated.View style={firstCardStyle}>
+                  <ActivityCardIntelligent
+                    recommendation={item}
+                    onAddToCalendar={() => handleAddToCalendar(item, index)}
+                    onSeeDetails={() => handleSeeDetails(item, index)}
+                    index={index}
+                  />
+                </Animated.View>
+              );
+            }
+
+            return (
+              <ActivityCardIntelligent
+                recommendation={item}
+                onAddToCalendar={() => handleAddToCalendar(item, index)}
+                onSeeDetails={() => handleSeeDetails(item, index)}
+                index={index}
+              />
+            );
+          }}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
@@ -287,6 +422,13 @@ export default function RecommendationFeedScreen() {
           visible={showSuccessAnimation}
           onComplete={() => setShowSuccessAnimation(false)}
         />
+
+        {/* Daily Dashboard Modal */}
+        <DailyDashboardModal
+          visible={showDashboard}
+          onClose={handleDashboardClose}
+          isFirstLoadToday={isFirstLoadToday}
+        />
       </View>
     </SwipeableLayout>
   );
@@ -295,6 +437,19 @@ export default function RecommendationFeedScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  welcomeContainer: {
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 80,
+  },
+  welcomeText: {
+    fontSize: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+    letterSpacing: 0.3,
   },
   listContent: {
     paddingHorizontal: Spacing.md,

@@ -41,7 +41,7 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
 
   const onScroll = (event: any) => {
     const offsetX = event.nativeEvent.contentOffset.x;
-    const index = Math.round(offsetX / SCREEN_WIDTH);
+    const index = Math.round(offsetX / CARD_WIDTH);
     setCurrentIndex(index);
   };
 
@@ -51,7 +51,10 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
         ref={scrollViewRef}
         data={photos}
         horizontal
-        pagingEnabled
+        pagingEnabled={false}
+        snapToInterval={CARD_WIDTH}
+        decelerationRate="fast"
+        snapToAlignment="start"
         showsHorizontalScrollIndicator={false}
         onScroll={onScroll}
         scrollEventThrottle={16}
@@ -65,8 +68,8 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
         )}
         keyExtractor={(item, index) => `photo-${index}`}
         getItemLayout={(data, index) => ({
-          length: SCREEN_WIDTH,
-          offset: SCREEN_WIDTH * index,
+          length: CARD_WIDTH,
+          offset: CARD_WIDTH * index,
           index,
         })}
       />
@@ -249,11 +252,7 @@ export function ActivityCardIntelligent({
         },
       ]}
     >
-      <Pressable
-        onPress={onSeeDetails}
-        onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
-        style={[styles.card, { backgroundColor: colors.card }]}
-      >
+      <View style={[styles.card, { backgroundColor: colors.card }]}>
         {/* HERO IMAGE (60% of card) - Carousel if 3+ photos, single image otherwise */}
         <View style={styles.imageContainer}>
           {recommendation.photos && recommendation.photos.length >= 3 ? (
@@ -264,13 +263,19 @@ export function ActivityCardIntelligent({
               onImageError={() => setImageError(true)}
             />
           ) : (
-            // Single image (default)
-            <Image
-              source={imageSource}
-              style={styles.image}
-              resizeMode="cover"
-              onError={() => setImageError(true)}
-            />
+            // Single image (default) - wrapped in Pressable
+            <Pressable
+              onPress={onSeeDetails}
+              onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              style={styles.imagePressable}
+            >
+              <Image
+                source={imageSource}
+                style={styles.image}
+                resizeMode="cover"
+                onError={() => setImageError(true)}
+              />
+            </Pressable>
           )}
 
           {/* Gradient overlay for better badge/text visibility */}
@@ -306,8 +311,12 @@ export function ActivityCardIntelligent({
           </View>
         </View>
 
-        {/* CONTENT SECTION (30% of card) */}
-        <View style={styles.content}>
+        {/* CONTENT SECTION (30% of card) - clickable to open details */}
+        <Pressable
+          style={styles.content}
+          onPress={onSeeDetails}
+          onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+        >
           {/* Title */}
           <Text style={[styles.title, Typography.titleLarge, { color: colors.text }]} numberOfLines={2}>
             {recommendation.title}
@@ -345,7 +354,7 @@ export function ActivityCardIntelligent({
           {score && (
             <StackedScoreBar scoreBreakdown={score} />
           )}
-        </View>
+        </Pressable>
 
         {/* AI MATCH SCORE TILE (Top right of card) */}
         {recommendation.score && (
@@ -397,7 +406,7 @@ export function ActivityCardIntelligent({
         >
           <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
         </Pressable>
-      </Pressable>
+      </View>
     </Animated.View>
   );
 }
@@ -421,6 +430,10 @@ const styles = StyleSheet.create({
     width: '100%',
     height: IMAGE_HEIGHT,
     position: 'relative',
+  },
+  imagePressable: {
+    width: '100%',
+    height: '100%',
   },
   image: {
     width: '100%',
@@ -585,7 +598,7 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   carouselImage: {
-    width: SCREEN_WIDTH,
+    width: CARD_WIDTH,
     height: IMAGE_HEIGHT,
   },
   paginationContainer: {
