@@ -443,6 +443,7 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.xs, // Minimal top padding
     paddingBottom: Spacing.xl,
   },
 });

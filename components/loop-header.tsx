@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,12 +21,16 @@ import Animated, {
   withRepeat,
   runOnJS,
   interpolate,
-  Extrapolate
+  Extrapolate,
+  Easing,
 } from 'react-native-reanimated';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { BrandColors, Spacing, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+
+const SCREEN_WIDTH = Dimensions.get('window').width;
 
 interface LoopHeaderProps {
   showBackButton?: boolean;
@@ -54,18 +58,14 @@ export function LoopHeader({
   const translateY = useSharedValue(0);
   const isDragging = useSharedValue(false);
 
-  // Blinking arrow animation - shows for 5 seconds every 1 minute when there are notifications
+  // Blinking arrow animation - shows on load and when there are notifications
   const arrowOpacity = useSharedValue(0);
-  const [hasBlinkStarted, setHasBlinkStarted] = React.useState(false);
+  const [hasInitialBlink, setHasInitialBlink] = React.useState(false);
+
+  // Shimmer animation for border glow effect
+  const shimmerTranslate = useSharedValue(-SCREEN_WIDTH);
 
   useEffect(() => {
-    // Only blink if there are unread notifications
-    if (notificationCount === 0) {
-      arrowOpacity.value = 0;
-      setHasBlinkStarted(false);
-      return;
-    }
-
     // Function to start the blinking animation
     const startBlinking = () => {
       arrowOpacity.value = withSequence(
@@ -82,20 +82,45 @@ export function LoopHeader({
       );
     };
 
-    // Start blinking immediately on first notification appearance
-    if (!hasBlinkStarted) {
-      setHasBlinkStarted(true);
-      // Small delay to ensure component is mounted
-      setTimeout(() => startBlinking(), 100);
+    // Always blink on initial mount (show users the feature exists)
+    if (!hasInitialBlink && onDashboardOpen) {
+      setHasInitialBlink(true);
+      setTimeout(() => startBlinking(), 300);
     }
 
-    // Repeat every 60 seconds
-    const interval = setInterval(() => {
-      startBlinking();
-    }, 60000); // 60 seconds
+    // Continue blinking every 60 seconds if there are notifications
+    if (notificationCount > 0) {
+      const interval = setInterval(() => {
+        startBlinking();
+      }, 60000); // 60 seconds
 
-    return () => clearInterval(interval);
-  }, [notificationCount]); // Re-run when notification count changes
+      return () => clearInterval(interval);
+    }
+  }, [notificationCount, hasInitialBlink, onDashboardOpen]);
+
+  // Shimmer effect - subtle glow that moves across border periodically
+  useEffect(() => {
+    const runShimmer = () => {
+      shimmerTranslate.value = -SCREEN_WIDTH;
+      shimmerTranslate.value = withTiming(SCREEN_WIDTH, {
+        duration: 2000,
+        easing: Easing.bezier(0.4, 0.0, 0.2, 1),
+      });
+    };
+
+    // Initial shimmer after 1 second
+    const initialTimeout = setTimeout(() => runShimmer(), 1000);
+
+    // Repeat every 8 seconds
+    const interval = setInterval(() => {
+      runShimmer();
+    }, 8000);
+
+    return () => {
+      clearTimeout(initialTimeout);
+      clearInterval(interval);
+    };
+  }, []);
 
   const handleLogoPress = () => {
     // Tapping logo returns to For You feed (like Snapchat)
@@ -143,6 +168,11 @@ export function LoopHeader({
   // Blinking arrow style
   const blinkingArrowStyle = useAnimatedStyle(() => ({
     opacity: arrowOpacity.value,
+  }));
+
+  // Shimmer style
+  const shimmerStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: shimmerTranslate.value }],
   }));
 
   return (
@@ -201,6 +231,24 @@ export function LoopHeader({
             <Ionicons name="settings-outline" size={24} color={colors.text} />
           </TouchableOpacity>
         ) : null}
+      </View>
+
+      {/* Shimmer Glow Effect on Border */}
+      <View style={styles.shimmerContainer} pointerEvents="none">
+        <Animated.View style={[styles.shimmerWrapper, shimmerStyle]}>
+          <LinearGradient
+            colors={[
+              'rgba(0, 191, 255, 0)',
+              'rgba(0, 191, 255, 0.4)',
+              'rgba(0, 191, 255, 0.7)',
+              'rgba(0, 191, 255, 0.4)',
+              'rgba(0, 191, 255, 0)',
+            ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.shimmerGradient}
+          />
+        </Animated.View>
       </View>
     </View>
   );
@@ -273,5 +321,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: -16,
     alignSelf: 'center',
+  },
+  // Shimmer glow effect
+  shimmerContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 1,
+    overflow: 'hidden',
+  },
+  shimmerWrapper: {
+    width: SCREEN_WIDTH * 0.4, // Shimmer gradient width
+    height: 1,
+  },
+  shimmerGradient: {
+    flex: 1,
+    height: 1,
   },
 });
