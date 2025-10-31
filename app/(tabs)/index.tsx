@@ -223,12 +223,12 @@ export default function RecommendationFeedScreen() {
   useEffect(() => {
     if (recommendations.length > 0) {
       // Show welcome message immediately
-      welcomeHeight.value = 100; // Set max height first (no animation needed)
+      welcomeHeight.value = 60; // Reduced height for less space
       welcomeOpacity.value = withTiming(1, { duration: 400 });
 
-      // After 5 seconds, fade out and collapse
+      // After 5 seconds, fade out slowly and collapse
       const timeout = setTimeout(() => {
-        welcomeOpacity.value = withTiming(0, { duration: 400 }, (finished) => {
+        welcomeOpacity.value = withTiming(0, { duration: 800 }, (finished) => {
           if (finished) {
             welcomeHeight.value = 0; // Collapse after fade completes
           }
@@ -350,7 +350,7 @@ export default function RecommendationFeedScreen() {
         <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
           <Text style={[
             styles.welcomeText,
-            { color: colorScheme === 'dark' ? '#FFFFFF' : '#000000' }
+            { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.65)' }
           ]}>
             Discover something great near you today
           </Text>
@@ -426,16 +426,16 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.md,
-    paddingBottom: Spacing.md,
+    paddingTop: Spacing.xs,
+    paddingBottom: Spacing.xs,
     alignItems: 'center',
     justifyContent: 'center',
   },
   welcomeText: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 17,
+    fontFamily: 'Urbanist-Light',
     textAlign: 'center',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   listContent: {
     paddingHorizontal: Spacing.md,
