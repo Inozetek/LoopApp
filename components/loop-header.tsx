@@ -54,10 +54,16 @@ export function LoopHeader({
   const translateY = useSharedValue(0);
   const isDragging = useSharedValue(false);
 
-  // Blinking arrow animation - shows for 5 seconds every 1 minute
+  // Blinking arrow animation - shows for 5 seconds every 1 minute when there are notifications
   const arrowOpacity = useSharedValue(0);
 
   useEffect(() => {
+    // Only blink if there are unread notifications
+    if (notificationCount === 0) {
+      arrowOpacity.value = 0;
+      return;
+    }
+
     // Function to start the blinking animation
     const startBlinking = () => {
       arrowOpacity.value = withSequence(
@@ -74,7 +80,7 @@ export function LoopHeader({
       );
     };
 
-    // Start immediately on mount
+    // Start immediately on mount (when notifications exist)
     startBlinking();
 
     // Repeat every 60 seconds
@@ -83,7 +89,7 @@ export function LoopHeader({
     }, 60000); // 60 seconds
 
     return () => clearInterval(interval);
-  }, []);
+  }, [notificationCount]); // Re-run when notification count changes
 
   const handleLogoPress = () => {
     // Tapping logo returns to For You feed (like Snapchat)
@@ -259,7 +265,7 @@ const styles = StyleSheet.create({
   // Blinking Arrow (larger, more prominent)
   blinkingArrow: {
     position: 'absolute',
-    bottom: -20,
+    bottom: -16,
     alignSelf: 'center',
   },
 });

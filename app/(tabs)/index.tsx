@@ -350,7 +350,7 @@ export default function RecommendationFeedScreen() {
         <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
           <Text style={[
             styles.welcomeText,
-            { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.65)' : 'rgba(0, 0, 0, 0.6)' }
+            { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.75)' }
           ]}>
             Discover something great near you today
           </Text>
