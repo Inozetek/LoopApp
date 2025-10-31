@@ -56,11 +56,13 @@ export function LoopHeader({
 
   // Blinking arrow animation - shows for 5 seconds every 1 minute when there are notifications
   const arrowOpacity = useSharedValue(0);
+  const [hasBlinkStarted, setHasBlinkStarted] = React.useState(false);
 
   useEffect(() => {
     // Only blink if there are unread notifications
     if (notificationCount === 0) {
       arrowOpacity.value = 0;
+      setHasBlinkStarted(false);
       return;
     }
 
@@ -80,8 +82,12 @@ export function LoopHeader({
       );
     };
 
-    // Start immediately on mount (when notifications exist)
-    startBlinking();
+    // Start blinking immediately on first notification appearance
+    if (!hasBlinkStarted) {
+      setHasBlinkStarted(true);
+      // Small delay to ensure component is mounted
+      setTimeout(() => startBlinking(), 100);
+    }
 
     // Repeat every 60 seconds
     const interval = setInterval(() => {

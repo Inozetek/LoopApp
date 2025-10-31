@@ -52,7 +52,7 @@ export default function RecommendationFeedScreen() {
 
   // Welcome message animation
   const welcomeOpacity = useSharedValue(0);
-  const welcomeHeight = useSharedValue(80); // Height of welcome message space
+  const welcomeHeight = useSharedValue(0); // Start with 0 height
   const firstCardTranslateY = useSharedValue(0); // Card starts at normal position
   const flatListRef = useRef<FlatList>(null);
 
@@ -219,23 +219,23 @@ export default function RecommendationFeedScreen() {
     }
   }, [user]);
 
-  // Welcome message animation - shows for 5 seconds then fades, first card slides up
+  // Welcome message animation - shows for 5 seconds then fades
   useEffect(() => {
     if (recommendations.length > 0) {
-      // Show welcome message
-      welcomeOpacity.value = withTiming(1, { duration: 300 });
-      welcomeHeight.value = withTiming(80, { duration: 300 });
+      // Show welcome message immediately
+      welcomeHeight.value = 100; // Set max height first (no animation needed)
+      welcomeOpacity.value = withTiming(1, { duration: 400 });
 
-      // After 5 seconds, fade out welcome and collapse the space
-      welcomeOpacity.value = withDelay(
-        5000,
-        withTiming(0, { duration: 500 })
-      );
+      // After 5 seconds, fade out and collapse
+      const timeout = setTimeout(() => {
+        welcomeOpacity.value = withTiming(0, { duration: 400 }, (finished) => {
+          if (finished) {
+            welcomeHeight.value = 0; // Collapse after fade completes
+          }
+        });
+      }, 5000);
 
-      welcomeHeight.value = withDelay(
-        5000,
-        withTiming(0, { duration: 500 })
-      );
+      return () => clearTimeout(timeout);
     }
   }, [recommendations.length]);
 
@@ -282,20 +282,20 @@ export default function RecommendationFeedScreen() {
   };
 
   // Animated styles (must be defined before any conditional returns to follow Rules of Hooks)
-  const welcomeMessageStyle = useAnimatedStyle(() => ({
-    opacity: welcomeOpacity.value,
-    height: welcomeHeight.value,
-    transform: [
-      {
-        translateY: interpolate(
-          welcomeOpacity.value,
-          [0, 1],
-          [-10, 0],
-          Extrapolate.CLAMP
-        )
-      }
-    ]
-  }));
+  const welcomeMessageStyle = useAnimatedStyle(() => {
+    const scale = interpolate(
+      welcomeOpacity.value,
+      [0, 1],
+      [0.95, 1],
+      Extrapolate.CLAMP
+    );
+
+    return {
+      opacity: welcomeOpacity.value,
+      maxHeight: welcomeHeight.value,
+      transform: [{ scale }]
+    };
+  });
 
   // Render loading state
   if (loading) {
@@ -350,7 +350,7 @@ export default function RecommendationFeedScreen() {
         <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
           <Text style={[
             styles.welcomeText,
-            { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.85)' : 'rgba(0, 0, 0, 0.75)' }
+            { color: colorScheme === 'dark' ? '#FFFFFF' : '#000000' }
           ]}>
             Discover something great near you today
           </Text>
@@ -426,16 +426,16 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
-    overflow: 'hidden',
   },
   welcomeText: {
     fontSize: 18,
-    fontWeight: '500',
+    fontWeight: '600',
     textAlign: 'center',
-    letterSpacing: 0.3,
-    paddingVertical: Spacing.lg,
+    letterSpacing: 0.5,
   },
   listContent: {
     paddingHorizontal: Spacing.md,
