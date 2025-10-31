@@ -56,6 +56,21 @@ export default function RecommendationFeedScreen() {
   const firstCardTranslateY = useSharedValue(0); // Card starts at normal position
   const flatListRef = useRef<FlatList>(null);
 
+  // Rotating welcome messages (like Claude's loading messages)
+  const welcomeMessages = [
+    "Discover something great near you today",
+    "Let's find your next adventure",
+    "Ready to explore?",
+    "Your perfect day starts here",
+    "What catches your eye today?",
+    "Time to make some memories",
+    "Let's see what's out there",
+    "Find your next favorite spot",
+  ];
+  const [welcomeMessage] = useState(() =>
+    welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)]
+  );
+
   // Fetch recommendations
   const fetchRecommendations = async (showRefreshIndicator = false) => {
     if (!user) return;
@@ -355,7 +370,7 @@ export default function RecommendationFeedScreen() {
             styles.welcomeText,
             { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.65)' }
           ]}>
-            Discover something great near you today
+            {welcomeMessage}
           </Text>
         </Animated.View>
 
@@ -429,9 +444,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   welcomeContainer: {
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xs,
-    paddingBottom: Spacing.xs,
+    paddingHorizontal: Spacing.xl,
+    paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -440,6 +454,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Urbanist-Light',
     textAlign: 'center',
     letterSpacing: 0.3,
+    lineHeight: 24,
   },
   listContent: {
     paddingHorizontal: Spacing.md,
