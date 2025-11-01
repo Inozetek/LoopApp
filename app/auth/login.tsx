@@ -19,7 +19,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
 export default function LoginScreen() {
-  const { signIn, signInWithGoogle, signInWithFacebook, loading } = useAuth();
+  const { signIn, signInWithGoogle, signInWithFacebook, resetPassword, loading } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
@@ -72,6 +72,47 @@ export default function LoginScreen() {
     }
   }
 
+  function handleForgotPassword() {
+    if (!email.trim()) {
+      Alert.alert(
+        'Email Required',
+        'Please enter your email address to reset your password.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Reset Password',
+      `Send password reset instructions to ${email}?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Send',
+          onPress: async () => {
+            setIsLoading(true);
+            const { error } = await resetPassword(email);
+            setIsLoading(false);
+
+            if (error) {
+              Alert.alert(
+                'Error',
+                'Failed to send password reset email. Please check your email address and try again.',
+                [{ text: 'OK' }]
+              );
+            } else {
+              Alert.alert(
+                'Check Your Email',
+                `We've sent password reset instructions to ${email}. Please check your inbox and follow the link to reset your password.`,
+                [{ text: 'OK' }]
+              );
+            }
+          },
+        },
+      ]
+    );
+  }
+
   if (loading) {
     return (
       <ThemedView style={styles.container}>
@@ -120,6 +161,16 @@ export default function LoginScreen() {
               secureTextEntry
               editable={!isLoading}
             />
+
+            <TouchableOpacity
+              onPress={handleForgotPassword}
+              disabled={isLoading}
+              style={styles.forgotPasswordContainer}
+            >
+              <ThemedText style={[styles.forgotPasswordText, { color: colors.tint }]}>
+                Forgot Password?
+              </ThemedText>
+            </TouchableOpacity>
 
             <TouchableOpacity
               style={[styles.button, { backgroundColor: colors.tint }]}
@@ -210,6 +261,14 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: 16,
     fontSize: 16,
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginTop: -8,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   button: {
     height: 52,

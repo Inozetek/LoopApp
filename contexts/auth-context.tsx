@@ -15,6 +15,7 @@ interface AuthContextType {
   signInWithFacebook: () => Promise<{ error: Error | null; facebookToken?: string }>;
   signOut: () => Promise<{ error: Error | null }>;
   updateUserProfile: (userData: UserUpdate) => Promise<{ error: Error | null }>;
+  resetPassword: (email: string) => Promise<{ error: Error | null }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -281,6 +282,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function resetPassword(email: string) {
+    try {
+      console.log('Sending password reset email to:', email);
+
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: 'loopapp://auth/reset-password', // Deep link for password reset
+      });
+
+      if (error) throw error;
+
+      console.log('✅ Password reset email sent');
+      return { error: null };
+    } catch (error) {
+      console.error('Password reset error:', error);
+      return {
+        error: error instanceof Error ? error : new Error('Failed to send password reset email'),
+      };
+    }
+  }
+
   async function updateUserProfile(userData: UserUpdate) {
     if (!session?.user) {
       return { error: new Error('No authenticated user') };
@@ -314,6 +335,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithFacebook,
     signOut,
     updateUserProfile,
+    resetPassword,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
