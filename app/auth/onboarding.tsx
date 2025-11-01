@@ -18,7 +18,8 @@ import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { processReferralCode, completeReferral } from '@/services/referral-service';
-import { geocodeAddress } from '@/services/geocoding';
+import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
+import * as Location from 'expo-location';
 
 // Common interest categories for Loop
 const INTEREST_OPTIONS = [
@@ -50,6 +51,7 @@ export default function OnboardingScreen() {
 
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingLocation, setIsFetchingLocation] = useState(false);
 
   // Step 1: Basic info
   const [name, setName] = useState('');
@@ -70,6 +72,65 @@ export default function OnboardingScreen() {
       } else {
         Alert.alert('Maximum Interests', 'You can select up to 10 interests');
       }
+    }
+  }
+
+  async function useCurrentLocation() {
+    setIsFetchingLocation(true);
+
+    try {
+      console.log('📍 Requesting location permission...');
+
+      // Request foreground location permission
+      const { status } = await Location.requestForegroundPermissionsAsync();
+
+      if (status !== 'granted') {
+        Alert.alert(
+          'Permission Denied',
+          'Loop needs location access to find activities near you and auto-fill your address.',
+          [{ text: 'OK' }]
+        );
+        setIsFetchingLocation(false);
+        return;
+      }
+
+      console.log('✅ Location permission granted');
+      console.log('📍 Getting current location...');
+
+      // Get current position
+      const location = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced,
+      });
+
+      console.log(`📍 Location: ${location.coords.latitude}, ${location.coords.longitude}`);
+
+      // Reverse geocode to get address
+      const result = await reverseGeocode(
+        location.coords.latitude,
+        location.coords.longitude
+      );
+
+      console.log(`✅ Reverse geocoded: ${result.formattedAddress}`);
+
+      // Auto-fill home address
+      setHomeAddress(result.formattedAddress);
+
+      Alert.alert(
+        'Location Found',
+        'Your home address has been auto-filled. You can edit it if needed.',
+        [{ text: 'OK' }]
+      );
+
+      setIsFetchingLocation(false);
+    } catch (error) {
+      setIsFetchingLocation(false);
+      console.error('❌ Location error:', error);
+
+      Alert.alert(
+        'Location Error',
+        'Failed to get your current location. Please enter your address manually.',
+        [{ text: 'OK' }]
+      );
     }
   }
 
@@ -335,6 +396,29 @@ export default function OnboardingScreen() {
         </ThemedText>
 
         <View style={styles.form}>
+          {/* Use Current Location Button */}
+          <TouchableOpacity
+            style={[
+              styles.locationButton,
+              {
+                backgroundColor: colors.tint + '15',
+                borderColor: colors.tint,
+              },
+            ]}
+            onPress={useCurrentLocation}
+            disabled={isLoading || isFetchingLocation}
+          >
+            {isFetchingLocation ? (
+              <ActivityIndicator size="small" color={colors.tint} />
+            ) : (
+              <Text style={[styles.locationButtonText, { color: colors.tint }]}>
+                📍 Use Current Location
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <ThemedText style={styles.dividerText}>or enter manually</ThemedText>
+
           <ThemedText style={styles.label}>Home Address *</ThemedText>
           <TextInput
             style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
@@ -343,7 +427,7 @@ export default function OnboardingScreen() {
             value={homeAddress}
             onChangeText={setHomeAddress}
             autoCapitalize="words"
-            editable={!isLoading}
+            editable={!isLoading && !isFetchingLocation}
           />
 
           <ThemedText style={styles.label}>Work Address (Optional)</ThemedText>
@@ -354,7 +438,7 @@ export default function OnboardingScreen() {
             value={workAddress}
             onChangeText={setWorkAddress}
             autoCapitalize="words"
-            editable={!isLoading}
+            editable={!isLoading && !isFetchingLocation}
           />
 
           <ThemedText style={styles.helperText}>
@@ -483,6 +567,25 @@ const styles = StyleSheet.create({
   },
   form: {
     gap: 8,
+  },
+  locationButton: {
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  locationButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  dividerText: {
+    textAlign: 'center',
+    fontSize: 13,
+    opacity: 0.5,
+    marginBottom: 16,
+    marginTop: -8,
   },
   label: {
     fontSize: 14,
