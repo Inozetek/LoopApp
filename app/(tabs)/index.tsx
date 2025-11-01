@@ -53,7 +53,7 @@ export default function RecommendationFeedScreen() {
   // Welcome message animation
   const welcomeOpacity = useSharedValue(0);
   const welcomeHeight = useSharedValue(0); // Start with 0 height
-  const firstCardTranslateY = useSharedValue(0); // Card starts at normal position
+  const feedOpacity = useSharedValue(0); // Feed starts invisible
   const flatListRef = useRef<FlatList>(null);
 
   // Rotating welcome messages (like Claude's loading messages)
@@ -244,11 +244,16 @@ export default function RecommendationFeedScreen() {
       welcomeHeight.value = 60; // Reduced height for less space
       welcomeOpacity.value = withTiming(1, { duration: 400 });
 
-      // After 5 seconds, fade out slowly and collapse
+      // Start feed invisible
+      feedOpacity.value = 0;
+
+      // After 5 seconds, fade out welcome and fade in feed
       const timeout = setTimeout(() => {
         welcomeOpacity.value = withTiming(0, { duration: 800 }, (finished) => {
           if (finished) {
             welcomeHeight.value = 0; // Collapse after fade completes
+            // Fade in feed after welcome disappears
+            feedOpacity.value = withTiming(1, { duration: 600 });
           }
         });
       }, 5000);
@@ -316,6 +321,12 @@ export default function RecommendationFeedScreen() {
     };
   });
 
+  const feedStyle = useAnimatedStyle(() => {
+    return {
+      opacity: feedOpacity.value,
+    };
+  });
+
   // Render loading state
   if (loading) {
     return (
@@ -375,7 +386,7 @@ export default function RecommendationFeedScreen() {
           </Text>
         </Animated.View>
 
-        <FlatList
+        <Animated.FlatList
           ref={flatListRef}
           data={recommendations}
           renderItem={({ item, index }) => (
@@ -397,6 +408,7 @@ export default function RecommendationFeedScreen() {
               colors={[BrandColors.loopBlue]}
             />
           }
+          style={feedStyle}
         />
 
         {/* Schedule Modal */}
