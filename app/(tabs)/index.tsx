@@ -244,18 +244,13 @@ export default function RecommendationFeedScreen() {
       welcomeHeight.value = 60; // Reduced height for less space
       welcomeOpacity.value = withTiming(1, { duration: 400 });
 
-      // Start feed invisible
-      feedOpacity.value = 0;
+      // Feed is always visible
+      feedOpacity.value = 1;
 
-      // After 5 seconds, fade out welcome and fade in feed
+      // After 5 seconds, fade out welcome and collapse gap
       const timeout = setTimeout(() => {
-        welcomeOpacity.value = withTiming(0, { duration: 800 }, (finished) => {
-          if (finished) {
-            welcomeHeight.value = 0; // Collapse after fade completes
-            // Fade in feed after welcome disappears
-            feedOpacity.value = withTiming(1, { duration: 600 });
-          }
-        });
+        welcomeOpacity.value = withTiming(0, { duration: 600 });
+        welcomeHeight.value = withTiming(0, { duration: 600 }); // Collapse gap smoothly
       }, 5000);
 
       return () => clearTimeout(timeout);
