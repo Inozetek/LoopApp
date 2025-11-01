@@ -20,6 +20,7 @@ import { Colors } from '@/constants/theme';
 import { processReferralCode, completeReferral } from '@/services/referral-service';
 import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
+import { requestCalendarPermissions, syncCalendarToDatabase } from '@/services/calendar-service';
 
 // Common interest categories for Loop
 const INTEREST_OPTIONS = [
@@ -52,6 +53,8 @@ export default function OnboardingScreen() {
   const [step, setStep] = useState(1);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
+  const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
+  const [calendarSynced, setCalendarSynced] = useState(false);
 
   // Step 1: Basic info
   const [name, setName] = useState('');
@@ -129,6 +132,71 @@ export default function OnboardingScreen() {
       Alert.alert(
         'Location Error',
         'Failed to get your current location. Please enter your address manually.',
+        [{ text: 'OK' }]
+      );
+    }
+  }
+
+  async function handleConnectCalendar() {
+    if (!session?.user?.id) {
+      Alert.alert('Error', 'Please complete onboarding first');
+      return;
+    }
+
+    setIsSyncingCalendar(true);
+
+    try {
+      console.log('📅 Requesting calendar permissions...');
+
+      // Request calendar permissions
+      const result = await requestCalendarPermissions();
+
+      if (!result.granted) {
+        Alert.alert(
+          'Permission Denied',
+          'Loop needs calendar access to find your free time and suggest activities. You can enable this later in settings.',
+          [{ text: 'OK' }]
+        );
+        setIsSyncingCalendar(false);
+        return;
+      }
+
+      console.log('✅ Calendar permissions granted');
+      console.log('🔄 Syncing calendar events...');
+
+      // Sync calendar events to database
+      const syncResult = await syncCalendarToDatabase(session.user.id, 30); // Sync next 30 days
+
+      setIsSyncingCalendar(false);
+
+      if (syncResult.success) {
+        setCalendarSynced(true);
+        Alert.alert(
+          'Calendar Connected',
+          `Successfully synced ${syncResult.eventsSynced} events. Loop will use your calendar to find free time and suggest activities.`,
+          [{ text: 'Great!' }]
+        );
+      } else if (syncResult.eventsSynced > 0) {
+        setCalendarSynced(true);
+        Alert.alert(
+          'Partial Success',
+          `Synced ${syncResult.eventsSynced} events, but encountered some errors. You can continue and sync more later.`,
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'Sync Failed',
+          'Failed to sync calendar events. You can try again later in settings.',
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      setIsSyncingCalendar(false);
+      console.error('❌ Calendar sync error:', error);
+
+      Alert.alert(
+        'Sync Error',
+        'An error occurred while syncing your calendar. You can try again later in settings.',
         [{ text: 'OK' }]
       );
     }
@@ -444,6 +512,42 @@ export default function OnboardingScreen() {
           <ThemedText style={styles.helperText}>
             We'll use your work address to suggest activities along your commute
           </ThemedText>
+
+          {/* Calendar Connection Section */}
+          <View style={styles.calendarSection}>
+            <ThemedText style={styles.sectionTitle}>Connect Your Calendar (Optional)</ThemedText>
+            <ThemedText style={styles.sectionSubtitle}>
+              Loop will find free time in your schedule and suggest activities
+            </ThemedText>
+
+            <TouchableOpacity
+              style={[
+                styles.calendarButton,
+                {
+                  backgroundColor: calendarSynced ? colors.tint + '20' : colors.tint + '15',
+                  borderColor: calendarSynced ? '#10b981' : colors.tint,
+                },
+              ]}
+              onPress={handleConnectCalendar}
+              disabled={isLoading || isFetchingLocation || isSyncingCalendar || calendarSynced}
+            >
+              {isSyncingCalendar ? (
+                <ActivityIndicator size="small" color={colors.tint} />
+              ) : calendarSynced ? (
+                <Text style={[styles.calendarButtonText, { color: '#10b981' }]}>
+                  ✓ Calendar Connected
+                </Text>
+              ) : (
+                <Text style={[styles.calendarButtonText, { color: colors.tint }]}>
+                  📅 Connect Calendar
+                </Text>
+              )}
+            </TouchableOpacity>
+
+            <ThemedText style={styles.skipText}>
+              You can skip this and connect your calendar later in settings
+            </ThemedText>
+          </View>
         </View>
       </View>
     );
@@ -596,6 +700,37 @@ const styles = StyleSheet.create({
     fontSize: 12,
     opacity: 0.6,
     marginTop: 4,
+  },
+  calendarSection: {
+    marginTop: 32,
+    gap: 12,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+    opacity: 0.7,
+    marginTop: -4,
+  },
+  calendarButton: {
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  calendarButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  skipText: {
+    fontSize: 12,
+    opacity: 0.5,
+    textAlign: 'center',
+    marginTop: -4,
   },
   buttonContainer: {
     flexDirection: 'row',
