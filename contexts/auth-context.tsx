@@ -20,7 +20,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // DEMO MODE: Mock user for quick demos without auth
-const DEMO_MODE = true;
+const DEMO_MODE = false;
 const MOCK_USER: User = {
   id: '00000000-0000-0000-0000-000000000001', // Valid UUID for demo mode
   email: 'demo@loop.app',
