@@ -18,6 +18,7 @@ import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { processReferralCode, completeReferral } from '@/services/referral-service';
+import { geocodeAddress } from '@/services/geocoding';
 
 // Common interest categories for Loop
 const INTEREST_OPTIONS = [
@@ -105,15 +106,50 @@ export default function OnboardingScreen() {
     setIsLoading(true);
 
     try {
-      // In a real app, you'd geocode these addresses to get lat/lng coordinates
-      // For now, we'll just save the addresses as strings
-      // TODO: Integrate geocoding service (Google Maps, Mapbox, etc.)
+      // Geocode home address (required)
+      console.log('🗺️ Geocoding home address...');
+      const homeResult = await geocodeAddress(homeAddress.trim());
+
+      // Geocode work address (optional)
+      let workResult = null;
+      if (workAddress.trim()) {
+        console.log('🗺️ Geocoding work address...');
+        try {
+          workResult = await geocodeAddress(workAddress.trim());
+        } catch (error) {
+          console.error('⚠️ Work address geocoding failed, continuing without it:', error);
+          Alert.alert(
+            'Invalid Work Address',
+            'We couldn\'t find your work address. You can add it later in settings.',
+            [{ text: 'OK' }]
+          );
+        }
+      }
+
+      // Convert to PostGIS format: { type: 'Point', coordinates: [lng, lat] }
+      const homeLocation = {
+        type: 'Point',
+        coordinates: [homeResult.longitude, homeResult.latitude]
+      };
+
+      const workLocation = workResult ? {
+        type: 'Point',
+        coordinates: [workResult.longitude, workResult.latitude]
+      } : null;
+
+      console.log('✅ Addresses geocoded successfully');
+      console.log(`📍 Home: ${homeResult.formattedAddress} (${homeResult.latitude}, ${homeResult.longitude})`);
+      if (workResult) {
+        console.log(`📍 Work: ${workResult.formattedAddress} (${workResult.latitude}, ${workResult.longitude})`);
+      }
 
       const { error } = await updateUserProfile({
         name: name.trim(),
         interests: selectedInterests,
-        home_address: homeAddress.trim(),
-        work_address: workAddress.trim() || null,
+        home_address: homeResult.formattedAddress,
+        home_location: homeLocation as any, // PostGIS geography type
+        work_address: workResult?.formattedAddress || null,
+        work_location: workLocation as any, // PostGIS geography type
         preferences: {
           budget: 50,
           max_distance_miles: 10,
@@ -168,12 +204,38 @@ export default function OnboardingScreen() {
           }
         }
 
+        console.log('✅ Onboarding complete, navigating to app...');
         // Navigate to main app
         router.replace('/(tabs)');
       }
     } catch (error) {
       setIsLoading(false);
-      Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+      console.error('❌ Onboarding error:', error);
+
+      // Provide helpful error message based on error type
+      if (error instanceof Error) {
+        if (error.message.includes('No results found')) {
+          Alert.alert(
+            'Invalid Address',
+            'We couldn\'t find that address. Please check and try again.',
+            [{ text: 'OK' }]
+          );
+        } else if (error.message.includes('Geocoding request denied')) {
+          Alert.alert(
+            'Configuration Error',
+            'There\'s an issue with our geocoding service. Please contact support.',
+            [{ text: 'OK' }]
+          );
+        } else {
+          Alert.alert(
+            'Error',
+            'An error occurred while setting up your profile. Please try again.',
+            [{ text: 'OK' }]
+          );
+        }
+      } else {
+        Alert.alert('Error', 'An unexpected error occurred. Please try again.');
+      }
     }
   }
 
