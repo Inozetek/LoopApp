@@ -311,6 +311,7 @@ export default function RecommendationFeedScreen() {
     return {
       opacity: welcomeOpacity.value,
       maxHeight: welcomeHeight.value,
+      paddingVertical: welcomeHeight.value > 0 ? Spacing.md : 0,
       transform: [{ scale }]
     };
   });
@@ -445,9 +446,9 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     paddingHorizontal: Spacing.xl,
-    paddingVertical: Spacing.md,
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   welcomeText: {
     fontSize: 17,
