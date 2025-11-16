@@ -248,22 +248,50 @@ The Loop App MVP is now **100% COMPLETE** and ready for launch!
 
 ## 💰 Cost Estimate (Production)
 
-### Monthly Costs at 1,000 Users
+### Monthly Costs at 1,000 Users (DEVELOPER-INCURRED)
 
-**Infrastructure:**
+**Infrastructure Costs (You Pay):**
 - Supabase (Pro): $25/month
 - Render/Railway (Backend): $7-25/month
 - **Subtotal:** $32-50/month
 
-**Optional Services:**
+**Optional Services (You Pay):**
 - Sentry (Errors): $0-26/month (free tier → business)
 - PostHog (Analytics): $0/month (1M events free)
-- Google Places API: $50-200/month (with caching optimization)
-- **Subtotal:** $0-226/month
+- Google Places API: ~~$50-200/month~~ → **$3.80/month with weekly caching** (see GOOGLE_PLACES_CACHING_STRATEGY.md)
+- **Subtotal:** $3.80-26/month
 
-**Total Estimated Cost:** $82-276/month for 1,000 active users
+**Total Developer Cost:** $35.80-76/month for 1,000 active users
 
-**Per User:** $0.08-0.28/month (sustainable with $4.99 subscription)
+**Per User Cost to You:** $0.036-0.076/month
+
+---
+
+### User-Facing Revenue (They Pay You)
+
+**Subscription Revenue:**
+- 8-12% of 1,000 users = 80-120 users on Loop Plus ($4.99/month)
+- Monthly revenue: $399-599/month
+- 1-2% on Loop Premium ($9.99/month) = 10-20 users
+- Monthly revenue: $100-200/month
+- **Total subscription revenue: $499-799/month**
+
+**Ad Revenue (Free Tier):**
+- 880-910 free users × $0.35-0.60 per user = $308-546/month
+
+**Total User Revenue:** $807-1,345/month
+
+---
+
+### Net Profit at 1,000 Users
+
+**Revenue:** $807-1,345/month
+**Costs:** $35.80-76/month
+**Net Profit:** $731-1,309/month ($8,772-15,708/year)
+
+**Profit Margin:** 90-95% (sustainable and scalable!)
+
+**Important:** With weekly caching strategy, costs are FIXED regardless of user count. Scaling to 10K users = same $35.80-76/month cost = $70K-130K/year profit!
 
 ---
 
@@ -591,7 +619,7 @@ We built something incredible. The Loop App MVP is:
 ---
 
 *Built with ❤️ and Claude Code*
-*October 2024 - MVP Complete*
+*October 2025 - MVP Complete*
 *Status: 100% 🎊*
 
 ---
