@@ -14,6 +14,7 @@ import { BrandColors, Typography, Spacing } from '@/constants/brand';
 let MapView: any;
 let Marker: any;
 let Polyline: any;
+let Callout: any;
 let PROVIDER_GOOGLE: any;
 
 if (Platform.OS !== 'web') {
@@ -21,6 +22,7 @@ if (Platform.OS !== 'web') {
   MapView = maps.default;
   Marker = maps.Marker;
   Polyline = maps.Polyline;
+  Callout = maps.Callout;
   PROVIDER_GOOGLE = maps.PROVIDER_GOOGLE;
 }
 
@@ -149,7 +151,7 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
           </View>
         </Marker>
 
-        {/* Task Markers (Numbered) */}
+        {/* Task Markers (Numbered) with Labels */}
         {tasks.map((task, index) => (
           <Marker
             key={task.id}
@@ -161,14 +163,42 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
             description={task.address}
             onPress={() => onTaskPress?.(task.id)}
           >
-            <View
-              style={[
-                styles.taskMarker,
-                { backgroundColor: getCategoryColor(task.category) },
-              ]}
-            >
-              <Text style={styles.taskNumber}>{index + 1}</Text>
+            <View style={styles.markerContainer}>
+              {/* Label above pin (always visible) - like Google Maps */}
+              <View style={styles.markerLabel}>
+                <Text style={styles.markerLabelText} numberOfLines={1}>
+                  {task.title}
+                </Text>
+              </View>
+              {/* Pin with number */}
+              <View
+                style={[
+                  styles.taskMarker,
+                  { backgroundColor: getCategoryColor(task.category) },
+                ]}
+              >
+                <Text style={styles.taskNumber}>{index + 1}</Text>
+              </View>
             </View>
+
+            {/* Callout (shown when tapped) */}
+            <Callout onPress={() => onTaskPress?.(task.id)}>
+              <View style={styles.calloutContainer}>
+                <Text style={styles.calloutTitle} numberOfLines={2}>
+                  {task.title}
+                </Text>
+                <Text style={styles.calloutSubtitle} numberOfLines={2}>
+                  {task.address}
+                </Text>
+                <Text style={styles.calloutTime}>
+                  {new Date(task.start_time).toLocaleTimeString('en-US', {
+                    hour: 'numeric',
+                    minute: '2-digit',
+                  })}
+                </Text>
+                <Text style={styles.calloutTap}>Tap to view details</Text>
+              </View>
+            </Callout>
           </Marker>
         ))}
 
@@ -255,6 +285,10 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
   },
+  markerContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   taskMarker: {
     width: 36,
     height: 36,
@@ -273,6 +307,53 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  markerLabel: {
+    marginBottom: 4, // Space between label and pin (changed from marginTop)
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+    maxWidth: 120,
+  },
+  markerLabelText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#1a1a1a',
+    textAlign: 'center',
+  },
+  calloutContainer: {
+    padding: 12,
+    minWidth: 200,
+    maxWidth: 250,
+  },
+  calloutTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    marginBottom: 6,
+  },
+  calloutSubtitle: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 6,
+  },
+  calloutTime: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: BrandColors.loopBlue,
+    marginBottom: 8,
+  },
+  calloutTap: {
+    fontSize: 11,
+    color: '#999',
+    fontStyle: 'italic',
+    textAlign: 'center',
   },
   statsOverlay: {
     position: 'absolute',

@@ -84,6 +84,12 @@ export default function RecommendationFeedScreen() {
 
       console.log('🔄 Fetching recommendations...');
 
+      // Log API usage summary before fetching (if API key is enabled)
+      if (process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY) {
+        const { logAPIUsageSummary } = await import('@/utils/api-cost-tracker');
+        await logAPIUsageSummary();
+      }
+
       // Get user's current location
       const location = await getCurrentLocation();
       const userLocation: PlaceLocation = {
@@ -156,6 +162,8 @@ export default function RecommendationFeedScreen() {
           reviewsCount: s.place.user_ratings_total,
           priceRange: s.place.price_level || 2,
           photoUrl: s.photoUrl,
+          phone: s.place.formatted_phone_number,
+          website: s.place.website,
           googlePlaceId: s.place.place_id,
         },
       }));

@@ -24,7 +24,8 @@ function RootLayoutNav() {
   const { session, user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  const colorScheme = useColorScheme();
+  // Force dark mode for demo
+  const colorScheme = 'dark'; // useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
   // Validate configuration on startup
@@ -40,7 +41,7 @@ function RootLayoutNav() {
 
     // DEMO MODE: Skip auth for quick mentor demo
     // TODO: Remove this after demo - re-enable auth
-    const DEMO_MODE = false;
+    const DEMO_MODE = true;
     if (DEMO_MODE) {
       if (inAuthGroup) {
         router.replace('/(tabs)');
@@ -85,7 +86,8 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
+  // Force dark mode for demo
+  const colorScheme = 'dark'; // useColorScheme();
 
   // Load Urbanist font
   const [fontsLoaded] = useFonts({

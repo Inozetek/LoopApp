@@ -10,7 +10,12 @@ import {
   Alert,
   Platform,
   Animated,
+  Dimensions,
+  Keyboard,
+  TouchableWithoutFeedback,
+  KeyboardAvoidingView,
 } from 'react-native';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Calendar, DateData } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -25,6 +30,8 @@ import { FeedbackModal } from '@/components/feedback-modal';
 import { CalendarEventSkeleton } from '@/components/skeleton-loader';
 import { LoopMapView } from '@/components/loop-map-view';
 import { SwipeableLayout } from './swipeable-layout';
+import { LocationAutocomplete } from '@/components/location-autocomplete';
+import { getCurrentLocation } from '@/services/location-service';
 import {
   getPendingFeedbackActivities,
   markEventAsCompleted,
@@ -58,6 +65,69 @@ const CATEGORIES = [
   { id: 'other', label: 'Other', icon: 'ellipsis-horizontal', color: '#C7CEEA' },
 ];
 
+// Map Google place types to calendar categories
+function getCategoryFromPlaceTypes(types: string[]): string {
+  if (!types || types.length === 0) return 'personal';
+
+  // Check types in priority order
+  const typeMap: { [key: string]: string } = {
+    // Dining
+    'restaurant': 'dining',
+    'cafe': 'dining',
+    'bar': 'dining',
+    'bakery': 'dining',
+    'meal_takeaway': 'dining',
+    'meal_delivery': 'dining',
+    'food': 'dining',
+
+    // Fitness
+    'gym': 'fitness',
+    'spa': 'fitness',
+    'stadium': 'fitness',
+    'park': 'fitness',
+
+    // Entertainment
+    'movie_theater': 'entertainment',
+    'night_club': 'entertainment',
+    'bowling_alley': 'entertainment',
+    'amusement_park': 'entertainment',
+    'aquarium': 'entertainment',
+    'art_gallery': 'entertainment',
+    'museum': 'entertainment',
+    'library': 'entertainment',
+    'zoo': 'entertainment',
+
+    // Work
+    'office': 'work',
+    'accounting': 'work',
+    'lawyer': 'work',
+    'courthouse': 'work',
+
+    // Travel
+    'airport': 'travel',
+    'bus_station': 'travel',
+    'train_station': 'travel',
+    'transit_station': 'travel',
+    'car_rental': 'travel',
+    'lodging': 'travel',
+    'hotel': 'travel',
+
+    // Social
+    'shopping_mall': 'social',
+    'store': 'social',
+    'clothing_store': 'social',
+  };
+
+  // Find first matching type
+  for (const type of types) {
+    if (typeMap[type]) {
+      return typeMap[type];
+    }
+  }
+
+  return 'personal'; // Default fallback
+}
+
 export default function CalendarScreen() {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
@@ -77,14 +147,23 @@ export default function CalendarScreen() {
   const [newTaskCategory, setNewTaskCategory] = useState('personal');
   const [newTaskDate, setNewTaskDate] = useState(new Date());
   const [newTaskTime, setNewTaskTime] = useState(new Date());
-  const [newTaskDuration, setNewTaskDuration] = useState(1); // hours
+  const [newTaskEndTime, setNewTaskEndTime] = useState(() => {
+    const end = new Date();
+    end.setHours(end.getHours() + 1); // Default 1 hour later
+    return end;
+  });
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [newTaskAddress, setNewTaskAddress] = useState('');
+  const [newTaskLocation, setNewTaskLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Feedback modal state
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackActivity, setFeedbackActivity] = useState<CompletedActivity | null>(null);
+
+  // User's current location for autocomplete biasing
+  const [currentUserLocation, setCurrentUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
   // Animation for events list
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -93,6 +172,51 @@ export default function CalendarScreen() {
     loadEvents();
     checkForPendingFeedback();
   }, [selectedDate]);
+
+  // Smart default end time based on category
+  useEffect(() => {
+    const categoryDurations: Record<string, number> = {
+      dining: 1.5,
+      entertainment: 2,
+      fitness: 1,
+      social: 2,
+      work: 4,
+      personal: 1,
+      travel: 2,
+      other: 1,
+    };
+
+    const durationHours = categoryDurations[newTaskCategory] || 1;
+    const newEndTime = new Date(newTaskTime);
+    newEndTime.setHours(newEndTime.getHours() + durationHours);
+    setNewTaskEndTime(newEndTime);
+  }, [newTaskCategory, newTaskTime]);
+
+  // Fetch user's current location on mount for autocomplete biasing
+  useEffect(() => {
+    const fetchUserLocation = async () => {
+      try {
+        const location = await getCurrentLocation();
+        setCurrentUserLocation({
+          latitude: location.latitude,
+          longitude: location.longitude,
+        });
+        console.log(`📍 User location for autocomplete: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
+      } catch (error) {
+        console.warn('Could not get user location for autocomplete:', error);
+        // Fallback to user's home location if available
+        if (user?.home_location) {
+          const homeCoords = user.home_location as any;
+          setCurrentUserLocation({
+            latitude: homeCoords.coordinates[1],
+            longitude: homeCoords.coordinates[0],
+          });
+        }
+      }
+    };
+
+    fetchUserLocation();
+  }, [user]);
 
   useEffect(() => {
     // Fade in events when they load
@@ -178,8 +302,11 @@ export default function CalendarScreen() {
     setNewTaskCategory('personal');
     setNewTaskDate(new Date());
     setNewTaskTime(new Date());
-    setNewTaskDuration(1);
+    const defaultEndTime = new Date();
+    defaultEndTime.setHours(defaultEndTime.getHours() + 1);
+    setNewTaskEndTime(defaultEndTime);
     setNewTaskAddress('');
+    setNewTaskLocation(null);
   };
 
   const createEvent = async () => {
@@ -196,22 +323,18 @@ export default function CalendarScreen() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     try {
-      // Combine date and time
+      // Combine date and time for start
       const startDateTime = new Date(newTaskDate);
       startDateTime.setHours(newTaskTime.getHours());
       startDateTime.setMinutes(newTaskTime.getMinutes());
 
-      const endDateTime = new Date(startDateTime);
-      // Use selected duration (0 = all day, handled below)
-      if (newTaskDuration > 0) {
-        endDateTime.setHours(endDateTime.getHours() + newTaskDuration);
-      } else {
-        // All day event: end at 11:59pm
-        endDateTime.setHours(23, 59, 0, 0);
-      }
+      // Combine date and time for end
+      const endDateTime = new Date(newTaskDate);
+      endDateTime.setHours(newTaskEndTime.getHours());
+      endDateTime.setMinutes(newTaskEndTime.getMinutes());
 
-      // For MVP, use default coordinates (will be replaced with real geocoding)
-      const location = {
+      // Use selected location from autocomplete, or fallback to Dallas coordinates
+      const location = newTaskLocation || {
         latitude: 32.7767, // Dallas default
         longitude: -96.797,
       };
@@ -527,18 +650,23 @@ export default function CalendarScreen() {
 
       {/* Create Task Modal */}
       <Modal visible={showCreateModal} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
-            <View style={styles.modalHeader}>
-              <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Create Task
-              </Text>
-              <TouchableOpacity onPress={closeCreateModal}>
-                <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
-              </TouchableOpacity>
-            </View>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1, justifyContent: 'flex-end' }}
+            >
+              <View style={[styles.modalContent, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
+                    Create Task
+                  </Text>
+                  <TouchableOpacity onPress={closeCreateModal}>
+                    <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
+                  </TouchableOpacity>
+                </View>
 
-            <ScrollView style={styles.formContainer}>
+                <ScrollView style={styles.formContainer} keyboardShouldPersistTaps="handled">
               {/* Title */}
               <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
                 Title *
@@ -638,71 +766,93 @@ export default function CalendarScreen() {
                 />
               )}
 
-              {/* Duration */}
+              {/* End Time */}
               <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Duration
+                End Time
               </Text>
-              <View style={styles.durationContainer}>
-                {[
-                  { label: '30 min', value: 0.5 },
-                  { label: '1 hour', value: 1 },
-                  { label: '2 hours', value: 2 },
-                  { label: '3 hours', value: 3 },
-                  { label: 'All Day', value: 0 },
-                ].map((option) => (
-                  <TouchableOpacity
-                    key={option.value}
-                    style={[
-                      styles.durationButton,
-                      {
-                        backgroundColor: newTaskDuration === option.value
-                          ? BrandColors.loopBlue
-                          : (isDark ? '#2f3133' : '#f5f5f5'),
-                        borderColor: newTaskDuration === option.value
-                          ? BrandColors.loopBlue
-                          : (isDark ? '#404040' : '#e0e0e0'),
-                      },
-                    ]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      setNewTaskDuration(option.value);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        Typography.bodyMedium,
-                        {
-                          color: newTaskDuration === option.value
-                            ? '#ffffff'
-                            : Colors[colorScheme ?? 'light'].text,
-                          fontWeight: newTaskDuration === option.value ? '600' : '400',
-                        },
-                      ]}
-                    >
-                      {option.label}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
+              <TouchableOpacity
+                style={[styles.datePickerButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}
+                onPress={() => setShowEndTimePicker(true)}
+              >
+                <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
+                <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                  {newTaskEndTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                </Text>
+              </TouchableOpacity>
+              {showEndTimePicker && (
+                <DateTimePicker
+                  value={newTaskEndTime}
+                  mode="time"
+                  display="default"
+                  onChange={(event, selectedTime) => {
+                    setShowEndTimePicker(false);
+                    if (selectedTime) {
+                      setNewTaskEndTime(selectedTime);
+                    }
+                  }}
+                />
+              )}
 
               {/* Location */}
               <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
                 Location *
               </Text>
-              <TextInput
-                style={[
-                  styles.input,
-                  Typography.bodyLarge,
-                  {
-                    backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
-                    color: Colors[colorScheme ?? 'light'].text,
-                  },
-                ]}
+              <LocationAutocomplete
                 value={newTaskAddress}
                 onChangeText={setNewTaskAddress}
-                placeholder="Enter address or place name"
-                placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
+                onSelectLocation={(location) => {
+                  setNewTaskAddress(location.address);
+                  setNewTaskLocation({
+                    latitude: location.latitude,
+                    longitude: location.longitude,
+                  });
+
+                  // Auto-select category based on place types
+                  if (location.types && location.types.length > 0) {
+                    const suggestedCategory = getCategoryFromPlaceTypes(location.types);
+                    setNewTaskCategory(suggestedCategory);
+                    console.log(`📍 Auto-selected category: ${suggestedCategory} (from types: ${location.types.join(', ')})`);
+                  }
+                }}
+                placeholder="Search for a location"
+                isDark={isDark}
+                userLocation={currentUserLocation || undefined}
               />
+
+              {/* Map Preview */}
+              {newTaskLocation && (
+                <View style={styles.mapPreview}>
+                  <MapView
+                    provider={PROVIDER_GOOGLE}
+                    style={styles.map}
+                    initialRegion={{
+                      latitude: newTaskLocation.latitude,
+                      longitude: newTaskLocation.longitude,
+                      latitudeDelta: 0.01,
+                      longitudeDelta: 0.01,
+                    }}
+                    scrollEnabled={true}
+                    zoomEnabled={true}
+                    pitchEnabled={false}
+                    rotateEnabled={true}
+                  >
+                    <Marker
+                      coordinate={{
+                        latitude: newTaskLocation.latitude,
+                        longitude: newTaskLocation.longitude,
+                      }}
+                      pinColor={BrandColors.loopBlue}
+                    />
+                  </MapView>
+                  {/* Map instruction hint */}
+                  <View style={styles.mapHint}>
+                    <Ionicons name="information-circle" size={14} color={Colors[colorScheme ?? 'light'].icon} />
+                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 4 }]}>
+                      Pinch to zoom • Drag to explore
+                    </Text>
+                  </View>
+                </View>
+              )}
 
               {/* Category */}
               <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
@@ -758,9 +908,11 @@ export default function CalendarScreen() {
               >
                 <Text style={[Typography.labelLarge, { color: '#ffffff' }]}>Create Task</Text>
               </TouchableOpacity>
-            </ScrollView>
+                </ScrollView>
+              </View>
+            </KeyboardAvoidingView>
           </View>
-        </View>
+        </TouchableWithoutFeedback>
       </Modal>
 
       {/* Feedback Modal */}
@@ -950,20 +1102,6 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     marginBottom: Spacing.sm,
   },
-  durationContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: Spacing.sm,
-    marginBottom: Spacing.md,
-  },
-  durationButton: {
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
-    borderWidth: 1.5,
-    minWidth: 70,
-    alignItems: 'center',
-  },
   categoryGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -992,5 +1130,29 @@ const styles = StyleSheet.create({
     marginTop: Spacing.lg,
     marginBottom: Spacing.xl * 2,
     ...Shadows.md,
+  },
+  mapPreview: {
+    height: 200,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+    marginBottom: Spacing.md,
+    marginTop: Spacing.sm,
+    position: 'relative',
+  },
+  map: {
+    flex: 1,
+  },
+  mapHint: {
+    position: 'absolute',
+    bottom: Spacing.sm,
+    left: Spacing.sm,
+    right: Spacing.sm,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

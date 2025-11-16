@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,6 +29,7 @@ import * as Haptics from 'expo-haptics';
 import { BrandColors, Spacing, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useAuth } from '@/contexts/auth-context';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -53,6 +54,7 @@ export function LoopHeader({
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
+  const { signOut, user } = useAuth();
 
   // Animated values for swipe gesture
   const translateY = useSharedValue(0);
@@ -132,6 +134,39 @@ export function LoopHeader({
     if (onDashboardOpen) {
       onDashboardOpen();
     }
+  };
+
+  const handleSettingsPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (onSettingsPress) {
+      onSettingsPress();
+      return;
+    }
+
+    // Default settings menu with logout option
+    Alert.alert(
+      'Settings',
+      user?.name ? `Signed in as ${user.name}` : 'Account Options',
+      [
+        {
+          text: 'Logout',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await signOut();
+            if (error) {
+              Alert.alert('Error', 'Failed to logout. Please try again.');
+            } else {
+              router.replace('/auth/login');
+            }
+          },
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
   // Swipe-down gesture from logo area
@@ -225,7 +260,7 @@ export function LoopHeader({
           rightAction
         ) : showSettingsButton ? (
           <TouchableOpacity
-            onPress={onSettingsPress}
+            onPress={handleSettingsPress}
             style={styles.iconButton}
           >
             <Ionicons name="settings-outline" size={24} color={colors.text} />

@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
+  SafeAreaView,
 } from 'react-native';
 import { Link, router } from 'expo-router';
 import { useAuth } from '@/contexts/auth-context';
@@ -102,12 +103,16 @@ export default function SignupScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ScrollView contentContainerStyle={{ flexGrow: 1 }}>
-        <ThemedView style={styles.container}>
+    <SafeAreaView style={{ flex: 1 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ScrollView
+          contentContainerStyle={{ flexGrow: 1 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          <ThemedView style={styles.container}>
           <View style={styles.content}>
             <View style={styles.logoContainer}>
               <Image
@@ -115,11 +120,10 @@ export default function SignupScreen() {
                 style={styles.logo}
                 resizeMode="contain"
               />
+              <ThemedText style={styles.subtitle}>
+                Join Loop and never miss out on great experiences
+              </ThemedText>
             </View>
-            <ThemedText style={styles.title}>Create Account</ThemedText>
-            <ThemedText style={styles.subtitle}>
-              Join Loop and never miss out on great experiences
-            </ThemedText>
 
             <View style={styles.form}>
               <TextInput
@@ -214,9 +218,10 @@ export default function SignupScreen() {
               </View>
             </View>
           </View>
-        </ThemedView>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </ThemedView>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 

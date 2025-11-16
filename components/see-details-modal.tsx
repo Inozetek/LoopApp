@@ -15,6 +15,9 @@ import {
   Animated,
   Dimensions,
   FlatList,
+  Linking,
+  Alert,
+  Platform,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
@@ -364,6 +367,128 @@ export function SeeDetailsModal({
                   </View>
                 </View>
               </View>
+
+              {/* Quick Actions */}
+              <View style={styles.section}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
+                <View style={styles.actionButtons}>
+                  {/* Website Button */}
+                  {recommendation.activity?.website && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: colors.icon }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        Linking.openURL(recommendation.activity!.website!).catch(() =>
+                          Alert.alert('Error', 'Unable to open website')
+                        );
+                      }}
+                    >
+                      <IconSymbol name="globe" size={20} color={colors.primary} />
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Website
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {/* Phone Button */}
+                  {recommendation.activity?.phone && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: colors.icon }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        const phoneUrl = `tel:${recommendation.activity!.phone!.replace(/\D/g, '')}`;
+                        Linking.openURL(phoneUrl).catch(() =>
+                          Alert.alert('Error', 'Unable to make call')
+                        );
+                      }}
+                    >
+                      <IconSymbol name="phone.fill" size={20} color={colors.primary} />
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Call
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {/* Directions Button */}
+                  {recommendation.activity?.location && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: colors.icon }]}
+                      onPress={async () => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        const { latitude, longitude } = recommendation.activity!.location;
+                        const placeName = encodeURIComponent(recommendation.title);
+
+                        // Define all map options
+                        const googleMapsUrl = Platform.select({
+                          ios: `comgooglemaps://?daddr=${latitude},${longitude}&directionsmode=driving`,
+                          android: `google.navigation:q=${latitude},${longitude}`,
+                          default: `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`,
+                        })!;
+
+                        const appleMapsUrl = `http://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=d`;
+                        const wazeUrl = `waze://?ll=${latitude},${longitude}&navigate=yes`;
+                        const universalMapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+
+                        // Try Google Maps first (most popular)
+                        const googleMapsInstalled = await Linking.canOpenURL(googleMapsUrl).catch(() => false);
+
+                        if (googleMapsInstalled) {
+                          Linking.openURL(googleMapsUrl);
+                          return;
+                        }
+
+                        // If Google Maps not available, show options
+                        const availableApps: Array<{ name: string; url: string }> = [];
+
+                        // Check Apple Maps (iOS only)
+                        if (Platform.OS === 'ios') {
+                          const appleMapsInstalled = await Linking.canOpenURL(appleMapsUrl).catch(() => false);
+                          if (appleMapsInstalled) {
+                            availableApps.push({ name: 'Apple Maps', url: appleMapsUrl });
+                          }
+                        }
+
+                        // Check Waze
+                        const wazeInstalled = await Linking.canOpenURL(wazeUrl).catch(() => false);
+                        if (wazeInstalled) {
+                          availableApps.push({ name: 'Waze', url: wazeUrl });
+                        }
+
+                        // Always add browser option as fallback
+                        availableApps.push({ name: 'Open in Browser', url: universalMapsUrl });
+
+                        // Show picker if multiple options available
+                        if (availableApps.length > 1) {
+                          Alert.alert(
+                            'Open Directions In',
+                            'Choose your preferred maps app',
+                            [
+                              ...availableApps.map(app => ({
+                                text: app.name,
+                                onPress: () => Linking.openURL(app.url),
+                              })),
+                              {
+                                text: 'Cancel',
+                                style: 'cancel',
+                              },
+                            ]
+                          );
+                        } else if (availableApps.length === 1) {
+                          // Only browser available, open directly
+                          Linking.openURL(availableApps[0].url);
+                        } else {
+                          Alert.alert('Error', 'Unable to open directions');
+                        }
+                      }}
+                    >
+                      <IconSymbol name="map.fill" size={20} color={colors.primary} />
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Directions
+                      </Text>
+                    </Pressable>
+                  )}
+                </View>
+              </View>
             </View>
           </ScrollView>
 
@@ -597,6 +722,27 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 14,
     flex: 1,
+  },
+
+  // ACTION BUTTONS
+  actionButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    minWidth: 110,
+  },
+  actionButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
 
   // FOOTER

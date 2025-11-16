@@ -92,72 +92,138 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
 
 /**
  * Stacked Score Bar Component
- * Shows Interest, Location, and Timing scores in ONE segmented bar
+ * Shows all 6 scoring components in ONE segmented bar with proper percentage distribution
+ * Based on CLAUDE.md algorithm: Base (40), Location (20), Time (15), Feedback (15), Collaborative (10)
  */
 interface StackedScoreBarProps {
   scoreBreakdown: {
     baseScore: number;
     locationScore: number;
     timeScore: number;
+    feedbackScore: number;
+    collaborativeScore: number;
+    sponsorBoost: number;
   };
 }
 
 function StackedScoreBar({ scoreBreakdown }: StackedScoreBarProps) {
-  const totalPossible = 40 + 20 + 15; // 75 max
-  const interestPercent = (scoreBreakdown.baseScore / totalPossible) * 100;
-  const locationPercent = (scoreBreakdown.locationScore / totalPossible) * 100;
-  const timePercent = (scoreBreakdown.timeScore / totalPossible) * 100;
+  // Calculate total ACTUAL score (sum of all components that have points)
+  const totalActualScore =
+    scoreBreakdown.baseScore +
+    scoreBreakdown.locationScore +
+    scoreBreakdown.timeScore +
+    scoreBreakdown.feedbackScore +
+    scoreBreakdown.collaborativeScore;
+
+  // Calculate percentage of ACTUAL total for each component (fills 100% width)
+  const basePercent = totalActualScore > 0 ? (scoreBreakdown.baseScore / totalActualScore) * 100 : 0;
+  const locationPercent = totalActualScore > 0 ? (scoreBreakdown.locationScore / totalActualScore) * 100 : 0;
+  const timePercent = totalActualScore > 0 ? (scoreBreakdown.timeScore / totalActualScore) * 100 : 0;
+  const feedbackPercent = totalActualScore > 0 ? (scoreBreakdown.feedbackScore / totalActualScore) * 100 : 0;
+  const collaborativePercent = totalActualScore > 0 ? (scoreBreakdown.collaborativeScore / totalActualScore) * 100 : 0;
 
   return (
     <View style={styles.stackedBar}>
       {/* Single bar with colored segments */}
       <View style={styles.stackedBarContainer}>
-        {/* Interest segment (blue) */}
-        <View
-          style={[
-            styles.stackedBarSegment,
-            {
-              width: `${interestPercent}%`,
-              backgroundColor: '#3b82f6',
-            }
-          ]}
-        />
-        {/* Location segment (green) */}
-        <View
-          style={[
-            styles.stackedBarSegment,
-            {
-              width: `${locationPercent}%`,
-              backgroundColor: '#10b981',
-            }
-          ]}
-        />
-        {/* Timing segment (orange) */}
-        <View
-          style={[
-            styles.stackedBarSegment,
-            {
-              width: `${timePercent}%`,
-              backgroundColor: '#f59e0b',
-            }
-          ]}
-        />
+        {/* Interest/Base segment (blue) - 40 points max */}
+        {basePercent > 0 && (
+          <View
+            style={[
+              styles.stackedBarSegment,
+              {
+                width: `${basePercent}%`,
+                backgroundColor: '#3b82f6', // Blue
+              }
+            ]}
+          />
+        )}
+
+        {/* Location segment (green) - 20 points max */}
+        {locationPercent > 0 && (
+          <View
+            style={[
+              styles.stackedBarSegment,
+              {
+                width: `${locationPercent}%`,
+                backgroundColor: '#10b981', // Green
+              }
+            ]}
+          />
+        )}
+
+        {/* Timing segment (orange) - 15 points max */}
+        {timePercent > 0 && (
+          <View
+            style={[
+              styles.stackedBarSegment,
+              {
+                width: `${timePercent}%`,
+                backgroundColor: '#f59e0b', // Orange
+              }
+            ]}
+          />
+        )}
+
+        {/* Feedback segment (purple) - 15 points max */}
+        {feedbackPercent > 0 && (
+          <View
+            style={[
+              styles.stackedBarSegment,
+              {
+                width: `${feedbackPercent}%`,
+                backgroundColor: '#a78bfa', // Purple
+              }
+            ]}
+          />
+        )}
+
+        {/* Collaborative segment (pink) - 10 points max */}
+        {collaborativePercent > 0 && (
+          <View
+            style={[
+              styles.stackedBarSegment,
+              {
+                width: `${collaborativePercent}%`,
+                backgroundColor: '#ec4899', // Pink
+              }
+            ]}
+          />
+        )}
       </View>
 
-      {/* Legend */}
+      {/* Compact Legend - Only show components with >0 score */}
       <View style={styles.stackedBarLegend}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
-          <Text style={styles.legendText}>Interest</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
-          <Text style={styles.legendText}>Location</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
-          <Text style={styles.legendText}>Timing</Text>
-        </View>
+        {basePercent > 0 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
+            <Text style={styles.legendText}>Interest</Text>
+          </View>
+        )}
+        {locationPercent > 0 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
+            <Text style={styles.legendText}>Location</Text>
+          </View>
+        )}
+        {timePercent > 0 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
+            <Text style={styles.legendText}>Time</Text>
+          </View>
+        )}
+        {feedbackPercent > 0 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#a78bfa' }]} />
+            <Text style={styles.legendText}>Feedback</Text>
+          </View>
+        )}
+        {collaborativePercent > 0 && (
+          <View style={styles.legendItem}>
+            <View style={[styles.legendDot, { backgroundColor: '#ec4899' }]} />
+            <Text style={styles.legendText}>Social</Text>
+          </View>
+        )}
       </View>
     </View>
   );
@@ -186,7 +252,7 @@ export function ActivityCardIntelligent({
     timeScore: 0,
     feedbackScore: 0,
     collaborativeScore: 0,
-    sponsoredBoost: 0,
+    sponsorBoost: 0, // Fixed typo: was sponsoredBoost
     finalScore: recommendation.score || 0,
   };
 

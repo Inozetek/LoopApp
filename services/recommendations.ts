@@ -42,6 +42,8 @@ export interface PlaceResult {
   vicinity?: string;
   formatted_address?: string;
   description?: string; // Editorial summary from Google Places
+  formatted_phone_number?: string;
+  website?: string;
   geometry: {
     location: {
       lat: number;
@@ -158,6 +160,113 @@ function activityToPlaceResult(activity: Activity): PlaceResult {
   };
 }
 
+// Search places by text query using NEW Google Places API
+async function searchPlacesByText(params: {
+  query: string;
+  location: PlaceLocation;
+  radius: number;
+  maxResults?: number;
+}): Promise<PlaceResult[]> {
+  const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+
+  if (!API_KEY) {
+    console.warn('No Google Places API key found, using mock data');
+    const mockActivities = getMockActivities();
+    return mockActivities.map(activityToPlaceResult);
+  }
+
+  const { query, location, radius, maxResults = 20 } = params;
+
+  try {
+    // Track API usage BEFORE making request
+    const { trackPlacesAPIRequest } = await import('@/utils/api-cost-tracker');
+    const allowRequest = await trackPlacesAPIRequest('text_search');
+
+    if (!allowRequest) {
+      console.error('🚨 API request blocked - free tier limit reached!');
+      console.log('📦 Falling back to mock data to prevent charges');
+      const mockActivities = getMockActivities();
+      return mockActivities.map(activityToPlaceResult);
+    }
+
+    console.log('🔍 Calling Google Places Text Search API...');
+    console.log(`📍 Query: "${query}", Location: ${location.lat}, ${location.lng}, Radius: ${radius}m`);
+
+    // Call NEW Places API (New) - searchText endpoint
+    const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': API_KEY,
+        // Request essential fields including photos for visual feed
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.photos,places.currentOpeningHours,places.internationalPhoneNumber,places.websiteUri,places.editorialSummary',
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        locationBias: {
+          circle: {
+            center: {
+              latitude: location.lat,
+              longitude: location.lng,
+            },
+            radius: radius,
+          },
+        },
+        maxResultCount: Math.min(maxResults, 20), // Google max is 20
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Google Places API error:', response.status);
+      console.error('❌ Error details:', errorText);
+      throw new Error(`Google Places API error: ${response.status} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    console.log(`✅ Found ${data.places?.length || 0} places matching "${query}"`);
+
+    // Convert NEW API format to PlaceResult format
+    const places: PlaceResult[] = (data.places || []).map((place: any) => ({
+      place_id: place.id,
+      name: place.displayName?.text || place.displayName || 'Unknown Place',
+      vicinity: place.formattedAddress || '',
+      formatted_address: place.formattedAddress || '',
+      description: place.editorialSummary?.text || place.editorialSummary,
+      formatted_phone_number: place.internationalPhoneNumber,
+      website: place.websiteUri,
+      geometry: {
+        location: {
+          lat: place.location?.latitude || 0,
+          lng: place.location?.longitude || 0,
+        },
+      },
+      types: place.types || [],
+      rating: place.rating || 0,
+      user_ratings_total: place.userRatingCount || 0,
+      price_level: 2, // Default to moderate
+      photos: place.photos?.map((photo: any) => ({
+        photo_reference: photo.name || '',
+      })) || [],
+      opening_hours: {
+        open_now: place.currentOpeningHours?.openNow ?? true,
+      },
+    }));
+
+    console.log(`📍 Sample result:`, places[0]?.name, `(${places[0]?.rating}★)`);
+
+    return places;
+
+  } catch (error) {
+    console.error('❌ Error calling Google Places Text Search API:', error);
+    console.log('📦 Falling back to mock data');
+
+    // Fallback to mock data
+    const mockActivities = getMockActivities();
+    return mockActivities.map(activityToPlaceResult);
+  }
+}
+
 // Search nearby places using NEW Google Places API
 async function searchNearbyPlaces(params: {
   location: PlaceLocation;
@@ -175,6 +284,17 @@ async function searchNearbyPlaces(params: {
   const { location, radius, maxResults = 20 } = params;
 
   try {
+    // Track API usage BEFORE making request
+    const { trackPlacesAPIRequest } = await import('@/utils/api-cost-tracker');
+    const allowRequest = await trackPlacesAPIRequest('nearby_search');
+
+    if (!allowRequest) {
+      console.error('🚨 API request blocked - free tier limit reached!');
+      console.log('📦 Falling back to mock data to prevent charges');
+      const mockActivities = getMockActivities();
+      return mockActivities.map(activityToPlaceResult);
+    }
+
     console.log('🔍 Calling NEW Google Places API...');
     console.log(`📍 Location: ${location.lat}, ${location.lng}, Radius: ${radius}m`);
 
@@ -185,7 +305,7 @@ async function searchNearbyPlaces(params: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': API_KEY,
         // Request essential fields including photos for visual feed
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.photos,places.currentOpeningHours',
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.photos,places.currentOpeningHours,places.internationalPhoneNumber,places.websiteUri',
       },
       body: JSON.stringify({
         locationRestriction: {
@@ -223,6 +343,8 @@ async function searchNearbyPlaces(params: {
       name: place.displayName?.text || place.displayName || 'Unknown Place',
       vicinity: place.formattedAddress || '',
       formatted_address: place.formattedAddress || '',
+      formatted_phone_number: place.internationalPhoneNumber,
+      website: place.websiteUri,
       geometry: {
         location: {
           lat: place.location?.latitude || 0,
