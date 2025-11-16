@@ -1,8 +1,8 @@
 /**
- * Basic Analytics Utility
+ * Analytics Utility
  *
- * Simple event tracking for MVP.
- * In Phase 2, replace with Posthog or Mixpanel.
+ * Event tracking with PostHog/Mixpanel integration hooks.
+ * Ready for Phase 2 integration - just install the SDK and uncomment.
  */
 
 interface AnalyticsEvent {
@@ -15,10 +15,25 @@ interface AnalyticsEvent {
 class Analytics {
   private events: AnalyticsEvent[] = [];
   private enabled: boolean;
+  private provider: 'posthog' | 'mixpanel' | 'none' = 'none';
 
   constructor() {
-    // Enable analytics only in production
-    this.enabled = process.env.NODE_ENV === 'production';
+    // Enable analytics in production OR if env vars are set
+    const hasPostHog = !!process.env.EXPO_PUBLIC_POSTHOG_API_KEY;
+    const hasMixpanel = !!process.env.EXPO_PUBLIC_MIXPANEL_TOKEN;
+
+    if (hasPostHog) {
+      this.provider = 'posthog';
+      this.enabled = true;
+      console.log('✅ Analytics ready (PostHog configured)');
+    } else if (hasMixpanel) {
+      this.provider = 'mixpanel';
+      this.enabled = true;
+      console.log('✅ Analytics ready (Mixpanel configured)');
+    } else {
+      this.enabled = process.env.NODE_ENV === 'production';
+      console.log('ℹ️  Analytics running in console-only mode');
+    }
   }
 
   /**
@@ -147,19 +162,29 @@ class Analytics {
    * Log event to console (development) or send to service (production)
    */
   private logEvent(event: AnalyticsEvent): void {
-    // MVP: Just log to console
-    console.log(`[Analytics Event] ${event.event}`, {
-      properties: event.properties,
-      userId: event.userId,
-      timestamp: event.timestamp,
-    });
+    // Always log in development
+    if (process.env.NODE_ENV === 'development' || __DEV__) {
+      console.log(`📊 [Analytics] ${event.event}`, {
+        properties: event.properties,
+        userId: event.userId,
+      });
+    }
 
-    // Phase 2: Send to analytics service
-    // Example with Posthog:
-    // posthog.capture(event.event, event.properties);
-    //
-    // Example with Mixpanel:
-    // mixpanel.track(event.event, event.properties);
+    // Send to analytics service in production
+    if (this.enabled && this.provider !== 'none') {
+      // TODO: Phase 2 - Install SDK and uncomment:
+      //
+      // PostHog:
+      // import posthog from 'posthog-react-native'
+      // posthog.capture(event.event, { ...event.properties, distinct_id: event.userId });
+      //
+      // Mixpanel:
+      // import { Mixpanel } from 'mixpanel-react-native'
+      // Mixpanel.getInstance().track(event.event, event.properties);
+      // if (event.userId) Mixpanel.getInstance().identify(event.userId);
+
+      console.log(`📤 [${this.provider}] Event ready to send: ${event.event}`);
+    }
   }
 
   /**

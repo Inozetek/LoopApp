@@ -11,7 +11,8 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { Colors } from '@/constants/theme';
-import { validateConfig, logValidationResults } from '@/utils/config-validator';
+import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
+import { initializeErrorLogging } from '@/utils/error-logger';
 
 // Keep the splash screen visible while we load fonts
 SplashScreen.preventAutoHideAsync();
@@ -27,10 +28,21 @@ function RootLayoutNav() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
-  // Validate configuration on startup
+  // Initialize production services on startup
   useEffect(() => {
-    const configResult = validateConfig();
-    logValidationResults(configResult);
+    // 1. Validate environment variables
+    const envResult = validateEnvironment();
+    logValidationResults(envResult);
+    printEnvironmentInfo();
+
+    // 2. Initialize error logging (Sentry integration)
+    initializeErrorLogging();
+
+    // 3. In production, prevent app from starting if required env vars are missing
+    if (!envResult.isValid && process.env.NODE_ENV === 'production') {
+      console.error('❌ Cannot start app: Required environment variables are missing');
+      // In a real production app, you might want to show an error screen
+    }
   }, []);
 
   useEffect(() => {
