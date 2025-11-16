@@ -15,7 +15,7 @@ import {
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
 } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
 import { Calendar, DateData } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -157,6 +157,7 @@ export default function CalendarScreen() {
   const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   const [newTaskAddress, setNewTaskAddress] = useState('');
   const [newTaskLocation, setNewTaskLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [newTaskPlaceName, setNewTaskPlaceName] = useState('');
 
   // Feedback modal state
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -307,6 +308,7 @@ export default function CalendarScreen() {
     setNewTaskEndTime(defaultEndTime);
     setNewTaskAddress('');
     setNewTaskLocation(null);
+    setNewTaskPlaceName('');
   };
 
   const createEvent = async () => {
@@ -771,11 +773,11 @@ export default function CalendarScreen() {
                 End Time
               </Text>
               <TouchableOpacity
-                style={[styles.datePickerButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}
+                style={[styles.dateTimeButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}
                 onPress={() => setShowEndTimePicker(true)}
               >
                 <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
-                <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text, marginLeft: Spacing.sm }]}>
                   {newTaskEndTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
                 </Text>
               </TouchableOpacity>
@@ -802,6 +804,7 @@ export default function CalendarScreen() {
                 onChangeText={setNewTaskAddress}
                 onSelectLocation={(location) => {
                   setNewTaskAddress(location.address);
+                  setNewTaskPlaceName(location.placeName);
                   setNewTaskLocation({
                     latitude: location.latitude,
                     longitude: location.longitude,
@@ -819,6 +822,23 @@ export default function CalendarScreen() {
                 userLocation={currentUserLocation || undefined}
               />
 
+              {/* Selected Location Display */}
+              {newTaskLocation && newTaskPlaceName && (
+                <View style={styles.selectedLocationContainer}>
+                  <View style={styles.selectedLocationPin}>
+                    <Ionicons name="location" size={20} color="#ffffff" />
+                  </View>
+                  <View style={styles.selectedLocationText}>
+                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      {newTaskPlaceName}
+                    </Text>
+                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]} numberOfLines={1}>
+                      {newTaskAddress}
+                    </Text>
+                  </View>
+                </View>
+              )}
+
               {/* Map Preview */}
               {newTaskLocation && (
                 <View style={styles.mapPreview}>
@@ -828,13 +848,15 @@ export default function CalendarScreen() {
                     initialRegion={{
                       latitude: newTaskLocation.latitude,
                       longitude: newTaskLocation.longitude,
-                      latitudeDelta: 0.01,
-                      longitudeDelta: 0.01,
+                      latitudeDelta: 0.05,
+                      longitudeDelta: 0.05,
                     }}
                     scrollEnabled={true}
                     zoomEnabled={true}
                     pitchEnabled={false}
                     rotateEnabled={true}
+                    showsUserLocation={true}
+                    showsMyLocationButton={false}
                   >
                     <Marker
                       coordinate={{
@@ -1154,5 +1176,50 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  calloutContainer: {
+    backgroundColor: '#ffffff',
+    borderRadius: BorderRadius.sm,
+    padding: Spacing.sm,
+    minWidth: 200,
+    maxWidth: 250,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  calloutTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#000',
+    marginBottom: 4,
+  },
+  calloutAddress: {
+    fontSize: 13,
+    color: '#666',
+    lineHeight: 18,
+  },
+  selectedLocationContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    backgroundColor: `${BrandColors.loopBlue}1A`,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+    borderLeftWidth: 3,
+    borderLeftColor: BrandColors.loopBlue,
+  },
+  selectedLocationPin: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: BrandColors.loopBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
+  },
+  selectedLocationText: {
+    flex: 1,
   },
 });

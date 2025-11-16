@@ -42,7 +42,9 @@
       "Bash(ping:*)",
       "Bash(nul)",
       "Bash(powershell -Command \"Stop-Process -Id 41172 -Force\")",
-      "Bash(powershell -Command \"Stop-Process -Id 2512 -Force\")"
+      "Bash(powershell -Command \"Stop-Process -Id 2512 -Force\")",
+      "Bash(git diff:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

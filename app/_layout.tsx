@@ -24,8 +24,7 @@ function RootLayoutNav() {
   const { session, user, loading } = useAuth();
   const segments = useSegments();
   const router = useRouter();
-  // Force dark mode for demo
-  const colorScheme = 'dark'; // useColorScheme();
+  const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
   // Validate configuration on startup
@@ -86,8 +85,7 @@ function RootLayoutNav() {
 }
 
 export default function RootLayout() {
-  // Force dark mode for demo
-  const colorScheme = 'dark'; // useColorScheme();
+  const colorScheme = useColorScheme();
 
   // Load Urbanist font
   const [fontsLoaded] = useFonts({

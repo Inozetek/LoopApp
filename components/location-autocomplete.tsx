@@ -29,6 +29,7 @@ interface LocationAutocompleteProps {
   value: string;
   onChangeText: (text: string) => void;
   onSelectLocation: (location: {
+    placeName: string; // Place name (e.g., "Starbucks")
     address: string;
     latitude: number;
     longitude: number;
@@ -53,14 +54,14 @@ export function LocationAutocomplete({
   const [predictions, setPredictions] = useState<PlaceAutocomplete[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
+  const [justSelected, setJustSelected] = useState(false); // Track if we just selected a prediction
   const inputRef = React.useRef<TextInput>(null);
-  const justSelectedRef = React.useRef(false); // Track if we just selected a prediction
 
   // Debounce autocomplete requests
   useEffect(() => {
     // Don't fetch if we just selected a prediction
-    if (justSelectedRef.current) {
-      justSelectedRef.current = false;
+    if (justSelected) {
+      setJustSelected(false);
       return;
     }
 
@@ -75,7 +76,7 @@ export function LocationAutocomplete({
     }, 300); // Wait 300ms after user stops typing
 
     return () => clearTimeout(timeoutId);
-  }, [value]);
+  }, [value, justSelected]);
 
   const fetchPredictions = async (input: string) => {
     if (!process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY) {
@@ -290,7 +291,7 @@ export function LocationAutocomplete({
 
   const handleSelectPrediction = async (prediction: PlaceAutocomplete) => {
     // Mark that we just selected (prevents refetching)
-    justSelectedRef.current = true;
+    setJustSelected(true);
 
     // Dismiss keyboard
     Keyboard.dismiss();
@@ -298,10 +299,6 @@ export function LocationAutocomplete({
 
     // Close predictions immediately
     setShowPredictions(false);
-    setPredictions([]);
-
-    // Set the input text to the selected prediction
-    onChangeText(prediction.description);
 
     // Fetch place details to get coordinates and types
     try {
@@ -358,7 +355,10 @@ export function LocationAutocomplete({
           value={value}
           onChangeText={(text) => {
             onChangeText(text);
-            setShowPredictions(text.length >= 3);
+            // Only show predictions if we didn't just select one
+            if (!justSelected && text.length >= 3) {
+              setShowPredictions(true);
+            }
           }}
           placeholder={placeholder}
           placeholderTextColor={colors.icon}

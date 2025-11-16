@@ -28,6 +28,7 @@ import { getCurrentLocation } from '@/services/location-service';
 import { handleError } from '@/utils/error-handler';
 import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
 import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
+import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted } from '@/services/recommendation-persistence';
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
@@ -83,6 +84,23 @@ export default function RecommendationFeedScreen() {
       }
 
       console.log('🔄 Fetching recommendations...');
+
+      // PHASE 1: Try loading from database first (unless force refresh)
+      if (!showRefreshIndicator) {
+        const cachedRecs = await loadRecommendationsFromDB(user.id);
+
+        if (cachedRecs && cachedRecs.length > 0) {
+          console.log(`✅ Loaded ${cachedRecs.length} recommendations from database`);
+          setRecommendations(cachedRecs);
+          setLoading(false);
+          setRefreshing(false);
+          return; // Use cached recommendations
+        }
+      } else {
+        // PHASE 1: User is refreshing - clear old recommendations
+        await clearPendingRecommendations(user.id);
+        console.log('🔄 Force refresh - generating new recommendations');
+      }
 
       // Log API usage summary before fetching (if API key is enabled)
       if (process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY) {
@@ -171,6 +189,9 @@ export default function RecommendationFeedScreen() {
       console.log(`✅ Generated ${recommendations.length} recommendations`);
       setRecommendations(recommendations);
 
+      // PHASE 1: Save recommendations to database
+      await saveRecommendationsToDB(user.id, recommendations);
+
     } catch (error) {
       console.error('❌ Error fetching recommendations:', error);
       handleError(error, 'Failed to load recommendations');
@@ -202,23 +223,40 @@ export default function RecommendationFeedScreen() {
       console.log(`📅 Adding ${selectedRecommendation.title} to calendar`);
 
       // Add to calendar_events table
-      const { error } = await (supabase.from('calendar_events') as any).insert({
-        user_id: user.id,
-        title: selectedRecommendation.title,
-        description: selectedRecommendation.aiExplanation || '',
-        category: selectedRecommendation.category.toLowerCase(),
-        location: {
-          type: 'Point',
-          coordinates: [0, 0], // Will be replaced with actual coords
-        },
-        address: selectedRecommendation.location,
-        start_time: scheduledTime.toISOString(),
-        end_time: new Date(scheduledTime.getTime() + 60 * 60 * 1000).toISOString(),
-        source: 'recommendation',
-        status: 'scheduled',
-      });
+      const { data: calendarEvent, error } = await (supabase.from('calendar_events') as any)
+        .insert({
+          user_id: user.id,
+          title: selectedRecommendation.title,
+          description: selectedRecommendation.aiExplanation || '',
+          category: selectedRecommendation.category.toLowerCase(),
+          location: {
+            type: 'Point',
+            coordinates: [
+              selectedRecommendation.activity?.location.longitude || 0,
+              selectedRecommendation.activity?.location.latitude || 0
+            ],
+          },
+          address: selectedRecommendation.location,
+          start_time: scheduledTime.toISOString(),
+          end_time: new Date(scheduledTime.getTime() + 60 * 60 * 1000).toISOString(),
+          source: 'recommendation',
+          status: 'scheduled',
+          google_place_id: selectedRecommendation.activity?.googlePlaceId, // PHASE 1
+          feedback_submitted: false, // PHASE 1 (for Phase 5)
+        })
+        .select()
+        .single();
 
       if (error) throw error;
+
+      // PHASE 1: Mark recommendation as accepted in tracking table
+      if (calendarEvent && selectedRecommendation.activity?.googlePlaceId) {
+        await markAsAccepted(
+          user.id,
+          selectedRecommendation.activity.googlePlaceId,
+          calendarEvent.id
+        );
+      }
 
       // Show success animation
       setShowScheduleModal(false);
@@ -229,7 +267,7 @@ export default function RecommendationFeedScreen() {
         setShowSuccessAnimation(false);
       }, 2000);
 
-      console.log('✅ Added to calendar');
+      console.log('✅ Added to calendar and marked as accepted');
 
     } catch (error) {
       console.error('❌ Error adding to calendar:', error);
