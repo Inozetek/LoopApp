@@ -52,7 +52,7 @@ function RootLayoutNav() {
 
     // DEMO MODE: Skip auth for quick mentor demo
     // TODO: Remove this after demo - re-enable auth
-    const DEMO_MODE = true;
+    const DEMO_MODE = false; // ✅ Disabled - using real auth now
     if (DEMO_MODE) {
       if (inAuthGroup) {
         router.replace('/(tabs)');
