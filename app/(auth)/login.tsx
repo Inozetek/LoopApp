@@ -16,12 +16,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, BrandColors, Spacing, BorderRadius, Typography } from '@/constants/brand';
+import { BrandColors, Spacing, BorderRadius, Typography } from '@/constants/brand';
+import { Colors } from '@/constants/theme';
 
 export default function LoginScreen() {
   const { signIn, signInWithGoogle } = useAuth();
   const colorScheme = useColorScheme();
-  const colors = ThemeColors[colorScheme ?? 'light'];
+  const colors = Colors[colorScheme ?? 'light'];
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -91,7 +92,7 @@ export default function LoginScreen() {
           <View style={styles.inputContainer}>
             <Ionicons name="mail-outline" size={20} color={colors.icon} style={styles.inputIcon} />
             <TextInput
-              style={[styles.input, { color: colors.text, backgroundColor: colors.cardBackground }]}
+              style={[styles.input, { color: colors.text, backgroundColor: colors.card }]}
               placeholder="Email"
               placeholderTextColor={colors.icon}
               value={email}
@@ -107,7 +108,7 @@ export default function LoginScreen() {
           <View style={styles.inputContainer}>
             <Ionicons name="lock-closed-outline" size={20} color={colors.icon} style={styles.inputIcon} />
             <TextInput
-              style={[styles.input, { color: colors.text, backgroundColor: colors.cardBackground }]}
+              style={[styles.input, { color: colors.text, backgroundColor: colors.card }]}
               placeholder="Password"
               placeholderTextColor={colors.icon}
               value={password}
@@ -131,7 +132,7 @@ export default function LoginScreen() {
 
           {/* Forgot Password */}
           <TouchableOpacity
-            onPress={() => router.push('/(auth)/reset-password')}
+            onPress={() => Alert.alert('Coming Soon', 'Password reset will be available soon!')}
             style={styles.forgotPassword}
           >
             <Text style={[styles.forgotPasswordText, { color: BrandColors.loopBlue }]}>
@@ -176,7 +177,7 @@ export default function LoginScreen() {
             <Text style={[styles.signupText, { color: colors.icon }]}>
               Don't have an account?{' '}
             </Text>
-            <TouchableOpacity onPress={() => router.push('/(auth)/signup')}>
+            <TouchableOpacity onPress={() => router.push('/auth/signup')}>
               <Text style={[styles.signupLink, { color: BrandColors.loopBlue }]}>Sign Up</Text>
             </TouchableOpacity>
           </View>
@@ -209,7 +210,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   title: {
-    ...Typography.h1,
+    ...Typography.displayLarge,
     marginBottom: Spacing.xs,
   },
   subtitle: {
