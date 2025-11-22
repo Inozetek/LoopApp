@@ -51,7 +51,7 @@ export default function OnboardingScreen() {
   const colors = Colors[colorScheme ?? 'light'];
   const params = useLocalSearchParams<{ referralCode?: string }>();
 
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0); // Start at welcome screen
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
@@ -179,7 +179,10 @@ export default function OnboardingScreen() {
   }
 
   async function handleNext() {
-    if (step === 1) {
+    if (step === 0) {
+      // Welcome screen - just proceed to next step
+      setStep(1);
+    } else if (step === 1) {
       if (!firstName.trim() || !lastName.trim()) {
         Alert.alert('Error', 'Please enter your first and last name');
         return;
@@ -197,7 +200,7 @@ export default function OnboardingScreen() {
   }
 
   function handleBack() {
-    if (step > 1) {
+    if (step > 0) {
       setStep(step - 1);
     }
   }
@@ -347,6 +350,9 @@ export default function OnboardingScreen() {
   }
 
   function renderProgressBar() {
+    // Don't show progress bar on welcome screen
+    if (step === 0) return null;
+
     return (
       <View style={styles.progressContainer}>
         {[1, 2, 3].map((s) => (
@@ -360,6 +366,22 @@ export default function OnboardingScreen() {
             ]}
           />
         ))}
+      </View>
+    );
+  }
+
+  function renderStep0() {
+    return (
+      <View style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ThemedText style={[styles.title, { fontSize: 40, marginBottom: 16 }]}>
+          Welcome to Loop! 🎉
+        </ThemedText>
+        <ThemedText style={[styles.subtitle, { textAlign: 'center', fontSize: 16, opacity: 0.8, lineHeight: 24 }]}>
+          Discover activities tailored to your free time, interests, and location
+        </ThemedText>
+        <ThemedText style={[styles.subtitle, { textAlign: 'center', fontSize: 14, opacity: 0.6, marginTop: 24, lineHeight: 20 }]}>
+          Let's set up your profile so we can personalize your experience
+        </ThemedText>
       </View>
     );
   }
@@ -554,13 +576,14 @@ export default function OnboardingScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {step === 0 && renderStep0()}
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
         </ScrollView>
 
         <View style={styles.buttonContainer}>
-          {step > 1 && (
+          {step > 0 && step !== 3 && (
             <TouchableOpacity
               style={[styles.backButton, { borderColor: colors.icon }]}
               onPress={handleBack}
@@ -573,7 +596,7 @@ export default function OnboardingScreen() {
           <TouchableOpacity
             style={[
               styles.nextButton,
-              { backgroundColor: colors.tint, flex: step > 1 ? 1 : undefined },
+              { backgroundColor: colors.tint, flex: step > 0 && step !== 3 ? 1 : undefined },
             ]}
             onPress={handleNext}
             disabled={isLoading}
@@ -582,7 +605,7 @@ export default function OnboardingScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.nextButtonText}>
-                {step === 3 ? 'Get Started' : 'Next'}
+                {step === 0 ? "Let's Go!" : step === 3 ? 'Get Started' : 'Next'}
               </Text>
             )}
           </TouchableOpacity>

@@ -138,7 +138,7 @@ export default function LoginScreen() {
               style={styles.logo}
               resizeMode="contain"
             />
-            <ThemedText style={[styles.subtitle, { color: colors.icon }]}>
+            <ThemedText style={[styles.subtitle, { color: colors.icon, opacity: 0.5 }]}>
               Loop
             </ThemedText>
           </View>
@@ -256,10 +256,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '300',
     textAlign: 'center',
     marginTop: 12,
+    letterSpacing: 2,
   },
   form: {
     gap: 16,
