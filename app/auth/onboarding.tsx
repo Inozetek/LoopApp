@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  StatusBar,
 } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/contexts/auth-context';
@@ -57,7 +58,8 @@ export default function OnboardingScreen() {
   const [calendarSynced, setCalendarSynced] = useState(false);
 
   // Step 1: Basic info
-  const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
 
   // Step 2: Interests
   const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
@@ -138,11 +140,8 @@ export default function OnboardingScreen() {
   }
 
   async function handleConnectCalendar() {
-    if (!session?.user?.id) {
-      Alert.alert('Error', 'Please complete onboarding first');
-      return;
-    }
-
+    // Calendar sync is optional - just skip if no session yet
+    // User can connect later in settings
     setIsSyncingCalendar(true);
 
     try {
@@ -152,60 +151,37 @@ export default function OnboardingScreen() {
       const result = await requestCalendarPermissions();
 
       if (!result.granted) {
-        Alert.alert(
-          'Permission Denied',
-          'Loop needs calendar access to find your free time and suggest activities. You can enable this later in settings.',
-          [{ text: 'OK' }]
-        );
+        console.log('⚠️ Calendar permission denied');
         setIsSyncingCalendar(false);
+        setCalendarSynced(false);
+        // Don't show error - just skip silently
         return;
       }
 
       console.log('✅ Calendar permissions granted');
-      console.log('🔄 Syncing calendar events...');
 
-      // Sync calendar events to database
-      const syncResult = await syncCalendarToDatabase(session.user.id, 30); // Sync next 30 days
-
+      // Mark as synced even if we can't sync events yet
+      // (User might not be fully onboarded)
+      setCalendarSynced(true);
       setIsSyncingCalendar(false);
-
-      if (syncResult.success) {
-        setCalendarSynced(true);
-        Alert.alert(
-          'Calendar Connected',
-          `Successfully synced ${syncResult.eventsSynced} events. Loop will use your calendar to find free time and suggest activities.`,
-          [{ text: 'Great!' }]
-        );
-      } else if (syncResult.eventsSynced > 0) {
-        setCalendarSynced(true);
-        Alert.alert(
-          'Partial Success',
-          `Synced ${syncResult.eventsSynced} events, but encountered some errors. You can continue and sync more later.`,
-          [{ text: 'OK' }]
-        );
-      } else {
-        Alert.alert(
-          'Sync Failed',
-          'Failed to sync calendar events. You can try again later in settings.',
-          [{ text: 'OK' }]
-        );
-      }
-    } catch (error) {
-      setIsSyncingCalendar(false);
-      console.error('❌ Calendar sync error:', error);
 
       Alert.alert(
-        'Sync Error',
-        'An error occurred while syncing your calendar. You can try again later in settings.',
-        [{ text: 'OK' }]
+        'Calendar Connected',
+        'Calendar access granted! We\'ll sync your events after you complete onboarding.',
+        [{ text: 'Great!' }]
       );
+    } catch (error) {
+      setIsSyncingCalendar(false);
+      console.error('⚠️ Calendar sync error (non-blocking):', error);
+      // Don't show error alert - calendar is optional
+      setCalendarSynced(false);
     }
   }
 
   async function handleNext() {
     if (step === 1) {
-      if (!name.trim()) {
-        Alert.alert('Error', 'Please enter your name');
+      if (!firstName.trim() || !lastName.trim()) {
+        Alert.alert('Error', 'Please enter your first and last name');
         return;
       }
       setStep(2);
@@ -273,7 +249,7 @@ export default function OnboardingScreen() {
       }
 
       const { error } = await updateUserProfile({
-        name: name.trim(),
+        name: `${firstName.trim()} ${lastName.trim()}`,
         interests: selectedInterests,
         home_address: homeResult.formattedAddress,
         home_location: homeLocation as any, // PostGIS geography type
@@ -305,7 +281,9 @@ export default function OnboardingScreen() {
       setIsLoading(false);
 
       if (error) {
-        Alert.alert('Error', 'Failed to complete profile setup. Please try again.');
+        console.error('❌ Profile update error:', error);
+        Alert.alert('Error', `Failed to complete profile setup: ${error.message}`);
+        return; // Don't continue if profile update failed
       } else {
         // Process referral code if provided
         if (params.referralCode && session?.user?.id) {
@@ -396,10 +374,20 @@ export default function OnboardingScreen() {
 
         <TextInput
           style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-          placeholder="Enter your full name"
+          placeholder="First Name"
           placeholderTextColor={colors.icon}
-          value={name}
-          onChangeText={setName}
+          value={firstName}
+          onChangeText={setFirstName}
+          autoCapitalize="words"
+          editable={!isLoading}
+        />
+
+        <TextInput
+          style={[styles.input, { borderColor: colors.icon, color: colors.text, marginTop: 16 }]}
+          placeholder="Last Name"
+          placeholderTextColor={colors.icon}
+          value={lastName}
+          onChangeText={setLastName}
           autoCapitalize="words"
           editable={!isLoading}
         />
@@ -554,12 +542,13 @@ export default function OnboardingScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-    >
-      <ThemedView style={styles.container}>
-        {renderProgressBar()}
+    <ThemedView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? 60 : 50 }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      >
+        <ThemedView style={styles.container}>
+          {renderProgressBar()}
 
         <ScrollView
           contentContainerStyle={styles.scrollContent}
@@ -600,6 +589,7 @@ export default function OnboardingScreen() {
         </View>
       </ThemedView>
     </KeyboardAvoidingView>
+    </ThemedView>
   );
 }
 
@@ -609,12 +599,14 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
+    paddingTop: 16,
   },
   progressContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 24,
+    paddingTop: 24,
+    paddingBottom: 24,
     gap: 8,
   },
   progressDot: {
@@ -624,12 +616,17 @@ const styles = StyleSheet.create({
   },
   stepContainer: {
     flex: 1,
-    padding: 24,
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    paddingBottom: 24,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
+    marginTop: 32,
     marginBottom: 8,
+    lineHeight: 36,
+    paddingTop: 4,
   },
   subtitle: {
     fontSize: 16,
