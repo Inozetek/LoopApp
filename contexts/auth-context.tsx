@@ -21,7 +21,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // DEMO MODE: Mock user for quick demos without auth
-const DEMO_MODE = true;
+const DEMO_MODE = false;
 const MOCK_USER: User = {
   id: '00000000-0000-0000-0000-000000000001', // Valid UUID for demo mode
   email: 'demo@loop.app',
@@ -84,24 +84,72 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    // Get initial session with comprehensive error handling
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      // Handle any auth errors (including invalid refresh tokens)
+      if (error) {
+        console.log('🔄 Session error detected, clearing session...', error.message);
+        // Silently clear the invalid session without throwing
+        supabase.auth.signOut().catch(() => {
+          // Ignore sign out errors - we just want to clear local state
+        });
+        setSession(null);
+        setUser(null);
+        setLoading(false);
+        return;
+      }
+
       setSession(session);
       if (session?.user) {
         fetchUserProfile(session.user.id);
       } else {
         setLoading(false);
       }
+    }).catch((error) => {
+      // Catch any unexpected errors and clear state
+      console.log('🔄 Clearing session due to error:', error.message);
+      setSession(null);
+      setUser(null);
+      setLoading(false);
     });
 
-    // Listen for auth changes
+    // Listen for auth changes with error handling
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      setSession(session);
-      if (session?.user) {
-        await fetchUserProfile(session.user.id);
-      } else {
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state change:', event, 'Session:', session ? 'exists' : 'null');
+
+      try {
+        // Handle SIGNED_OUT event
+        if (event === 'SIGNED_OUT') {
+          console.log('🚪 User signed out');
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        // Handle TOKEN_REFRESHED errors silently
+        if (event === 'TOKEN_REFRESHED' && !session) {
+          console.log('🔄 Token refresh failed, clearing session...');
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        // For all other events, update session normally
+        setSession(session);
+        if (session?.user) {
+          await fetchUserProfile(session.user.id);
+        } else {
+          setUser(null);
+          setLoading(false);
+        }
+      } catch (error) {
+        // Silently handle any errors in auth state changes
+        console.log('🔄 Error in auth state change, clearing session:', error);
+        setSession(null);
         setUser(null);
         setLoading(false);
       }
@@ -116,13 +164,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from('users')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle(); // Use maybeSingle() instead of single() to handle no rows gracefully
 
       if (error) {
         console.error('Error fetching user profile:', error);
         setUser(null);
-      } else {
+      } else if (data) {
         setUser(data);
+      } else {
+        // User profile doesn't exist yet (new signup, needs onboarding)
+        console.log('User profile not found, user needs to complete onboarding');
+        setUser(null);
       }
     } catch (error) {
       console.error('Error fetching user profile:', error);

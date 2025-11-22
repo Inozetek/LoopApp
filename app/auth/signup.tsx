@@ -11,8 +11,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Image,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
 import { useAuth } from '@/contexts/auth-context';
 import { ThemedView } from '@/components/themed-view';
@@ -53,18 +53,9 @@ export default function SignupScreen() {
 
     if (error) {
       Alert.alert('Sign Up Failed', error.message);
-    } else if (user) {
-      // Navigate to onboarding to complete profile
-      // Pass referral code if provided
-      if (referralCode.trim()) {
-        router.replace({
-          pathname: '/auth/onboarding',
-          params: { referralCode: referralCode.trim() },
-        });
-      } else {
-        router.replace('/auth/onboarding');
-      }
     }
+    // Navigation to onboarding is handled automatically by _layout.tsx
+    // based on auth state (session exists but no user profile)
   }
 
   async function handleGoogleSignUp() {
@@ -103,7 +94,7 @@ export default function SignupScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -226,6 +217,9 @@ export default function SignupScreen() {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },

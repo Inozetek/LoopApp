@@ -10,9 +10,9 @@ import {
   Alert,
   ActivityIndicator,
   Image,
-  SafeAreaView,
   ScrollView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
 import { useAuth } from '@/contexts/auth-context';
 import { ThemedView } from '@/components/themed-view';
@@ -41,10 +41,8 @@ export default function LoginScreen() {
 
     if (error) {
       Alert.alert('Sign In Failed', error.message);
-    } else {
-      // Navigation will be handled by auth state change
-      router.replace('/(tabs)');
     }
+    // Navigation is handled automatically by _layout.tsx based on auth state
   }
 
   async function handleGoogleSignIn() {
@@ -69,9 +67,8 @@ export default function LoginScreen() {
         'Success!',
         'We\'ve imported your interests from Facebook to personalize your experience.'
       );
-      // Navigation will be handled by auth state change
-      router.replace('/auth/onboarding');
     }
+    // Navigation is handled automatically by _layout.tsx based on auth state
   }
 
   function handleForgotPassword() {
@@ -124,7 +121,7 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -141,8 +138,8 @@ export default function LoginScreen() {
               style={styles.logo}
               resizeMode="contain"
             />
-            <ThemedText style={styles.subtitle}>
-              Sign in to discover activities tailored to your free time
+            <ThemedText style={[styles.subtitle, { color: colors.icon }]}>
+              Loop
             </ThemedText>
           </View>
 
@@ -232,6 +229,9 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+  },
   container: {
     flex: 1,
   },
@@ -242,7 +242,8 @@ const styles = StyleSheet.create({
   },
   logoContainer: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginTop: 16,
+    marginBottom: 40,
   },
   logo: {
     width: 140,
@@ -255,10 +256,10 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 28,
+    fontWeight: 'bold',
     textAlign: 'center',
-    marginBottom: 32,
-    opacity: 0.7,
+    marginTop: 12,
   },
   form: {
     gap: 16,
