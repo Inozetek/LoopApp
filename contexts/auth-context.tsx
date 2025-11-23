@@ -360,8 +360,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // TypeScript workaround for Supabase client type inference
-      const { error } = await (supabase.from('users').update as any)(userData).eq('id', session.user.id);
+      // UPSERT instead of UPDATE - creates profile if it doesn't exist
+      // This handles the case where the database trigger fails to create the profile
+      const { error } = await supabase
+        .from('users')
+        .upsert({
+          id: session.user.id,
+          email: session.user.email,
+          ...userData
+        }, {
+          onConflict: 'id'
+        });
 
       if (error) throw error;
 

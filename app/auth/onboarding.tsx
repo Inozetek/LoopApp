@@ -46,7 +46,7 @@ const INTEREST_OPTIONS = [
 ];
 
 export default function OnboardingScreen() {
-  const { session, updateUserProfile } = useAuth();
+  const { session, user, updateUserProfile } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const params = useLocalSearchParams<{ referralCode?: string }>();
@@ -314,8 +314,20 @@ export default function OnboardingScreen() {
           }
         }
 
-        console.log('✅ Onboarding complete, navigating to app...');
-        // Navigate to main app
+        // Verify profile was actually created before navigating
+        // The UPSERT should have created it, but let's be defensive
+        if (!user) {
+          console.error('❌ Profile verification failed - user is still null after update');
+          Alert.alert(
+            'Setup Error',
+            'Failed to create your profile. Please try again or contact support if this persists.',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+
+        console.log('✅ Onboarding complete, profile verified, navigating to app...');
+        // Navigate to main app - layout will detect session + user and stay on tabs
         router.replace('/(tabs)');
       }
     } catch (error) {
