@@ -2,7 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, LogBox } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, Urbanist_300Light, Urbanist_400Regular, Urbanist_500Medium, Urbanist_600SemiBold } from '@expo-google-fonts/urbanist';
 import * as SplashScreen from 'expo-splash-screen';
@@ -13,6 +13,13 @@ import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { Colors } from '@/constants/theme';
 import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
 import { initializeErrorLogging } from '@/utils/error-logger';
+
+// Suppress known auth errors that are handled gracefully
+LogBox.ignoreLogs([
+  'Invalid Refresh Token',
+  'refresh token not found',
+  'AuthApiError',
+]);
 
 // Keep the splash screen visible while we load fonts
 SplashScreen.preventAutoHideAsync();
@@ -50,6 +57,15 @@ function RootLayoutNav() {
 
     const inAuthGroup = segments[0] === 'auth';
 
+    // DEBUG: Log current auth state
+    console.log('🔐 Auth State:', {
+      session: session ? 'EXISTS' : 'NULL',
+      user: user ? 'EXISTS' : 'NULL',
+      loading,
+      inAuthGroup,
+      currentPath: segments.join('/')
+    });
+
     // DEMO MODE: Skip auth for quick mentor demo
     // TODO: Remove this after demo - re-enable auth
     const DEMO_MODE = false; // ✅ Disabled - using real auth now
@@ -62,17 +78,20 @@ function RootLayoutNav() {
 
     if (!session) {
       // User is not signed in, redirect to login
+      console.log('→ No session, redirecting to login');
       if (!inAuthGroup) {
         router.replace('/auth/login');
       }
     } else if (session && !user) {
       // User is signed in but hasn't completed onboarding
+      console.log('→ Session exists but no user profile, redirecting to onboarding');
       const currentPath = segments.join('/');
       if (currentPath !== 'auth/onboarding') {
         router.replace('/auth/onboarding');
       }
     } else if (session && user) {
       // User is fully authenticated and has profile
+      console.log('→ Fully authenticated, redirecting to main app');
       if (inAuthGroup) {
         router.replace('/(tabs)');
       }

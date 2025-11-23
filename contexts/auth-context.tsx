@@ -84,34 +84,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Get initial session with comprehensive error handling
-    supabase.auth.getSession().then(({ data: { session }, error }) => {
-      // Handle any auth errors (including invalid refresh tokens)
-      if (error) {
-        console.log('🔄 Session error detected, clearing session...', error.message);
-        // Silently clear the invalid session without throwing
-        supabase.auth.signOut().catch(() => {
-          // Ignore sign out errors - we just want to clear local state
-        });
+    // Initialize auth state with aggressive error recovery
+    async function initializeAuth() {
+      try {
+        const { data: { session }, error } = await supabase.auth.getSession();
+
+        // Handle any auth errors (including invalid refresh tokens)
+        if (error) {
+          console.log('🔄 Session error detected, clearing all auth state...');
+          // Aggressively clear everything
+          await supabase.auth.signOut({ scope: 'local' });
+          setSession(null);
+          setUser(null);
+          setLoading(false);
+          return;
+        }
+
+        setSession(session);
+        if (session?.user) {
+          await fetchUserProfile(session.user.id);
+        } else {
+          setLoading(false);
+        }
+      } catch (error) {
+        // Catch any unexpected errors and clear state
+        console.log('🔄 Auth initialization error, clearing state');
+        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
         setSession(null);
         setUser(null);
         setLoading(false);
-        return;
       }
+    }
 
-      setSession(session);
-      if (session?.user) {
-        fetchUserProfile(session.user.id);
-      } else {
-        setLoading(false);
-      }
-    }).catch((error) => {
-      // Catch any unexpected errors and clear state
-      console.log('🔄 Clearing session due to error:', error.message);
-      setSession(null);
-      setUser(null);
-      setLoading(false);
-    });
+    initializeAuth();
 
     // Listen for auth changes with error handling
     const {
