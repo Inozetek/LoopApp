@@ -4,6 +4,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## ⚠️ CRITICAL: READ BEFORE MAKING ANY CHANGES
+
+**Development Workflow:** See `.claude/DEVELOPMENT_WORKFLOW.md`
+
+**Key Rule:** NEVER tell the user something is "ready" until you have:
+1. Written automated tests
+2. Run the tests
+3. Verified all tests pass
+
+No exceptions. This is your contract with the user.
+
+---
+
 ## CURRENT PROJECT STATUS
 
 This is an Expo React Native application currently in **starter template** state. The sections below describe the existing setup, followed by the complete Loop app vision and architecture.
