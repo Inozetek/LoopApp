@@ -44,7 +44,18 @@
       "Bash(powershell -Command \"Stop-Process -Id 41172 -Force\")",
       "Bash(powershell -Command \"Stop-Process -Id 2512 -Force\")",
       "Bash(git diff:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(powershell:*)",
+      "Bash(node scripts/list-users.js:*)",
+      "Bash(node scripts/run-migration.js:*)",
+      "Bash(node scripts/delete-user.js:*)",
+      "Bash(node scripts/check-user-profile.js:*)",
+      "Bash(node scripts/check-auth-users.js:*)",
+      "Bash(node:*)",
+      "Bash(del /F nul 2)",
+      "Bash(NUL)",
+      "Bash(del CRITICAL_ISSUES.md nul)",
+      "Bash(\"app/(tabs)/index.tsx\")"
     ],
     "deny": [],
     "ask": []

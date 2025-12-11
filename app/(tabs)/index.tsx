@@ -74,7 +74,12 @@ export default function RecommendationFeedScreen() {
 
   // Fetch recommendations
   const fetchRecommendations = async (showRefreshIndicator = false) => {
-    if (!user) return;
+    console.log('🚀 fetchRecommendations called, user:', user?.id);
+
+    if (!user) {
+      console.log('❌ No user, returning early');
+      return;
+    }
 
     try {
       if (showRefreshIndicator) {
@@ -87,7 +92,9 @@ export default function RecommendationFeedScreen() {
 
       // PHASE 1: Try loading from database first (unless force refresh)
       if (!showRefreshIndicator) {
+        console.log('📦 Loading cached recommendations from DB...');
         const cachedRecs = await loadRecommendationsFromDB(user.id);
+        console.log('📦 DB returned:', cachedRecs?.length || 0, 'recommendations');
 
         if (cachedRecs && cachedRecs.length > 0) {
           console.log(`✅ Loaded ${cachedRecs.length} recommendations from database`);
@@ -96,6 +103,7 @@ export default function RecommendationFeedScreen() {
           setRefreshing(false);
           return; // Use cached recommendations
         }
+        console.log('📦 No cached recommendations, will fetch fresh');
       } else {
         // PHASE 1: User is refreshing - clear old recommendations
         await clearPendingRecommendations(user.id);
@@ -117,14 +125,22 @@ export default function RecommendationFeedScreen() {
 
       console.log(`📍 Location: ${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`);
 
+      console.log('🔍 Checking home_location:', user.home_location);
+      console.log('🔍 Checking work_location:', user.work_location);
+
       // Get home/work locations if available
-      const homeLocation = user.home_location
+      const homeLocation = user.home_location && (user.home_location as any).coordinates
         ? { lat: (user.home_location as any).coordinates[1], lng: (user.home_location as any).coordinates[0] }
         : undefined;
 
-      const workLocation = user.work_location
+      const workLocation = user.work_location && (user.work_location as any).coordinates
         ? { lat: (user.work_location as any).coordinates[1], lng: (user.work_location as any).coordinates[0] }
         : undefined;
+
+      console.log('✅ Location parsing complete');
+      console.log('🔍 User object keys:', Object.keys(user));
+      console.log('🔍 User preferences:', user.preferences);
+      console.log('🔍 User interests:', user.interests);
 
       // Generate recommendations
       const params: RecommendationParams = {
@@ -135,7 +151,9 @@ export default function RecommendationFeedScreen() {
         maxResults: 25,
       };
 
+      console.log('✅ Params object created, calling generateRecommendations...');
       const scored = await generateRecommendations(params);
+      console.log(`✅ generateRecommendations returned ${scored.length} results`);
 
       // Convert ScoredRecommendation[] to Recommendation[]
       const recommendations: Recommendation[] = scored.map((s, index) => ({
@@ -516,3 +534,4 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.xl,
   },
 });
+

@@ -70,6 +70,7 @@ export const ThemeColors = {
     borderLight: '#F2F2F7',
     separator: '#C6C6C8',
     shadow: 'rgba(0, 0, 0, 0.1)',
+    icon: BrandColors.veryLightGray, // Icon tint color
 
     // Interactive
     tabIconDefault: BrandColors.veryLightGray,
@@ -108,6 +109,7 @@ export const ThemeColors = {
     borderLight: BrandColors.darkGray,
     separator: BrandColors.lightGray,
     shadow: 'rgba(0, 0, 0, 0.5)',
+    icon: BrandColors.veryLightGray, // Icon tint color
 
     // Interactive
     tabIconDefault: BrandColors.veryLightGray,

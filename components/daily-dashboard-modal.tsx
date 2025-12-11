@@ -340,7 +340,7 @@ function MapView({ tasks, homeLocation, colors }: MapViewProps) {
 // ============================================================================
 
 interface StatCardProps {
-  icon: string;
+  icon: any; // SF Symbol name for iOS
   title: string;
   value: number;
   subtitle: string;
@@ -350,7 +350,7 @@ interface StatCardProps {
 
 function StatCard({ icon, title, value, subtitle, colors, gradient }: StatCardProps) {
   return (
-    <View style={[styles.statCard, { backgroundColor: colors.card }, Shadows.medium]}>
+    <View style={[styles.statCard, { backgroundColor: colors.card }, Shadows.md]}>
       <LinearGradient
         colors={gradient}
         start={{ x: 0, y: 0 }}
@@ -392,7 +392,7 @@ function NotificationCard({ notification, colors, onDismiss }: NotificationCardP
     BrandColors.loopBlue;
 
   return (
-    <View style={[styles.notificationCard, { backgroundColor: colors.card }, Shadows.small]}>
+    <View style={[styles.notificationCard, { backgroundColor: colors.card }, Shadows.sm]}>
       <View style={[styles.notificationPriorityBar, { backgroundColor: priorityColor }]} />
 
       <View style={styles.notificationContent}>

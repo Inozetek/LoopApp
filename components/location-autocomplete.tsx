@@ -309,7 +309,7 @@ export function LocationAutocomplete({
           headers: {
             'Content-Type': 'application/json',
             'X-Goog-Api-Key': process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY!,
-            'X-Goog-FieldMask': 'id,location,formattedAddress,types',
+            'X-Goog-FieldMask': 'id,displayName,location,formattedAddress,types',
           },
         }
       );
@@ -324,10 +324,12 @@ export function LocationAutocomplete({
       const latitude = data.location?.latitude;
       const longitude = data.location?.longitude;
       const formattedAddress = data.formattedAddress || prediction.description;
+      const placeName = data.displayName?.text || prediction.structured_formatting?.main_text || prediction.description.split(',')[0];
       const types = data.types || [];
 
       if (latitude && longitude) {
         onSelectLocation({
+          placeName,
           address: formattedAddress,
           latitude,
           longitude,
