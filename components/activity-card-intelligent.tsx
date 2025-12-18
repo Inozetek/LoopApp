@@ -233,6 +233,7 @@ interface ActivityCardIntelligentProps {
   recommendation: Recommendation;
   onAddToCalendar: () => void;
   onSeeDetails: () => void;
+  onNotInterested?: () => void;
   index: number;
 }
 
@@ -240,6 +241,7 @@ export function ActivityCardIntelligent({
   recommendation,
   onAddToCalendar,
   onSeeDetails,
+  onNotInterested,
   index,
 }: ActivityCardIntelligentProps) {
   const colorScheme = useColorScheme();
@@ -350,6 +352,17 @@ export function ActivityCardIntelligent({
             style={styles.imageGradient}
             pointerEvents="none"
           />
+
+          {/* THREE-DOT MENU BUTTON (Top Left) */}
+          {onNotInterested && (
+            <Pressable
+              style={styles.menuButton}
+              onPress={onNotInterested}
+              onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+            >
+              <IconSymbol name="ellipsis.circle.fill" size={28} color="rgba(255, 255, 255, 0.9)" />
+            </Pressable>
+          )}
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
@@ -511,6 +524,20 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 100,
+  },
+
+  // THREE-DOT MENU BUTTON
+  menuButton: {
+    position: 'absolute',
+    top: Spacing.sm,
+    left: Spacing.sm,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 10,
   },
 
   // BADGES ON IMAGE
