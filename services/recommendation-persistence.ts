@@ -78,8 +78,13 @@ export async function saveRecommendationsToDB(
 }
 
 /**
- * Load pending recommendations from database
+ * Load pending recommendations from database with smart resurfacing
  * Returns null if no recommendations found (trigger new generation)
+ *
+ * Resurfacing logic:
+ * - Exclude not_interested (permanently blocked)
+ * - Exclude recently shown (< 3 days for declined, < 7 days for ignored)
+ * - Include recommendations older than threshold
  */
 export async function loadRecommendationsFromDB(
   userId: string
@@ -87,12 +92,26 @@ export async function loadRecommendationsFromDB(
   if (!userId) return null;
 
   try {
+    const now = new Date();
+    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Query for pending recommendations OR resurfaceable old ones
     const { data, error } = await supabase
       .from('recommendation_tracking')
       .select('*')
       .eq('user_id', userId)
-      .eq('status', 'pending')
-      .gte('expires_at', new Date().toISOString())
+      // Exclude permanently blocked
+      .neq('status', 'not_interested')
+      // Exclude accepted (already on calendar)
+      .neq('status', 'accepted')
+      // Not expired
+      .gte('expires_at', now.toISOString())
+      .or(
+        `and(status.eq.pending),` +
+        `and(status.eq.declined,last_shown_at.lt.${threeDaysAgo.toISOString()}),` +
+        `and(status.in.(viewed,expired),last_shown_at.lt.${sevenDaysAgo.toISOString()})`
+      )
       .order('confidence_score', { descending: true })
       .limit(10);
 
@@ -106,7 +125,9 @@ export async function loadRecommendationsFromDB(
       return null;
     }
 
-    console.log(`📥 Loaded ${data.length} recommendations from database`);
+    console.log(`📥 Loaded ${data.length} recommendations from database (with resurfacing logic)`);
+    console.log(`   - Excluded: not_interested, accepted, recently shown`);
+    console.log(`   - Included: pending, declined (>3 days), viewed/expired (>7 days)`);
 
     // Extract the recommendation data
     const recommendations = data.map((record: any) => record.recommendation_data as Recommendation);
@@ -222,14 +243,25 @@ export async function markAsNotInterested(
 
 /**
  * Clear all pending recommendations (user refreshes feed)
+ *
+ * NEW BEHAVIOR WITH SMART RESURFACING:
+ * - Instead of marking as "declined", update last_shown_at
+ * - This allows recommendations to resurface after cooldown period
+ * - Declined recommendations: 3 days cooldown
+ * - Viewed/ignored: 7 days cooldown
  */
 export async function clearPendingRecommendations(userId: string): Promise<void> {
   try {
+    const now = new Date().toISOString();
+
+    // Update pending recommendations with last_shown_at so they can resurface later
     const { error } = await supabase
       .from('recommendation_tracking')
       .update({
-        status: 'declined',
-        responded_at: new Date().toISOString(),
+        last_shown_at: now,
+        status: 'declined', // Mark as declined (but will resurface after 3 days)
+        responded_at: now,
+        updated_at: now,
       })
       .eq('user_id', userId)
       .eq('status', 'pending');
@@ -239,7 +271,7 @@ export async function clearPendingRecommendations(userId: string): Promise<void>
       return;
     }
 
-    console.log('🗑️ Cleared pending recommendations');
+    console.log('🔄 Updated pending recommendations with last_shown_at (will resurface after 3 days)');
   } catch (error) {
     console.error('Error in clearPendingRecommendations:', error);
   }
@@ -281,5 +313,126 @@ export async function getRecommendationStats(userId: string): Promise<{
   } catch (error) {
     console.error('Error getting recommendation stats:', error);
     return { total: 0, accepted: 0, declined: 0, notInterested: 0, acceptanceRate: 0 };
+  }
+}
+
+/**
+ * Block an activity permanently ("Never show again")
+ */
+export async function blockActivity(
+  userId: string,
+  googlePlaceId: string,
+  placeName: string,
+  reason?: string
+): Promise<void> {
+  try {
+    // Add to blocked_activities table
+    const { error: blockError } = await supabase
+      .from('blocked_activities')
+      .insert({
+        user_id: userId,
+        google_place_id: googlePlaceId,
+        place_name: placeName,
+        reason: reason || 'User chose "Never show again"',
+        blocked_at: new Date().toISOString(),
+      });
+
+    if (blockError && blockError.code !== '23505') { // Ignore duplicate key errors
+      console.error('Error blocking activity:', blockError);
+      return;
+    }
+
+    // Also mark as not_interested in recommendation_tracking
+    const { error: trackingError } = await supabase
+      .from('recommendation_tracking')
+      .update({
+        status: 'not_interested',
+        block_reason: reason || 'User chose "Never show again"',
+        responded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('google_place_id', googlePlaceId);
+
+    if (trackingError) {
+      console.error('Error updating tracking record:', trackingError);
+      return;
+    }
+
+    console.log(`🚫 Permanently blocked ${placeName} (${googlePlaceId})`);
+  } catch (error) {
+    console.error('Error in blockActivity:', error);
+  }
+}
+
+/**
+ * Unblock an activity (remove from blocked list)
+ */
+export async function unblockActivity(
+  userId: string,
+  googlePlaceId: string
+): Promise<void> {
+  try {
+    // Remove from blocked_activities table
+    const { error: unblockError } = await supabase
+      .from('blocked_activities')
+      .delete()
+      .eq('user_id', userId)
+      .eq('google_place_id', googlePlaceId);
+
+    if (unblockError) {
+      console.error('Error unblocking activity:', unblockError);
+      return;
+    }
+
+    // Update recommendation_tracking status to allow resurfacing
+    const { error: trackingError } = await supabase
+      .from('recommendation_tracking')
+      .update({
+        status: 'declined', // Change to declined so it can resurface after 3 days
+        block_reason: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('user_id', userId)
+      .eq('google_place_id', googlePlaceId)
+      .eq('status', 'not_interested');
+
+    if (trackingError) {
+      console.error('Error updating tracking record:', trackingError);
+      return;
+    }
+
+    console.log(`✅ Unblocked ${googlePlaceId}`);
+  } catch (error) {
+    console.error('Error in unblockActivity:', error);
+  }
+}
+
+/**
+ * Get all blocked activities for a user
+ */
+export async function getBlockedActivities(userId: string): Promise<{
+  id: string;
+  google_place_id: string;
+  place_name: string;
+  reason: string | null;
+  blocked_at: string;
+}[]> {
+  try {
+    const { data, error } = await supabase
+      .from('blocked_activities')
+      .select('*')
+      .eq('user_id', userId)
+      .order('blocked_at', { descending: true });
+
+    if (error) {
+      console.error('Error getting blocked activities:', error);
+      return [];
+    }
+
+    return data || [];
+  } catch (error) {
+    console.error('Error in getBlockedActivities:', error);
+    return [];
   }
 }
