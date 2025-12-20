@@ -34,6 +34,7 @@ export interface RecommendationRecord {
 
 /**
  * Save generated recommendations to database
+ * Uses UPSERT to avoid duplicate key errors
  */
 export async function saveRecommendationsToDB(
   userId: string,
@@ -53,24 +54,27 @@ export async function saveRecommendationsToDB(
       category: rec.category,
       status: 'pending',
       confidence_score: rec.score / 100, // Normalize to 0-1
+      last_shown_at: now.toISOString(), // Track when shown
+      refresh_count: 0, // Reset count for new recommendations
       viewed_at: null,
       responded_at: null,
-      resurfaced_count: 0,
       created_at: now.toISOString(),
       expires_at: expiresAt.toISOString(),
     }));
 
-    // Insert recommendations into a tracking table
-    // We'll create this table to be simpler than the full schema
+    // Use UPSERT to handle duplicates (insert or update if exists)
     const { error } = await supabase
       .from('recommendation_tracking')
-      .insert(records);
+      .upsert(records, {
+        onConflict: 'user_id,google_place_id',
+        ignoreDuplicates: false, // Update existing records
+      });
 
     if (error) {
       console.error('Error saving recommendations:', error);
       // Don't throw - failing to save shouldn't break the app
     } else {
-      console.log(`✅ Saved ${records.length} recommendations to database`);
+      console.log(`✅ Saved ${records.length} recommendations to database (upserted)`);
     }
   } catch (error) {
     console.error('Error in saveRecommendationsToDB:', error);
