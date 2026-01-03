@@ -277,7 +277,7 @@ export function LoopHeader({
             style={styles.logoTouchable}
           >
             <Image
-              source={require('@/assets/images/loop-logo3.png')}
+              source={require('@/assets/images/loop-logo6.png')}
               style={styles.logo}
               resizeMode="contain"
             />

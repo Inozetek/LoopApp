@@ -223,7 +223,7 @@ export function SeeDetailsModal({
   // Fallback image
   const imageSource = recommendation.imageUrl
     ? { uri: recommendation.imageUrl }
-    : require('@/assets/images/loop-logo3.png');
+    : require('@/assets/images/loop-logo6.png');
 
   // Photos for carousel
   const photos = recommendation.photos && recommendation.photos.length >= 3
