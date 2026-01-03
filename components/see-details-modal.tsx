@@ -223,7 +223,7 @@ export function SeeDetailsModal({
   // Fallback image
   const imageSource = recommendation.imageUrl
     ? { uri: recommendation.imageUrl }
-    : require('@/assets/images/loop-logo6.png');
+    : require('@/assets/images/loop-logo3.png');
 
   // Photos for carousel
   const photos = recommendation.photos && recommendation.photos.length >= 3
@@ -290,6 +290,11 @@ export function SeeDetailsModal({
                     <Text style={[styles.metaText, { color: colors.text }]}>
                       {recommendation.rating.toFixed(1)}
                     </Text>
+                    {recommendation.activity?.reviewsCount != null && recommendation.activity.reviewsCount > 0 && (
+                      <Text style={[styles.metaText, { color: colors.textSecondary }]}>
+                        ({recommendation.activity.reviewsCount.toLocaleString()})
+                      </Text>
+                    )}
                     <View style={styles.metaDivider} />
                   </>
                 )}
@@ -484,6 +489,27 @@ export function SeeDetailsModal({
                       <IconSymbol name="map.fill" size={20} color={colors.primary} />
                       <Text style={[styles.actionButtonText, { color: colors.text }]}>
                         Directions
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {/* Reviews Button */}
+                  {recommendation.activity?.googlePlaceId && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: colors.icon }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        // Open Google Maps to reviews for this place
+                        const placeId = recommendation.activity!.googlePlaceId;
+                        const reviewsUrl = `https://search.google.com/local/reviews?placeid=${placeId}`;
+                        Linking.openURL(reviewsUrl).catch(() =>
+                          Alert.alert('Error', 'Unable to open reviews')
+                        );
+                      }}
+                    >
+                      <IconSymbol name="star.fill" size={20} color={colors.primary} />
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Reviews
                       </Text>
                     </Pressable>
                   )}
@@ -733,6 +759,7 @@ const styles = StyleSheet.create({
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: Spacing.xs,
     paddingHorizontal: Spacing.md,
     paddingVertical: Spacing.sm,

@@ -35,20 +35,30 @@ const SCREEN_WIDTH = Dimensions.get('window').width;
 
 interface LoopHeaderProps {
   showBackButton?: boolean;
+  onBackPress?: () => void; // Custom back navigation handler
+  showProfileButton?: boolean;
+  onProfilePress?: () => void;
   showSettingsButton?: boolean;
   onSettingsPress?: () => void;
   rightAction?: React.ReactNode;
   onDashboardOpen?: () => void;
+  onLogoPress?: () => void; // Open advanced search/filters
   notificationCount?: number;
+  isLoading?: boolean; // Trigger continuous shimmer when loading
 }
 
 export function LoopHeader({
   showBackButton = false,
+  onBackPress,
+  showProfileButton = false,
+  onProfilePress,
   showSettingsButton = true,
   onSettingsPress,
   rightAction,
   onDashboardOpen,
+  onLogoPress,
   notificationCount = 0,
+  isLoading = false,
 }: LoopHeaderProps) {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -105,28 +115,45 @@ export function LoopHeader({
     const runShimmer = () => {
       shimmerTranslate.value = -SCREEN_WIDTH;
       shimmerTranslate.value = withTiming(SCREEN_WIDTH, {
-        duration: 2000,
+        duration: 1500, // RESTORED: 1500ms for smoother, more elegant shimmer (not 1000ms)
         easing: Easing.bezier(0.4, 0.0, 0.2, 1),
       });
     };
 
-    // Initial shimmer after 1 second
-    const initialTimeout = setTimeout(() => runShimmer(), 1000);
+    if (isLoading) {
+      // Increased frequency when loading - repeat every 2.5 seconds
+      // This allows the animation to complete fully (1500ms) before starting again
+      const interval = setInterval(() => {
+        runShimmer();
+      }, 2500);
 
-    // Repeat every 8 seconds
-    const interval = setInterval(() => {
+      // Run immediately
       runShimmer();
-    }, 8000);
 
-    return () => {
-      clearTimeout(initialTimeout);
-      clearInterval(interval);
-    };
-  }, []);
+      return () => clearInterval(interval);
+    } else {
+      // Normal shimmer - every 12 seconds
+      const initialTimeout = setTimeout(() => runShimmer(), 1000);
+      const interval = setInterval(() => {
+        runShimmer();
+      }, 12000);
+
+      return () => {
+        clearTimeout(initialTimeout);
+        clearInterval(interval);
+      };
+    }
+  }, [isLoading]);
 
   const handleLogoPress = () => {
-    // Tapping logo returns to For You feed (like Snapchat)
-    router.push('/(tabs)');
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (onLogoPress) {
+      // Custom action (e.g., open advanced search)
+      onLogoPress();
+    } else {
+      // Default: return to For You feed (like Snapchat)
+      router.push('/(tabs)');
+    }
   };
 
   const handleDashboardOpen = () => {
@@ -214,11 +241,31 @@ export function LoopHeader({
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
       {/* Left Side */}
       <View style={styles.leftSection}>
-        {showBackButton && (
-          <TouchableOpacity onPress={() => router.back()} style={styles.iconButton}>
+        {showBackButton ? (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (onBackPress) {
+                onBackPress();
+              } else {
+                router.back();
+              }
+            }}
+            style={styles.iconButton}
+          >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
-        )}
+        ) : showProfileButton ? (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onProfilePress?.();
+            }}
+            style={styles.iconButton}
+          >
+            <Ionicons name="person-circle-outline" size={24} color={colors.text} />
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       {/* Center - Loop Logo with Swipe Gesture */}
@@ -230,7 +277,7 @@ export function LoopHeader({
             style={styles.logoTouchable}
           >
             <Image
-              source={require('@/assets/images/loop-logo6.png')}
+              source={require('@/assets/images/loop-logo3.png')}
               style={styles.logo}
               resizeMode="contain"
             />

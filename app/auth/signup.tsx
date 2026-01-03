@@ -107,7 +107,7 @@ export default function SignupScreen() {
           <View style={styles.content}>
             <View style={styles.logoContainer}>
               <Image
-                source={require('@/assets/images/loop-logo6.png')}
+                source={require('@/assets/images/loop-logo3.png')}
                 style={styles.logo}
                 resizeMode="contain"
               />
