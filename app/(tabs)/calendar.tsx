@@ -15,7 +15,20 @@ import {
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
 } from 'react-native';
-import MapView, { Marker, Callout, PROVIDER_GOOGLE } from 'react-native-maps';
+// Conditionally import react-native-maps only on native platforms
+let MapView: any;
+let Marker: any;
+let Callout: any;
+let PROVIDER_GOOGLE: any;
+
+if (Platform.OS !== 'web') {
+  const maps = require('react-native-maps');
+  MapView = maps.default;
+  Marker = maps.Marker;
+  Callout = maps.Callout;
+  PROVIDER_GOOGLE = maps.PROVIDER_GOOGLE;
+}
+
 import { Calendar, DateData } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -1100,7 +1113,7 @@ export default function CalendarScreen() {
               )}
 
               {/* Map Preview */}
-              {newTaskLocation && (
+              {newTaskLocation && Platform.OS !== 'web' && (
                 <View style={styles.mapPreview}>
                   <MapView
                     provider={PROVIDER_GOOGLE}
@@ -1131,6 +1144,16 @@ export default function CalendarScreen() {
                     <Ionicons name="information-circle" size={14} color={Colors[colorScheme ?? 'light'].icon} />
                     <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 4 }]}>
                       Pinch to zoom • Drag to explore
+                    </Text>
+                  </View>
+                </View>
+              )}
+              {newTaskLocation && Platform.OS === 'web' && (
+                <View style={styles.mapPreview}>
+                  <View style={[styles.map, { justifyContent: 'center', alignItems: 'center', backgroundColor: Colors[colorScheme ?? 'light'].cardBackground }]}>
+                    <Ionicons name="map" size={40} color={Colors[colorScheme ?? 'light'].icon} />
+                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginTop: 8, textAlign: 'center' }]}>
+                      Map preview available on mobile
                     </Text>
                   </View>
                 </View>
