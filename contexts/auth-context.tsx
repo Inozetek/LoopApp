@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Session, User as SupabaseUser } from '@supabase/supabase-js';
+import { Session, User as SupabaseUser, AuthChangeEvent } from '@supabase/supabase-js';
 import * as Facebook from 'expo-facebook';
 import { supabase } from '@/lib/supabase';
 import { User, UserInsert, UserUpdate } from '@/types/database';
@@ -121,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes with error handling
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, session) => {
+    } = supabase.auth.onAuthStateChange(async (event: AuthChangeEvent, session: Session | null) => {
       console.log('Auth state change:', event, 'Session:', session ? 'exists' : 'null');
 
       try {

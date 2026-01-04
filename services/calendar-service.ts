@@ -191,7 +191,7 @@ export async function fetchCalendarEvents(
           title: event.title,
           startDate: new Date(event.startDate),
           endDate: new Date(event.endDate),
-          location: event.location,
+          location: event.location ?? undefined,
           notes: event.notes,
           allDay: event.allDay ?? false,
           calendarId: event.calendarId,
@@ -374,7 +374,7 @@ export async function getUpcomingFreeTime(
       let currentTime = dayStart;
 
       // Filter events for this day
-      const dayEvents = (events || []).filter((event) => {
+      const dayEvents = (events || []).filter((event: any) => {
         const eventStart = new Date(event.start_time);
         return (
           eventStart.getDate() === dayStart.getDate() &&

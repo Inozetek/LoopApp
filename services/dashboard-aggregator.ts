@@ -161,7 +161,7 @@ async function fetchDashboardStats(userId: string): Promise<DashboardStats> {
         first_event_time: todayEvents[0]?.start_time,
         last_event_time: todayEvents[todayEvents.length - 1]?.end_time,
         total_stops: todayEvents.length,
-        categories: [...new Set(todayEvents.map((e: any) => e.category))],
+        categories: [...new Set(todayEvents.map((e: any) => e.category))] as string[],
       } : undefined,
       friends_activity: friendsActivity,
       featured_items: await fetchFeaturedItems(userId),

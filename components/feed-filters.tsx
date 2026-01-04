@@ -101,7 +101,7 @@ export function FeedFiltersBar({ filters, onFiltersChange, onInteraction }: Feed
                 ]}
               >
                 <IconSymbol
-                  name={getTimeIcon(time)}
+                  name={getTimeIcon(time) as any}
                   size={16}
                   color={filters.timeOfDay === time ? '#FFFFFF' : colors.textSecondary}
                 />

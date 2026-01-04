@@ -95,7 +95,7 @@ export default function SettingsScreen() {
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{user?.name || 'User'}</Text>
             <Text style={styles.profileEmail}>{user?.email || ''}</Text>
-            <Text style={styles.profileUsername}>@{user?.username || 'username'}</Text>
+            <Text style={styles.profileUsername}>@{user?.email?.split('@')[0] || 'username'}</Text>
           </View>
         </View>
       </View>

@@ -53,7 +53,7 @@ export async function saveRecommendationsToDB(
       place_name: rec.title,
       category: rec.category,
       status: 'pending',
-      confidence_score: rec.score / 100, // Normalize to 0-1
+      confidence_score: (rec.score || 0) / 100, // Normalize to 0-1
       last_shown_at: now.toISOString(), // Track when shown
       refresh_count: 0, // Reset count for new recommendations
       viewed_at: null,
@@ -141,7 +141,7 @@ export async function loadRecommendationsFromDB(
     const recommendations = data.map((record: any) => record.recommendation_data as Recommendation);
 
     // Check if cached recommendations have photos
-    const withoutPhotos = recommendations.filter(r => !r.imageUrl || r.imageUrl === '');
+    const withoutPhotos = recommendations.filter((r: any) => !r.imageUrl || r.imageUrl === '');
     if (withoutPhotos.length > 0) {
       console.log(`⚠️ ${withoutPhotos.length} cached recommendations missing photos - refresh recommended`);
       console.log(`   Tip: Pull to refresh to get fresh recommendations with photos`);
@@ -313,9 +313,9 @@ export async function getRecommendationStats(userId: string): Promise<{
     }
 
     const total = data.length;
-    const accepted = data.filter(r => r.status === 'accepted').length;
-    const declined = data.filter(r => r.status === 'declined').length;
-    const notInterested = data.filter(r => r.status === 'not_interested').length;
+    const accepted = data.filter((r: any) => r.status === 'accepted').length;
+    const declined = data.filter((r: any) => r.status === 'declined').length;
+    const notInterested = data.filter((r: any) => r.status === 'not_interested').length;
     const acceptanceRate = total > 0 ? (accepted / total) * 100 : 0;
 
     return {

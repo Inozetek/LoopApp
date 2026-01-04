@@ -155,7 +155,7 @@ export async function generateRecommendations(
     });
 
     // 7. Sort by score and apply business rules
-    scoredActivities.sort((a, b) => b.score.final_score - a.score.final_score);
+    scoredActivities.sort((a: any, b: any) => b.score.final_score - a.score.final_score);
 
     // Business rules:
     // - Max 2 sponsored in top 5 (40% mix)

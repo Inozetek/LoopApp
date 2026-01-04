@@ -157,7 +157,7 @@ export async function searchFriends(
     }
 
     // Check friendship status for each user
-    const userIds = data.map(u => u.id);
+    const userIds = data.map((u: any) => u.id);
     const { data: friendships } = await supabase
       .from('friendships')
       .select('friend_id, status')
@@ -165,7 +165,7 @@ export async function searchFriends(
       .in('friend_id', userIds);
 
     const friendshipMap = new Map(
-      (friendships || []).map(f => [f.friend_id, f.status])
+      (friendships || []).map((f: any) => [f.friend_id, f.status])
     );
 
     // Transform to FriendSearchResult interface
@@ -344,7 +344,7 @@ export async function getFriendProfile(friendId: string, currentUserId: string):
         .order('start_time', { ascending: true });
 
       if (activities && activities.length > 0) {
-        todayActivities = activities.map(a => ({
+        todayActivities = activities.map((a: any) => ({
           id: a.id,
           title: a.title,
           time: new Date(a.start_time).toLocaleTimeString('en-US', {

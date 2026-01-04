@@ -15,8 +15,8 @@ export interface BusinessHours {
 }
 
 export interface DayHours {
-  open: string; // HH:MM format (24-hour)
-  close: string; // HH:MM format (24-hour)
+  open?: string; // HH:MM format (24-hour)
+  close?: string; // HH:MM format (24-hour)
   isClosed?: boolean;
 }
 
@@ -219,7 +219,7 @@ export function isOpenAt(hours: BusinessHours, dateTime: Date): boolean {
   const dayName = dayNames[dateTime.getDay()];
   const dayHours = hours[dayName];
 
-  if (!dayHours || dayHours.isClosed) return false;
+  if (!dayHours || dayHours.isClosed || !dayHours.open || !dayHours.close) return false;
 
   const currentTime = `${String(dateTime.getHours()).padStart(2, '0')}:${String(dateTime.getMinutes()).padStart(2, '0')}`;
 
@@ -251,7 +251,7 @@ export function getNextOpeningTime(hours: BusinessHours, fromTime: Date = new Da
     const dayName = dayNames[checkDate.getDay()];
     const dayHours = hours[dayName];
 
-    if (dayHours && !dayHours.isClosed) {
+    if (dayHours && !dayHours.isClosed && dayHours.open) {
       const [openHour, openMinute] = dayHours.open.split(':').map(Number);
       const openingTime = new Date(checkDate);
       openingTime.setHours(openHour, openMinute, 0, 0);
@@ -279,7 +279,7 @@ export function suggestVisitTime(
   const todayName = dayNames[fromTime.getDay()];
   const todayHours = hours[todayName];
 
-  if (todayHours && !todayHours.isClosed) {
+  if (todayHours && !todayHours.isClosed && todayHours.open && todayHours.close) {
     const [openHour] = todayHours.open.split(':').map(Number);
     const [closeHour] = todayHours.close.split(':').map(Number);
 
@@ -312,6 +312,7 @@ export function suggestVisitTime(
 export function formatBusinessHours(dayHours: DayHours | undefined): string {
   if (!dayHours) return 'Hours unavailable';
   if (dayHours.isClosed) return 'Closed';
+  if (!dayHours.open || !dayHours.close) return 'Hours unavailable';
 
   const formatTime = (time: string) => {
     const [hour, minute] = time.split(':').map(Number);
