@@ -70,8 +70,8 @@ export async function searchNearbyPlaces(
   params: NearbySearchParams
 ): Promise<PlaceResult[]> {
   if (!GOOGLE_PLACES_API_KEY) {
-    console.warn('Google Places API key not configured. Using mock data.');
-    return getMockPlaces(params);
+    console.error('❌ Google Places API key not configured. Cannot fetch places.');
+    throw new Error('Google Places API key is required. Please set EXPO_PUBLIC_GOOGLE_PLACES_API_KEY in your environment.');
   }
 
   try {
@@ -84,39 +84,71 @@ export async function searchNearbyPlaces(
       maxResults = 20,
     } = params;
 
-    // Build API URL
-    const baseUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
-    const queryParams = new URLSearchParams({
-      location: `${location.lat},${location.lng}`,
-      radius: radius.toString(),
-      key: GOOGLE_PLACES_API_KEY,
-    });
+    const allResults: PlaceResult[] = [];
+    let nextPageToken: string | undefined;
+    let pageCount = 0;
+    const maxPages = Math.ceil(maxResults / 20); // Each page returns ~20 results
 
-    if (type) queryParams.append('type', type);
-    if (keyword) queryParams.append('keyword', keyword);
-    if (openNow) queryParams.append('opennow', 'true');
+    console.log(`🔍 Fetching up to ${maxResults} places (${maxPages} pages max):`, { location, radius, type, keyword });
 
-    const url = `${baseUrl}?${queryParams.toString()}`;
+    // Fetch multiple pages until we have enough results or run out of pages
+    while (allResults.length < maxResults && pageCount < maxPages) {
+      // Build API URL
+      const baseUrl = 'https://maps.googleapis.com/maps/api/place/nearbysearch/json';
+      const queryParams = new URLSearchParams({
+        location: `${location.lat},${location.lng}`,
+        radius: radius.toString(),
+        key: GOOGLE_PLACES_API_KEY,
+      });
 
-    console.log('Fetching nearby places:', { location, radius, type, keyword });
+      if (type) queryParams.append('type', type);
+      if (keyword) queryParams.append('keyword', keyword);
+      if (openNow) queryParams.append('opennow', 'true');
+      if (nextPageToken) queryParams.append('pagetoken', nextPageToken);
 
-    const response = await fetch(url);
-    const data = await response.json();
+      const url = `${baseUrl}?${queryParams.toString()}`;
 
-    if (data.status === 'OK') {
-      const results = data.results.slice(0, maxResults) as PlaceResult[];
-      console.log(`Found ${results.length} places`);
-      return results;
-    } else if (data.status === 'ZERO_RESULTS') {
-      console.log('No places found matching criteria');
-      return [];
-    } else {
-      console.error('Google Places API error:', data.status, data.error_message);
-      return getMockPlaces(params);
+      // IMPORTANT: Google requires a short delay between pagination requests
+      if (nextPageToken && pageCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 2 second delay
+      }
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.status === 'OK') {
+        allResults.push(...(data.results as PlaceResult[]));
+        nextPageToken = data.next_page_token;
+        pageCount++;
+        console.log(`📄 Page ${pageCount}: Found ${data.results.length} places (${allResults.length} total so far)`);
+
+        // If no next page token, we've reached the end
+        if (!nextPageToken) {
+          console.log(`✅ No more pages available (fetched all ${allResults.length} places)`);
+          break;
+        }
+      } else if (data.status === 'ZERO_RESULTS') {
+        console.log('ℹ️ No places found matching criteria');
+        break;
+      } else if (data.status === 'INVALID_REQUEST' && nextPageToken) {
+        // Next page token might have expired, stop pagination
+        console.warn('⚠️ Next page token expired, stopping pagination');
+        break;
+      } else {
+        console.error('❌ Google Places API error:', data.status, data.error_message);
+        // Return whatever results we have, even if empty
+        break;
+      }
     }
+
+    // Return up to maxResults
+    const finalResults = allResults.slice(0, maxResults);
+    console.log(`✅ Returning ${finalResults.length} places (requested ${maxResults})`);
+    return finalResults;
   } catch (error) {
-    console.error('Error fetching nearby places:', error);
-    return getMockPlaces(params);
+    console.error('❌ Error fetching nearby places:', error);
+    // Return empty array instead of mock data
+    return [];
   }
 }
 
@@ -268,114 +300,10 @@ export function getPriceRangeString(priceLevel?: number): string {
 }
 
 /**
- * Mock places data for testing without API key
+ * Mock places data - REMOVED FOR PRODUCTION
+ * This function has been removed to ensure production-ready code only uses real Google Places API data.
+ * No mock data fallbacks are allowed in production.
  */
-function getMockPlaces(params: NearbySearchParams): PlaceResult[] {
-  console.log('Using mock places data (no API key configured)');
-
-  const { location, type } = params;
-
-  // Generate some mock places near the user's location
-  const mockPlaces: PlaceResult[] = [
-    {
-      place_id: 'mock_1',
-      name: 'Blue Bottle Coffee',
-      vicinity: '350 W Main St',
-      geometry: {
-        location: {
-          lat: location.lat + 0.001,
-          lng: location.lng + 0.001,
-        },
-      },
-      rating: 4.5,
-      user_ratings_total: 245,
-      price_level: 2,
-      types: ['cafe', 'food'],
-      photos: [],
-      opening_hours: { open_now: true },
-      business_status: 'OPERATIONAL',
-    },
-    {
-      place_id: 'mock_2',
-      name: 'The Fillmore',
-      vicinity: '1805 Geary Blvd',
-      geometry: {
-        location: {
-          lat: location.lat + 0.002,
-          lng: location.lng - 0.001,
-        },
-      },
-      rating: 4.7,
-      user_ratings_total: 892,
-      price_level: 3,
-      types: ['night_club', 'bar'],
-      photos: [],
-      opening_hours: { open_now: false },
-      business_status: 'OPERATIONAL',
-    },
-    {
-      place_id: 'mock_3',
-      name: 'Golden Gate Park',
-      vicinity: '501 Stanyan St',
-      geometry: {
-        location: {
-          lat: location.lat - 0.002,
-          lng: location.lng + 0.002,
-        },
-      },
-      rating: 4.8,
-      user_ratings_total: 15420,
-      price_level: 0,
-      types: ['park', 'tourist_attraction'],
-      photos: [],
-      opening_hours: { open_now: true },
-      business_status: 'OPERATIONAL',
-    },
-    {
-      place_id: 'mock_4',
-      name: 'Equinox Gym',
-      vicinity: '2125 Fillmore St',
-      geometry: {
-        location: {
-          lat: location.lat + 0.003,
-          lng: location.lng + 0.002,
-        },
-      },
-      rating: 4.2,
-      user_ratings_total: 156,
-      price_level: 4,
-      types: ['gym', 'health'],
-      photos: [],
-      opening_hours: { open_now: true },
-      business_status: 'OPERATIONAL',
-    },
-    {
-      place_id: 'mock_5',
-      name: 'SFMOMA',
-      vicinity: '151 3rd St',
-      geometry: {
-        location: {
-          lat: location.lat - 0.001,
-          lng: location.lng - 0.002,
-        },
-      },
-      rating: 4.6,
-      user_ratings_total: 8942,
-      price_level: 2,
-      types: ['museum', 'art_gallery', 'tourist_attraction'],
-      photos: [],
-      opening_hours: { open_now: true },
-      business_status: 'OPERATIONAL',
-    },
-  ];
-
-  // Filter by type if specified
-  if (type) {
-    return mockPlaces.filter(place => place.types.includes(type));
-  }
-
-  return mockPlaces;
-}
 
 /**
  * Search for places by text query (alternative to nearby search)

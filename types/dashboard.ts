@@ -176,7 +176,7 @@ export interface UserSession {
 // DASHBOARD VIEW STATE
 // ============================================================================
 
-export type DashboardView = 'stats' | 'map';
+export type DashboardView = 'stats' | 'map' | 'controls';
 
 export interface DashboardState {
   isVisible: boolean;

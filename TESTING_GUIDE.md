@@ -1,8 +1,134 @@
 # 🧪 Comprehensive Testing Guide - Loop MVP
 
-**Version:** 1.0 (95% Complete)
-**Last Updated:** October 19, 2025
+**Version:** 1.1 (Updated with Latest Features)
+**Last Updated:** December 21, 2024
 **Estimated Testing Time:** 2-3 hours for full walkthrough
+
+---
+
+## ⚡ QUICK START: Testing Recent Updates
+
+**Just updated these features? Test them first:**
+
+### 1. Fix Walmart/Generic Places Issue (🔥 Priority)
+
+**Problem:** Generic places (Walmart, Target, gas stations) were appearing in feed.
+**Fix:** Strengthened filter patterns + clear cache to get fresh results.
+
+**Test Steps:**
+1. Open app → Go to Recommendation Feed
+2. **Pull down to refresh** (this clears the cache)
+3. Wait for new recommendations to load
+4. Scroll through 10-15 cards
+
+**✅ Expected Result:**
+- **NO** Walmart, Target, Costco, Sam's Club, etc.
+- **NO** McDonald's, Taco Bell, Subway, fast food chains
+- **NO** Shell, Chevron, gas stations
+- **NO** CVS, Walgreens, pharmacies
+- **NO** Banks, ATMs, post offices
+- **ONLY** interesting local places: restaurants, cafes, bars, entertainment, activities
+
+**If still seeing generic places:**
+- Pull to refresh **2-3 more times** (old cache takes multiple refreshes to clear)
+- Check console logs for: `⏭️  Skipping generic place (absolute filter): [NAME]`
+- Report the exact place name if it's getting through
+
+---
+
+### 2. Test Feed Filters (NEW/Updated)
+
+**What's New:** Filters now actually work! Time, distance, and price filters now filter the recommendations.
+
+**Test Steps:**
+1. On feed, pull down slightly (don't release)
+2. Filters should slide down
+3. **Test Time Filter:**
+   - Tap "Morning" → Should show coffee, breakfast
+   - Tap "Evening" → Should show dinner, bars, nightlife
+4. **Test Distance Filter:**
+   - Tap "1 mi" → Only very close places
+   - Tap "10 mi" → Wider radius
+5. **Test Price Filter:**
+   - Tap "$" → Cheap/free options
+   - Tap "$$$" → Upscale places
+
+**✅ Expected Result:**
+- Tapping any filter **immediately refreshes** the feed with filtered results
+- Filters highlight blue when selected
+- Feed shows ONLY activities matching ALL selected filters
+- Filters auto-collapse after 3 seconds
+
+**Common Issues:**
+- "No results" → Loosen filters (increase distance or change price)
+- Filters don't collapse → Scroll down manually
+
+---
+
+### 3. Test Native Ads (Infrastructure Ready)
+
+**What Changed:** Removed fixed banner ad at bottom. Native sponsored activity cards now show inline with organic results.
+
+**Test Steps:**
+1. Scroll through recommendations
+2. Look for any cards with **"Sponsored"** badge (top-right corner)
+
+**✅ Expected Result (For Now):**
+- You probably **WON'T see any sponsored badges yet** (no businesses paying)
+- This is **expected** - infrastructure is built, just needs real sponsored businesses
+- Once businesses subscribe ($49-149/mo), they'll automatically appear with badges
+
+**Future (When businesses onboard):**
+- ~20-30% of cards should have "Sponsored" badge
+- Sponsored cards look identical to organic but with badge
+- Mixed naturally into feed (not clustered)
+
+---
+
+### 4. Test Loop View Enhancements (NEW Stats)
+
+**What's New:** Loop View now shows total distance and estimated travel time.
+
+**Test Steps:**
+1. Add 2-3 activities to calendar (from feed → "Add to Calendar")
+2. Go to **Calendar tab**
+3. Scroll to **Loop View** section (map)
+4. Look at **stats overlay** at top of map
+
+**✅ Expected Result:**
+- **Map shows:**
+  - 🏠 Green home marker
+  - Numbered task pins (1, 2, 3...)
+  - Blue polyline connecting them
+- **Stats overlay shows:**
+  - "X stops" (number of activities)
+  - "Y.Z mi" (total distance) ← **NEW**
+  - "Hh Mm" (estimated time) ← **NEW**
+
+**Example:** "3 stops • 8.5 mi • 25 min"
+
+**Common Issues:**
+- Stats show "0 mi" → Make sure events have valid locations
+- "Map not available" → Web version doesn't support maps (test on iOS/Android)
+- Wrong home location → Set home address in Settings
+
+---
+
+### 5. Quick Smoke Test Checklist
+
+**Run these quickly to verify everything works:**
+
+- [ ] App opens without crashing
+- [ ] Feed loads recommendations (no Walmart!)
+- [ ] Pull to refresh works
+- [ ] Filters slide down and work
+- [ ] "Add to Calendar" works (shows toast "Added ✓")
+- [ ] Calendar shows added events
+- [ ] Loop View shows map with route stats
+- [ ] No crashes during normal use
+
+**If all ✅ → App is working correctly!**
+**If any ❌ → See full testing guide below**
 
 ---
 

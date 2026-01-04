@@ -39,8 +39,8 @@ const ENV_VARS: EnvVar[] = [
   // OPTIONAL BUT RECOMMENDED
   {
     key: 'EXPO_PUBLIC_GOOGLE_PLACES_API_KEY',
-    required: false,
-    description: 'Google Places API key (app will use mock data if missing)',
+    required: true,
+    description: 'Google Places API key (REQUIRED for production - app will not function without it)',
   },
   {
     key: 'SENTRY_DSN',
@@ -211,7 +211,7 @@ export function printEnvironmentInfo(): void {
   console.log(`   Mode: ${getEnvironmentName()}`);
   console.log(`   Debug: ${isDebugMode() ? 'Enabled' : 'Disabled'}`);
   console.log(
-    `   Google Places API: ${process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ? 'Configured' : 'Using mock data'}`
+    `   Google Places API: ${process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ? 'Configured ✅' : 'NOT CONFIGURED ❌ (REQUIRED FOR APP TO FUNCTION)'}`
   );
   console.log(
     `   Sentry: ${process.env.SENTRY_DSN ? 'Enabled' : 'Disabled'}`

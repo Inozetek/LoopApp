@@ -99,8 +99,10 @@ export async function loadRecommendationsFromDB(
     const now = new Date();
     const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
     // Query for pending recommendations OR resurfaceable old ones
+    // CRITICAL: Only load recommendations created in the last 24 hours to ensure freshness
     const { data, error } = await supabase
       .from('recommendation_tracking')
       .select('*')
@@ -111,6 +113,8 @@ export async function loadRecommendationsFromDB(
       .neq('status', 'accepted')
       // Not expired
       .gte('expires_at', now.toISOString())
+      // CACHE FRESHNESS: Only load recommendations created in last 24 hours
+      .gte('created_at', oneDayAgo.toISOString())
       .or(
         `and(status.eq.pending),` +
         `and(status.eq.declined,last_shown_at.lt.${threeDaysAgo.toISOString()}),` +
@@ -135,6 +139,13 @@ export async function loadRecommendationsFromDB(
 
     // Extract the recommendation data
     const recommendations = data.map((record: any) => record.recommendation_data as Recommendation);
+
+    // Check if cached recommendations have photos
+    const withoutPhotos = recommendations.filter(r => !r.imageUrl || r.imageUrl === '');
+    if (withoutPhotos.length > 0) {
+      console.log(`⚠️ ${withoutPhotos.length} cached recommendations missing photos - refresh recommended`);
+      console.log(`   Tip: Pull to refresh to get fresh recommendations with photos`);
+    }
 
     return recommendations;
   } catch (error) {
@@ -438,5 +449,78 @@ export async function getBlockedActivities(userId: string): Promise<{
   } catch (error) {
     console.error('Error in getBlockedActivities:', error);
     return [];
+  }
+}
+
+/**
+ * Clean up malformed photo URLs in the database
+ * Fixes double URLs like: https://places.googleapis.com/v1/https://images.unsplash.com/...
+ *
+ * This function:
+ * 1. Finds all recommendations with malformed imageUrl fields
+ * 2. Deletes them from the database
+ * 3. Returns count of cleaned recommendations
+ *
+ * Recommendations will be regenerated fresh on next load.
+ */
+export async function cleanupMalformedPhotoURLs(userId: string): Promise<number> {
+  try {
+    console.log('🧹 [Cleanup] Starting photo URL cleanup...');
+
+    // Get all recommendations for user
+    const { data: recs, error } = await supabase
+      .from('recommendation_tracking')
+      .select('*')
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('❌ [Cleanup] Error loading recommendations:', error.message);
+      return 0;
+    }
+
+    if (!recs || recs.length === 0) {
+      console.log('📭 [Cleanup] No recommendations found');
+      return 0;
+    }
+
+    let cleanedCount = 0;
+    const malformedRecs: string[] = [];
+
+    for (const rec of recs) {
+      const recData = rec.recommendation_data as Recommendation;
+
+      if (!recData || !recData.imageUrl) {
+        continue;
+      }
+
+      // Check for malformed URL (double https)
+      const isMalformed = recData.imageUrl.includes('https://places.googleapis.com/v1/https://');
+
+      if (isMalformed) {
+        malformedRecs.push(recData.title);
+
+        // Delete this recommendation - it will be regenerated fresh
+        const { error: deleteError } = await supabase
+          .from('recommendation_tracking')
+          .delete()
+          .eq('id', rec.id);
+
+        if (deleteError) {
+          console.error(`❌ [Cleanup] Failed to delete ${recData.title}:`, deleteError.message);
+        } else {
+          cleanedCount++;
+        }
+      }
+    }
+
+    if (cleanedCount > 0) {
+      console.log(`✅ [Cleanup] Removed ${cleanedCount} malformed recommendations: ${malformedRecs.join(', ')}`);
+    } else {
+      console.log(`✅ [Cleanup] No malformed URLs found - cache is clean`);
+    }
+    return cleanedCount;
+  } catch (error) {
+    console.error('❌ Error in cleanupMalformedPhotoURLs:', error);
+    return 0;
   }
 }

@@ -23,6 +23,9 @@ import { getBusinessHours, isOpenAt, getTodayHours, formatBusinessHours } from '
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { getLastTaskForDay, type TaskWithLocation } from '@/services/calendar-service';
+import { suggestStartTimeFromPreviousTask, isReasonableTravelTime, calculateTravelTimeWithBuffer } from '@/utils/route-calculations';
+import { useAuth } from '@/contexts/auth-context';
 
 interface SchedulePlanModalProps {
   visible: boolean;
@@ -51,21 +54,74 @@ export function SchedulePlanModal({
 }: SchedulePlanModalProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
+  const { user } = useAuth();
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [activeTab, setActiveTab] = useState<'schedule' | 'share'>('schedule');
+  const [selectedQuickTime, setSelectedQuickTime] = useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(600)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (visible) {
-      setSelectedDate(new Date());
+    if (visible && activity) {
+      // Phase 1.6b: Calculate smart default time based on travel from previous task
+      const calculateSmartDefaultTime = async () => {
+        // Priority 1: Use recommendation context time (Phase 1.6a)
+        if (recommendation?.suggestedTime || recommendation?.recommendedFor) {
+          const timeValue = recommendation.suggestedTime || recommendation.recommendedFor!;
+          const defaultTime = timeValue instanceof Date ? timeValue : new Date(timeValue);
+          console.log('📅 Using recommendation suggested time:', defaultTime);
+          setSelectedDate(defaultTime);
+          return;
+        }
+
+        // Priority 2: Calculate travel time from previous task (Phase 1.6b)
+        if (user && activity.location) {
+          const lastTask = await getLastTaskForDay(user.id);
+
+          if (lastTask) {
+            const previousLocation = {
+              latitude: lastTask.location.coordinates[1],
+              longitude: lastTask.location.coordinates[0],
+            };
+
+            const newLocation = {
+              latitude: activity.location.latitude,
+              longitude: activity.location.longitude,
+            };
+
+            const travelMinutes = calculateTravelTimeWithBuffer(previousLocation, newLocation);
+
+            // Only use travel time if it's reasonable (< 30 min)
+            if (isReasonableTravelTime(travelMinutes)) {
+              const suggestedTime = suggestStartTimeFromPreviousTask(
+                lastTask.end_time,
+                previousLocation,
+                newLocation
+              );
+
+              console.log(`📅 Smart time: ${travelMinutes} min travel from "${lastTask.title}" → ${suggestedTime.toLocaleTimeString()}`);
+              setSelectedDate(suggestedTime);
+              return;
+            } else {
+              console.log(`⚠️ Travel time too long (${travelMinutes} min), using current time`);
+            }
+          }
+        }
+
+        // Priority 3: Fallback to current time
+        console.log('📅 Using current time (no previous task found)');
+        setSelectedDate(new Date());
+      };
+
+      calculateSmartDefaultTime();
       setNotes('');
       setActiveTab('schedule');
+      setSelectedQuickTime(null);
 
       Animated.parallel([
         Animated.spring(slideAnim, {
@@ -94,7 +150,7 @@ export function SchedulePlanModal({
         }),
       ]).start();
     }
-  }, [visible]);
+  }, [visible, recommendation, activity, user]);
 
   if (!activity) return null;
 
@@ -146,7 +202,7 @@ export function SchedulePlanModal({
     onSchedule(selectedDate, notes);
   };
 
-  const handleQuickTime = (label: string) => {
+  const handleQuickTime = async (label: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const newDate = new Date();
 
@@ -154,6 +210,36 @@ export function SchedulePlanModal({
       case 'Now':
         break;
       case 'Later Today':
+        // CRITICAL FIX: Calculate smart time based on last task, not just +3 hours
+        if (user && activity?.location) {
+          const lastTask = await getLastTaskForDay(user.id);
+
+          if (lastTask) {
+            const previousLocation = {
+              latitude: lastTask.location.coordinates[1],
+              longitude: lastTask.location.coordinates[0],
+            };
+            const newLocation = {
+              latitude: activity.location.latitude,
+              longitude: activity.location.longitude,
+            };
+
+            const travelMinutes = calculateTravelTimeWithBuffer(previousLocation, newLocation);
+
+            if (isReasonableTravelTime(travelMinutes)) {
+              const suggestedTime = suggestStartTimeFromPreviousTask(
+                lastTask.end_time,
+                previousLocation,
+                newLocation
+              );
+              console.log(`📅 Quick time: ${travelMinutes} min travel from "${lastTask.title}" → ${suggestedTime.toLocaleTimeString()}`);
+              setSelectedDate(suggestedTime);
+              setSelectedQuickTime(label);
+              return;
+            }
+          }
+        }
+        // Fallback: +3 hours if no previous task
         newDate.setHours(newDate.getHours() + 3);
         break;
       case 'Tomorrow':
@@ -168,10 +254,12 @@ export function SchedulePlanModal({
     }
 
     setSelectedDate(newDate);
+    setSelectedQuickTime(label);
   };
 
   const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    return dateObj.toLocaleDateString('en-US', {
       weekday: 'short',
       month: 'short',
       day: 'numeric',
@@ -179,7 +267,8 @@ export function SchedulePlanModal({
   };
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('en-US', {
+    const dateObj = date instanceof Date ? date : new Date(date);
+    return dateObj.toLocaleTimeString('en-US', {
       hour: 'numeric',
       minute: '2-digit',
     });
@@ -206,12 +295,11 @@ export function SchedulePlanModal({
           },
         ]}
       >
-        <Pressable onPress={(e) => e.stopPropagation()}>
-          <View style={[styles.modal, { backgroundColor: colors.card }]}>
-            {/* Handle Bar */}
-            <View style={styles.handleBar}>
-              <View style={[styles.handle, { backgroundColor: colors.border }]} />
-            </View>
+        <View style={[styles.modal, { backgroundColor: colors.card }]}>
+          {/* Handle Bar */}
+          <View style={styles.handleBar}>
+            <View style={[styles.handle, { backgroundColor: colors.border }]} />
+          </View>
 
             {/* Header */}
             <View style={styles.header}>
@@ -272,15 +360,28 @@ export function SchedulePlanModal({
                   {/* Quick Time Options */}
                   <Text style={[styles.sectionLabel, { color: colors.text }]}>When?</Text>
                   <View style={styles.quickTimeGrid}>
-                    {['Now', 'Later Today', 'Tomorrow', 'This Weekend'].map((label) => (
-                      <Pressable
-                        key={label}
-                        style={[styles.quickTimeButton, { backgroundColor: colors.backgroundSecondary }]}
-                        onPress={() => handleQuickTime(label)}
-                      >
-                        <Text style={[styles.quickTimeText, { color: colors.text }]}>{label}</Text>
-                      </Pressable>
-                    ))}
+                    {['Now', 'Later Today', 'Tomorrow', 'This Weekend'].map((label) => {
+                      const isSelected = selectedQuickTime === label;
+                      return (
+                        <Pressable
+                          key={label}
+                          style={[
+                            styles.quickTimeButton,
+                            {
+                              backgroundColor: isSelected ? BrandColors.loopBlue : colors.backgroundSecondary,
+                            }
+                          ]}
+                          onPress={() => handleQuickTime(label)}
+                        >
+                          <Text style={[
+                            styles.quickTimeText,
+                            { color: isSelected ? '#FFFFFF' : colors.text }
+                          ]}>
+                            {label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
                   </View>
 
                   {/* Custom Date/Time */}
@@ -395,7 +496,6 @@ export function SchedulePlanModal({
               </View>
             )}
           </View>
-        </Pressable>
       </Animated.View>
     </Modal>
   );

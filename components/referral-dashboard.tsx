@@ -21,7 +21,7 @@ import {
   type ReferralStats,
   type ReferralReward,
 } from '@/services/referral-service';
-import { ReferralShareModal } from './referral-share-modal';
+// import { ReferralShareModal } from './referral-share-modal'; // TODO: Restore when implementing referral feature
 
 interface ReferralDashboardProps {
   userId: string;
@@ -191,12 +191,14 @@ export function ReferralDashboard({ userId, userName }: ReferralDashboardProps) 
       </View>
 
       {/* Share Modal */}
+      {/* TODO: Restore when implementing referral feature
       <ReferralShareModal
         visible={showShareModal}
         onClose={() => setShowShareModal(false)}
         userId={userId}
         userName={userName}
       />
+      */}
     </ScrollView>
   );
 }

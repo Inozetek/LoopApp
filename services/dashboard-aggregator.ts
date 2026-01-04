@@ -317,19 +317,22 @@ async function fetchTodayTasks(userId: string): Promise<TaskLocation[]> {
 
     if (error) throw error;
 
-    const tasks: TaskLocation[] = (data || []).map((event: any, index: number) => ({
-      id: event.id,
-      title: event.title,
-      category: event.category,
-      location: {
-        latitude: event.location.coordinates[1],
-        longitude: event.location.coordinates[0],
-      },
-      address: event.address,
-      start_time: event.start_time,
-      end_time: event.end_time,
-      order: index + 1,
-    }));
+    // Filter out events without location data and map to TaskLocation
+    const tasks: TaskLocation[] = (data || [])
+      .filter((event: any) => event.location && event.location.coordinates)
+      .map((event: any, index: number) => ({
+        id: event.id,
+        title: event.title,
+        category: event.category,
+        location: {
+          latitude: event.location.coordinates[1],
+          longitude: event.location.coordinates[0],
+        },
+        address: event.address,
+        start_time: event.start_time,
+        end_time: event.end_time,
+        order: index + 1,
+      }));
 
     return tasks;
   } catch (error) {

@@ -14,6 +14,10 @@ export const BrandColors = {
   loopGreenLight: '#33FFB2', // Lighter mint for highlights
   loopGreenDark: '#00E38C',  // Darker mint for pressed states
 
+  loopOrange: '#FF9500',    // Orange for warnings/highlights
+  loopOrangeLight: '#FFB340', // Lighter orange
+  loopOrangeDark: '#E08500',  // Darker orange
+
   // Neutral Palette (Modern, High Contrast)
   black: '#000000',
   almostBlack: '#0A0A0A',
@@ -50,6 +54,7 @@ export const ThemeColors = {
     background: BrandColors.white,
     backgroundSecondary: BrandColors.lightBackground,
     card: BrandColors.white,
+    cardBackground: BrandColors.white, // Alias for card
     cardElevated: BrandColors.white,
 
     // Text
@@ -89,6 +94,7 @@ export const ThemeColors = {
     background: BrandColors.black,
     backgroundSecondary: BrandColors.almostBlack,
     card: BrandColors.darkGray,
+    cardBackground: BrandColors.darkGray, // Alias for card
     cardElevated: BrandColors.mediumGray,
 
     // Text
@@ -224,6 +230,20 @@ export const Typography = {
     lineHeight: 16,
     fontWeight: '600' as const,
     letterSpacing: 0.5,
+  },
+
+  // Shorthand aliases (for backward compatibility)
+  body: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '400' as const,
+    letterSpacing: 0.25,
+  },
+  caption: {
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '400' as const,
+    letterSpacing: 0.4,
   },
 };
 

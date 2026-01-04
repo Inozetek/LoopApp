@@ -16,13 +16,11 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useTutorial } from '@/contexts/tutorial-context';
 import { useAuth } from '@/contexts/auth-context';
 import { Colors } from '@/constants/theme';
 import { getBlockedActivities, unblockActivity } from '@/services/recommendation-persistence';
 
 export default function SettingsScreen() {
-  const { startTutorial } = useTutorial();
   const { user } = useAuth();
   const [blockedPlaces, setBlockedPlaces] = useState<any[]>([]);
   const [showBlockedPlacesModal, setShowBlockedPlacesModal] = useState(false);
@@ -53,17 +51,8 @@ export default function SettingsScreen() {
   const handleReplayTutorial = () => {
     Alert.alert(
       'Replay Tutorial',
-      'This will show you the app navigation tutorial again. Ready to start?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Start Tutorial',
-          onPress: () => {
-            console.log('📚 User requested tutorial replay from Settings');
-            startTutorial();
-          },
-        },
-      ]
+      'Tutorial feature is coming soon!',
+      [{ text: 'OK', style: 'cancel' }]
     );
   };
 

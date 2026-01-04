@@ -1,6 +1,9 @@
 import * as Calendar from 'expo-calendar';
 import { Platform } from 'react-native';
 import { supabase } from '@/lib/supabase';
+import { calculateTravelTimeWithBuffer } from '@/utils/route-calculations';
+
+const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 export interface CalendarPermissionResult {
   granted: boolean;
@@ -22,6 +25,41 @@ export interface SyncResult {
   success: boolean;
   eventsSynced: number;
   errors: string[];
+}
+
+/**
+ * Geocode an address to lat/lng using Google Geocoding API
+ * Returns null if geocoding fails
+ *
+ * @param address - Address string to geocode
+ * @returns Promise with {lat, lng} or null if failed
+ */
+async function geocodeAddress(address: string): Promise<{ lat: number; lng: number } | null> {
+  try {
+    if (!address || !GOOGLE_MAPS_API_KEY) {
+      return null;
+    }
+
+    const encodedAddress = encodeURIComponent(address);
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodedAddress}&key=${GOOGLE_MAPS_API_KEY}`;
+
+    const response = await fetch(url);
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.results && data.results.length > 0) {
+      const location = data.results[0].geometry.location;
+      return {
+        lat: location.lat,
+        lng: location.lng,
+      };
+    }
+
+    console.log(`⚠️ Geocoding failed for "${address}": ${data.status}`);
+    return null;
+  } catch (error) {
+    console.error(`❌ Geocoding error for "${address}":`, error);
+    return null;
+  }
 }
 
 /**
@@ -221,8 +259,16 @@ export async function syncCalendarToDatabase(
     // Import events with location to database
     for (const event of eventsWithLocation) {
       try {
-        // For MVP, we'll store location as a simple point (0,0) and just save the address
-        // In production, you'd geocode the event location to get lat/lng
+        // Try to geocode the location address
+        const geocoded = await geocodeAddress(event.location || '');
+
+        // Skip events we couldn't geocode (invalid geometry would cause PostGIS error)
+        if (!geocoded) {
+          console.log(`⚠️ Skipping "${event.title}" - couldn't geocode location: ${event.location}`);
+          errors.push(`Couldn't geocode: ${event.title}`);
+          continue;
+        }
+
         const { error: insertError } = await supabase
           .from('calendar_events')
           .insert({
@@ -232,7 +278,7 @@ export async function syncCalendarToDatabase(
             category: 'personal', // Default category for imported events
             location: {
               type: 'Point',
-              coordinates: [0, 0], // Placeholder - would geocode in production
+              coordinates: [geocoded.lng, geocoded.lat], // PostGIS uses [lng, lat] order
             },
             address: event.location || '',
             start_time: event.startDate.toISOString(),
@@ -429,5 +475,196 @@ export async function createCalendarEvent(
   } catch (error) {
     console.error('❌ Error creating calendar event:', error);
     throw error;
+  }
+}
+
+// ===================================
+// Phase 1.6b: Travel Time Smart Scheduling
+// ===================================
+
+export interface TaskWithLocation {
+  id: string;
+  title: string;
+  end_time: Date;
+  location: {
+    coordinates: [number, number]; // [lng, lat] - PostGIS format
+  };
+}
+
+/**
+ * Get the last scheduled task for a given day
+ * Used to calculate travel time for next task suggestion
+ *
+ * @param userId - User ID to fetch tasks for
+ * @param date - Date to check (defaults to today)
+ * @returns Promise with last task or null if no tasks
+ */
+export async function getLastTaskForDay(
+  userId: string,
+  date: Date = new Date()
+): Promise<TaskWithLocation | null> {
+  try {
+    // Set time range for the day (midnight to midnight)
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const now = new Date();
+
+    // Query calendar events for today that:
+    // 1. Are scheduled (not completed/cancelled)
+    // 2. End time is before "now" or in the future
+    // 3. Have a location (required for travel time calculation)
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .select('id, title, end_time, location')
+      .eq('user_id', userId)
+      .eq('status', 'scheduled')
+      .gte('start_time', startOfDay.toISOString())
+      .lte('end_time', endOfDay.toISOString())
+      .not('location', 'is', null)
+      .order('end_time', { ascending: false })
+      .limit(1);
+
+    if (error) {
+      console.error('❌ Error fetching last task:', error);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.log('📭 No tasks found for today');
+      return null;
+    }
+
+    const task = data[0] as any;
+
+    return {
+      id: task.id,
+      title: task.title,
+      end_time: new Date(task.end_time),
+      location: task.location,
+    };
+  } catch (error) {
+    console.error('❌ Error in getLastTaskForDay:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if a new task would conflict with existing tasks
+ *
+ * @param userId - User ID
+ * @param startTime - Proposed start time for new task
+ * @param endTime - Proposed end time for new task
+ * @returns Promise with conflicting task if found, null otherwise
+ */
+export async function checkTimeConflict(
+  userId: string,
+  startTime: Date,
+  endTime: Date
+): Promise<{ id: string; title: string; start_time: Date; end_time: Date } | null> {
+  try {
+    console.log(`🔍 Checking for conflicts: ${startTime.toLocaleTimeString()} - ${endTime.toLocaleTimeString()}`);
+
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .select('id, title, start_time, end_time')
+      .eq('user_id', userId)
+      .eq('status', 'scheduled')
+      .gte('end_time', startTime.toISOString())
+      .lte('start_time', endTime.toISOString())
+      .limit(1);
+
+    if (error) {
+      console.error('❌ Error checking conflicts:', error);
+      return null;
+    }
+
+    if (data && data.length > 0) {
+      const conflict = data[0];
+      console.log(`⚠️ Conflict found: "${conflict.title}" at ${new Date(conflict.start_time).toLocaleTimeString()}`);
+      return {
+        id: conflict.id,
+        title: conflict.title,
+        start_time: new Date(conflict.start_time),
+        end_time: new Date(conflict.end_time),
+      };
+    }
+
+    console.log('✅ No conflicts found');
+    return null;
+  } catch (error) {
+    console.error('❌ Error in checkTimeConflict:', error);
+    return null;
+  }
+}
+
+/**
+ * Check if user can make it from previous task to new task on time
+ *
+ * @param userId - User ID
+ * @param newTaskStartTime - When new task starts
+ * @param newTaskLocation - Location of new task
+ * @returns Promise with feasibility check result
+ */
+export async function canMakeItOnTime(
+  userId: string,
+  newTaskStartTime: Date,
+  newTaskLocation: { latitude: number; longitude: number }
+): Promise<{
+  feasible: boolean;
+  previousTask?: { title: string; end_time: Date };
+  travelMinutes?: number;
+  arrivalTime?: Date;
+  minutesLate?: number;
+}> {
+  try {
+    // Get task that ends closest to (but before) the new task start time
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .select('id, title, end_time, location')
+      .eq('user_id', userId)
+      .eq('status', 'scheduled')
+      .lte('end_time', newTaskStartTime.toISOString())
+      .order('end_time', { ascending: false })
+      .limit(1);
+
+    if (error || !data || data.length === 0) {
+      // No previous task, so user can make it
+      return { feasible: true };
+    }
+
+    const previousTask = data[0];
+    const previousLocation = {
+      latitude: previousTask.location.coordinates[1],
+      longitude: previousTask.location.coordinates[0],
+    };
+
+    // Calculate travel time
+    const travelMinutes = calculateTravelTimeWithBuffer(previousLocation, newTaskLocation);
+    const arrivalTime = new Date(new Date(previousTask.end_time).getTime() + travelMinutes * 60000);
+
+    // Check if arrival time is before new task start time
+    const feasible = arrivalTime <= newTaskStartTime;
+    const minutesLate = feasible ? 0 : Math.ceil((arrivalTime.getTime() - newTaskStartTime.getTime()) / 60000);
+
+    console.log(`🚗 Travel check: ${previousTask.title} ends at ${new Date(previousTask.end_time).toLocaleTimeString()}, ${travelMinutes} min travel → arrive at ${arrivalTime.toLocaleTimeString()}`);
+    console.log(feasible ? '✅ Can make it on time' : `❌ Will be ${minutesLate} min late`);
+
+    return {
+      feasible,
+      previousTask: {
+        title: previousTask.title,
+        end_time: new Date(previousTask.end_time),
+      },
+      travelMinutes,
+      arrivalTime,
+      minutesLate: feasible ? undefined : minutesLate,
+    };
+  } catch (error) {
+    console.error('❌ Error in canMakeItOnTime:', error);
+    return { feasible: true }; // Default to feasible on error
   }
 }

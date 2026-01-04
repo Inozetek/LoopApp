@@ -5,10 +5,11 @@
  * Shows numbered task pins connected by polylines, forming a literal loop.
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandColors, Typography, Spacing } from '@/constants/brand';
+import { calculateRouteStats } from '@/utils/route-calculations';
 
 // Conditionally import react-native-maps only on native platforms
 let MapView: any;
@@ -56,28 +57,47 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
     if (tasks.length > 0 && mapRef.current) {
       const coordinates = [
         defaultHome,
-        ...tasks.map(t => ({ latitude: t.latitude, longitude: t.longitude })),
+        ...tasks.map(t => ({ latitude: t.latitude, longitude: t.longitude })).filter(coord =>
+          coord.latitude && coord.longitude &&
+          !isNaN(coord.latitude) && !isNaN(coord.longitude)
+        ),
       ];
 
       // Slight delay to ensure map is rendered
       setTimeout(() => {
-        mapRef.current?.fitToCoordinates(coordinates, {
-          edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-          animated: true,
-        });
-      }, 100);
+        try {
+          mapRef.current?.fitToCoordinates(coordinates, {
+            edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
+            animated: true,
+          });
+        } catch (error) {
+          console.error('Error fitting map to coordinates:', error);
+        }
+      }, 300); // Increased delay for more reliability
     }
-  }, [tasks]);
+  }, [tasks, defaultHome.latitude, defaultHome.longitude]);
 
   // Build route coordinates (home → task1 → task2 → ... → home)
   const routeCoordinates = [
     defaultHome,
-    ...tasks.map(task => ({
-      latitude: task.latitude,
-      longitude: task.longitude,
-    })),
+    ...tasks
+      .map(task => ({
+        latitude: task.latitude,
+        longitude: task.longitude,
+      }))
+      .filter(coord =>
+        coord.latitude && coord.longitude &&
+        !isNaN(coord.latitude) && !isNaN(coord.longitude) &&
+        coord.latitude >= -90 && coord.latitude <= 90 &&
+        coord.longitude >= -180 && coord.longitude <= 180
+      ),
     defaultHome, // Complete the loop
   ];
+
+  // Calculate route statistics (distance and time)
+  const routeStats = useMemo(() => {
+    return calculateRouteStats(routeCoordinates);
+  }, [routeCoordinates]);
 
   const getCategoryColor = (category: string): string => {
     const colors: { [key: string]: string } = {
@@ -217,19 +237,17 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
       <View style={styles.statsOverlay}>
         <View style={styles.statItem}>
           <Ionicons name="location" size={16} color={BrandColors.loopBlue} />
-          <Text style={styles.statText}>{tasks.length} stops</Text>
+          <Text style={styles.statText}>{tasks.length} {tasks.length === 1 ? 'stop' : 'stops'}</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statItem}>
-          <Ionicons name="time" size={16} color={BrandColors.loopBlue} />
-          <Text style={styles.statText}>
-            {tasks.length > 0
-              ? `${new Date(tasks[0].start_time).toLocaleTimeString('en-US', {
-                  hour: 'numeric',
-                  minute: '2-digit',
-                })} start`
-              : 'No start time'}
-          </Text>
+          <Ionicons name="navigate" size={16} color={BrandColors.loopGreen} />
+          <Text style={styles.statText}>{routeStats.distanceFormatted}</Text>
+        </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statItem}>
+          <Ionicons name="time" size={16} color={BrandColors.loopOrange} />
+          <Text style={styles.statText}>{routeStats.timeFormatted}</Text>
         </View>
       </View>
 

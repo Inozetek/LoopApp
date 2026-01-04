@@ -3,13 +3,14 @@
  * Beautiful visual feed with hero images and minimal circular CTA
  */
 
-import { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
   Animated,
+  Easing,
   Image,
   Dimensions,
   FlatList,
@@ -235,14 +236,16 @@ interface ActivityCardIntelligentProps {
   onSeeDetails: () => void;
   onNotInterested?: () => void;
   index: number;
+  isRemoving?: boolean; // Trigger slide-out animation when added to calendar
 }
 
-export function ActivityCardIntelligent({
+function ActivityCardIntelligentComponent({
   recommendation,
   onAddToCalendar,
   onSeeDetails,
   onNotInterested,
   index,
+  isRemoving = false,
 }: ActivityCardIntelligentProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -258,11 +261,17 @@ export function ActivityCardIntelligent({
     finalScore: recommendation.score || 0,
   };
 
-  // Animation
+  // Animation - entrance
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+
+  // Animation - exit (slide left toward calendar when added)
+  const exitSlideAnim = useRef(new Animated.Value(0)).current;
+  const exitFadeAnim = useRef(new Animated.Value(1)).current;
+
   const [imageError, setImageError] = useState(false);
 
+  // Entrance animation
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, {
@@ -279,6 +288,26 @@ export function ActivityCardIntelligent({
       }),
     ]).start();
   }, []);
+
+  // Exit animation - slide left toward Calendar tab when added to calendar
+  useEffect(() => {
+    if (isRemoving) {
+      Animated.parallel([
+        Animated.timing(exitSlideAnim, {
+          toValue: -SCREEN_WIDTH * 1.2, // Slide left (toward Calendar tab) - slightly beyond screen for smooth exit
+          duration: 800, // Fast and snappy - no perceived delay
+          useNativeDriver: true,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1), // Smooth ease-in-out curve
+        }),
+        Animated.timing(exitFadeAnim, {
+          toValue: 0,
+          duration: 800, // Match slide duration for perfect sync
+          useNativeDriver: true,
+          easing: Easing.bezier(0.4, 0.0, 0.2, 1), // Same easing for fluid motion
+        }),
+      ]).start();
+    }
+  }, [isRemoving]);
 
   const getPriceDisplay = (priceRange?: number) => {
     if (!priceRange || priceRange === 0) return 'Free';
@@ -308,19 +337,41 @@ export function ActivityCardIntelligent({
   // Fallback image if no imageUrl provided
   const imageSource = !imageError && recommendation.imageUrl
     ? { uri: recommendation.imageUrl }
-    : require('@/assets/images/loop-logo6.png'); // Default fallback
+    : require('@/assets/images/empty-wallet-fallback.jpg'); // Empty wallet meme for missing images
+
+  // Determine border color based on score (visual hierarchy)
+  const finalScore = score.finalScore || recommendation.score || 0;
+  const getBorderColor = () => {
+    if (finalScore >= 60) {
+      return BrandColors.loopGreen; // Top Match - green border
+    } else {
+      return colors.border; // All other recommendations - subtle gray
+    }
+  };
+
+  const isTopMatch = finalScore >= 60;
 
   return (
     <Animated.View
       style={[
         styles.container,
         {
-          opacity: fadeAnim,
-          transform: [{ translateY: slideAnim }],
+          opacity: isRemoving ? exitFadeAnim : fadeAnim,
+          transform: [
+            { translateY: slideAnim },
+            { translateX: exitSlideAnim }, // Slide left when being removed
+          ],
         },
       ]}
     >
-      <View style={[styles.card, { backgroundColor: colors.card }]}>
+      <View style={[
+        styles.card,
+        {
+          backgroundColor: colors.card,
+          borderWidth: 2,
+          borderColor: getBorderColor(),
+        }
+      ]}>
         {/* HERO IMAGE (60% of card) - Carousel if 3+ photos, single image otherwise */}
         <View style={styles.imageContainer}>
           {recommendation.photos && recommendation.photos.length >= 3 ? (
@@ -366,6 +417,13 @@ export function ActivityCardIntelligent({
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
+            {/* Top Match Badge (Score >= 60) */}
+            {isTopMatch && (
+              <View style={styles.topMatchBadge}>
+                <Text style={styles.topMatchText}>🎯 Top Match</Text>
+              </View>
+            )}
+
             {/* Open Now Badge */}
             {recommendation.openNow && (
               <View style={styles.openNowBadge}>
@@ -403,11 +461,21 @@ export function ActivityCardIntelligent({
 
           {/* Metadata Row */}
           <View style={styles.metadata}>
-            {recommendation.rating != null && recommendation.rating > 0 && (
+            {/* Rating stars */}
+            {recommendation.rating > 0 && (
               <>
-                <IconSymbol name="star.fill" size={14} color={BrandColors.star} />
-                <Text style={[styles.metaText, { color: colors.text }]}>
-                  {recommendation.rating.toFixed(1)}
+                <View style={{ flexDirection: 'row', gap: 2 }}>
+                  {[...Array(5)].map((_, i) => (
+                    <IconSymbol
+                      key={i}
+                      name={i < Math.floor(recommendation.rating) ? 'star.fill' : 'star'}
+                      size={12}
+                      color="#FFA500"
+                    />
+                  ))}
+                </View>
+                <Text style={[styles.metaText, { color: colors.textSecondary, fontSize: 12 }]}>
+                  ({recommendation.activity?.reviewsCount || 0})
                 </Text>
                 <View style={styles.metaDivider} />
               </>
@@ -482,6 +550,7 @@ export function ActivityCardIntelligent({
           style={[styles.circularButton, { backgroundColor: colors.primary }]}
           onPress={onAddToCalendar}
           onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+          disabled={isRemoving}
         >
           <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
         </Pressable>
@@ -489,6 +558,18 @@ export function ActivityCardIntelligent({
     </Animated.View>
   );
 }
+
+// Memoize component to prevent unnecessary re-renders during filter animations
+export const ActivityCardIntelligent = React.memo(
+  ActivityCardIntelligentComponent,
+  (prevProps, nextProps) => {
+    // Only re-render if recommendation ID, index, or removing state changes
+    // Handlers are assumed stable (will be memoized in parent)
+    return prevProps.recommendation.id === nextProps.recommendation.id &&
+           prevProps.index === nextProps.index &&
+           prevProps.isRemoving === nextProps.isRemoving;
+  }
+);
 
 const styles = StyleSheet.create({
   container: {
@@ -547,6 +628,18 @@ const styles = StyleSheet.create({
     right: Spacing.sm,
     flexDirection: 'column',
     gap: Spacing.xs,
+  },
+  topMatchBadge: {
+    backgroundColor: 'rgba(16, 185, 129, 0.95)', // Green background for top matches
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+  },
+  topMatchText: {
+    color: '#fff',
+    fontSize: 11, // Small badge text
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   openNowBadge: {
     flexDirection: 'row',

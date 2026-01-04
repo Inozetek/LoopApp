@@ -23,7 +23,7 @@ import { ProfileSettingsModal } from '@/components/profile-settings-modal';
 import { GroupPlanningModal } from '@/components/group-planning-modal';
 import { FriendCardSkeleton } from '@/components/skeleton-loader';
 import { SuccessAnimation } from '@/components/success-animation';
-import { SwipeableLayout } from './swipeable-layout';
+import SwipeableLayout from '@/components/swipeable-layout';
 
 interface Friend {
   id: string;

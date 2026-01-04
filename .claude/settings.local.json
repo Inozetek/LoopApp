@@ -55,7 +55,19 @@
       "Bash(del /F nul 2)",
       "Bash(NUL)",
       "Bash(del CRITICAL_ISSUES.md nul)",
-      "Bash(\"app/(tabs)/index.tsx\")"
+      "Bash(\"app/(tabs)/index.tsx\")",
+      "Bash(git switch:*)",
+      "Bash(git branch:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(for f in COMPREHENSIVE_TESTING_GUIDE.md TESTING_GUIDE.md TESTING_GUIDE_ADVANCED_SEARCH.md)",
+      "Bash(do if [ -f \"$f\" ])",
+      "Bash(then echo \"EXISTS: $f\")",
+      "Bash(else echo \"MISSING: $f\")",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(du:*)",
+      "Bash(del:*)"
     ],
     "deny": [],
     "ask": []

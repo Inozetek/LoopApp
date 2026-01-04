@@ -26,7 +26,7 @@ interface SwipeableLayoutProps {
   children: React.ReactNode;
 }
 
-export function SwipeableLayout({ children }: SwipeableLayoutProps) {
+function SwipeableLayout({ children }: SwipeableLayoutProps) {
   const router = useRouter();
   const segments = useSegments();
   const startXRef = useRef(0);
@@ -145,3 +145,6 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 });
+
+// Default export required by Expo Router
+export default SwipeableLayout;

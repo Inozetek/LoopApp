@@ -38,9 +38,9 @@ export function validateConfig(): ValidationResult {
   const googlePlacesKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
   if (!googlePlacesKey || googlePlacesKey === 'your_key_here') {
-    warnings.push(
+    errors.push(
       'EXPO_PUBLIC_GOOGLE_PLACES_API_KEY is not set.\n' +
-      'The app will use mock data for activity recommendations.\n' +
+      '❌ THE APP WILL NOT FUNCTION WITHOUT THIS KEY (no mock data fallback).\n' +
       'Get a real API key at: https://console.cloud.google.com/apis/credentials'
     );
   }

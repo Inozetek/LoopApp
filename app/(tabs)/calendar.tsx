@@ -20,6 +20,7 @@ import { Calendar, DateData } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
@@ -29,7 +30,7 @@ import { Colors } from '@/constants/theme';
 import { FeedbackModal } from '@/components/feedback-modal';
 import { CalendarEventSkeleton } from '@/components/skeleton-loader';
 import { LoopMapView } from '@/components/loop-map-view';
-import { SwipeableLayout } from './swipeable-layout';
+import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
 import { getCurrentLocation } from '@/services/location-service';
 import {
@@ -38,6 +39,11 @@ import {
   shouldPromptForFeedback,
   CompletedActivity,
 } from '@/services/feedback-service';
+import {
+  syncCalendarToDatabase,
+  getUpcomingFreeTime,
+  checkCalendarPermissions,
+} from '@/services/calendar-service';
 
 interface CalendarEvent {
   id: string;
@@ -163,8 +169,21 @@ export default function CalendarScreen() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackActivity, setFeedbackActivity] = useState<CompletedActivity | null>(null);
 
+  // Edit task modal state
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
+
   // User's current location for autocomplete biasing
   const [currentUserLocation, setCurrentUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Calendar sync state
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [freeTimeSlots, setFreeTimeSlots] = useState<Array<{
+    start: Date;
+    end: Date;
+    durationHours: number;
+  }>>([]);
+  const [showFreeTime, setShowFreeTime] = useState(false);
 
   // Animation for events list
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -251,6 +270,74 @@ export default function CalendarScreen() {
     }
   };
 
+  // Sync calendar from device
+  const handleSyncCalendar = async () => {
+    if (!user) return;
+
+    try {
+      setIsSyncing(true);
+      console.log('📅 Starting calendar sync...');
+
+      // Check if we have calendar permissions
+      const hasPermission = await checkCalendarPermissions();
+      if (!hasPermission) {
+        Alert.alert(
+          'Calendar Permission Required',
+          'Loop needs access to your calendar to import events and detect free time.',
+          [{ text: 'OK' }]
+        );
+        return;
+      }
+
+      // Sync calendar events to database
+      const result = await syncCalendarToDatabase(user.id);
+
+      if (result.success) {
+        console.log(`✅ Synced ${result.eventsSynced} events`);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // Reload events to show newly synced ones
+        await loadEvents();
+
+        // Load free time slots
+        await loadFreeTime();
+
+        Alert.alert(
+          'Calendar Synced',
+          `Successfully synced ${result.eventsSynced} events from your device calendar.`,
+          [{ text: 'OK' }]
+        );
+      } else if (result.errors.length > 0) {
+        console.error('❌ Sync errors:', result.errors);
+        Alert.alert(
+          'Sync Completed with Errors',
+          `Synced ${result.eventsSynced} events, but ${result.errors.length} failed.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error) {
+      console.error('❌ Error syncing calendar:', error);
+      Alert.alert('Sync Failed', 'Failed to sync calendar. Please try again.', [{ text: 'OK' }]);
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Load upcoming free time slots
+  const loadFreeTime = async () => {
+    if (!user) return;
+
+    try {
+      console.log('🕐 Loading free time slots...');
+      const freeSlots = await getUpcomingFreeTime(user.id, 7); // Next 7 days
+
+      console.log(`✅ Found ${freeSlots.length} free time slots`);
+      setFreeTimeSlots(freeSlots);
+    } catch (error) {
+      console.error('❌ Error loading free time:', error);
+    }
+  };
+
   const loadEvents = async () => {
     if (!user) return;
 
@@ -263,19 +350,28 @@ export default function CalendarScreen() {
         return;
       }
 
-      const startOfDay = `${selectedDate}T00:00:00`;
-      const endOfDay = `${selectedDate}T23:59:59`;
+      // CRITICAL FIX: Convert to Date objects first, then to ISO strings with timezone
+      // This ensures we query for the correct 24-hour period in the user's local timezone
+      const startOfDay = new Date(`${selectedDate}T00:00:00`);
+      const endOfDay = new Date(`${selectedDate}T23:59:59`);
+
+      console.log(`📅 Loading events for ${selectedDate}:`);
+      console.log(`   Start (local): ${startOfDay.toLocaleString()}`);
+      console.log(`   Start (UTC): ${startOfDay.toISOString()}`);
+      console.log(`   End (local): ${endOfDay.toLocaleString()}`);
+      console.log(`   End (UTC): ${endOfDay.toISOString()}`);
 
       const { data, error } = await supabase
         .from('calendar_events')
         .select('*')
         .eq('user_id', user.id)
-        .gte('start_time', startOfDay)
-        .lte('start_time', endOfDay)
+        .gte('start_time', startOfDay.toISOString())
+        .lte('start_time', endOfDay.toISOString())
         .order('start_time', { ascending: true });
 
       if (error) throw error;
 
+      console.log(`✅ Found ${data?.length || 0} events for ${selectedDate}`);
       setEvents(data || []);
     } catch (error) {
       console.error('Error loading events:', error);
@@ -407,6 +503,131 @@ export default function CalendarScreen() {
     checkForPendingFeedback();
   };
 
+  const handleEventPress = (event: CalendarEvent) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setEditingEvent(event);
+    setShowEditModal(true);
+  };
+
+  const handleUpdateEvent = async () => {
+    if (!editingEvent) return;
+
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    try {
+      const { error } = await supabase
+        .from('calendar_events')
+        .update({
+          title: editingEvent.title,
+          description: editingEvent.description || null,
+          category: editingEvent.category as any,
+          location: `POINT(${editingEvent.location.longitude} ${editingEvent.location.latitude})`,
+          address: editingEvent.address,
+          start_time: editingEvent.start_time,
+          end_time: editingEvent.end_time,
+          updated_at: new Date().toISOString(),
+        } as any)
+        .eq('id', editingEvent.id);
+
+      if (error) throw error;
+
+      Alert.alert('Success', 'Task updated successfully!');
+      setShowEditModal(false);
+      setEditingEvent(null);
+      loadEvents();
+    } catch (error) {
+      console.error('Error updating event:', error);
+      Alert.alert('Error', 'Failed to update task');
+    }
+  };
+
+  const handleDeleteEvent = async () => {
+    if (!editingEvent) return;
+
+    Alert.alert(
+      'Delete Task',
+      'Are you sure you want to delete this task?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            try {
+              const { error } = await supabase
+                .from('calendar_events')
+                .delete()
+                .eq('id', editingEvent.id);
+
+              if (error) throw error;
+
+              Alert.alert('Success', 'Task deleted successfully!');
+              setShowEditModal(false);
+              setEditingEvent(null);
+              loadEvents();
+            } catch (error) {
+              console.error('Error deleting event:', error);
+              Alert.alert('Error', 'Failed to delete task');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSwipeDelete = async (eventId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    Alert.alert(
+      'Delete Task',
+      'Are you sure you want to delete this task?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+            try {
+              const { error } = await supabase
+                .from('calendar_events')
+                .delete()
+                .eq('id', eventId);
+
+              if (error) throw error;
+
+              loadEvents();
+            } catch (error) {
+              console.error('Error deleting event:', error);
+              Alert.alert('Error', 'Failed to delete task');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const renderRightActions = (eventId: string) => {
+    return (
+      <TouchableOpacity
+        style={styles.deleteSwipeAction}
+        onPress={() => handleSwipeDelete(eventId)}
+      >
+        <Ionicons name="trash-outline" size={24} color="#ffffff" />
+        <Text style={styles.deleteSwipeText}>Delete</Text>
+      </TouchableOpacity>
+    );
+  };
+
   // Mark dates with events
   const markedDates = {
     [selectedDate]: {
@@ -429,6 +650,22 @@ export default function CalendarScreen() {
           Calendar
         </Text>
         <View style={styles.headerActions}>
+          {/* Sync Calendar Button */}
+          <TouchableOpacity
+            style={styles.syncButton}
+            onPress={handleSyncCalendar}
+            disabled={isSyncing}
+          >
+            <Ionicons
+              name={isSyncing ? 'sync' : 'calendar'}
+              size={20}
+              color={isSyncing ? '#888' : BrandColors.loopBlue}
+            />
+            <Text style={[styles.syncText, { color: isSyncing ? '#888' : BrandColors.loopBlue }]}>
+              {isSyncing ? 'Syncing...' : 'Sync'}
+            </Text>
+          </TouchableOpacity>
+
           {/* List/Loop Toggle */}
           <TouchableOpacity style={styles.toggleButton} onPress={toggleViewMode}>
             <Ionicons
@@ -440,6 +677,7 @@ export default function CalendarScreen() {
               {viewMode === 'list' ? 'Loop' : 'List'}
             </Text>
           </TouchableOpacity>
+
           {/* Add Button */}
           <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
             <Ionicons name="add-circle" size={32} color={BrandColors.loopBlue} />
@@ -506,16 +744,22 @@ export default function CalendarScreen() {
         ) : (
           <Animated.View style={{ opacity: fadeAnim }}>
             {events.map((event) => (
-              <View
+              <Swipeable
                 key={event.id}
-                style={[
-                  styles.eventCard,
-                  {
-                    backgroundColor: isDark ? '#1f2123' : '#ffffff',
-                    borderLeftColor: getCategoryColor(event.category),
-                  },
-                ]}
+                renderRightActions={() => renderRightActions(event.id)}
+                overshootRight={false}
               >
+                <TouchableOpacity
+                  style={[
+                    styles.eventCard,
+                    {
+                      backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                      borderLeftColor: getCategoryColor(event.category),
+                    },
+                  ]}
+                  onPress={() => handleEventPress(event)}
+                  activeOpacity={0.7}
+                >
               <View style={styles.eventHeader}>
                 <View style={styles.eventIconContainer}>
                   <Ionicons
@@ -577,7 +821,8 @@ export default function CalendarScreen() {
                   </Text>
                 </View>
               )}
-            </View>
+            </TouchableOpacity>
+          </Swipeable>
           ))}
           </Animated.View>
         )}
@@ -799,28 +1044,31 @@ export default function CalendarScreen() {
               <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
                 Location *
               </Text>
-              <LocationAutocomplete
-                value={newTaskAddress}
-                onChangeText={setNewTaskAddress}
-                onSelectLocation={(location) => {
-                  setNewTaskAddress(location.address);
-                  setNewTaskPlaceName(location.placeName);
-                  setNewTaskLocation({
-                    latitude: location.latitude,
-                    longitude: location.longitude,
-                  });
+              {/* Show autocomplete input ONLY when no location is selected */}
+              {!newTaskLocation && (
+                <LocationAutocomplete
+                  value={newTaskAddress}
+                  onChangeText={setNewTaskAddress}
+                  onSelectLocation={(location) => {
+                    setNewTaskAddress(location.address); // Keep for DB insert
+                    setNewTaskPlaceName(location.placeName);
+                    setNewTaskLocation({
+                      latitude: location.latitude,
+                      longitude: location.longitude,
+                    });
 
-                  // Auto-select category based on place types
-                  if (location.types && location.types.length > 0) {
-                    const suggestedCategory = getCategoryFromPlaceTypes(location.types);
-                    setNewTaskCategory(suggestedCategory);
-                    console.log(`📍 Auto-selected category: ${suggestedCategory} (from types: ${location.types.join(', ')})`);
-                  }
-                }}
-                placeholder="Search for a location"
-                isDark={isDark}
-                userLocation={currentUserLocation || undefined}
-              />
+                    // Auto-select category based on place types
+                    if (location.types && location.types.length > 0) {
+                      const suggestedCategory = getCategoryFromPlaceTypes(location.types);
+                      setNewTaskCategory(suggestedCategory);
+                      console.log(`📍 Auto-selected category: ${suggestedCategory} (from types: ${location.types.join(', ')})`);
+                    }
+                  }}
+                  placeholder="Search for a location"
+                  isDark={isDark}
+                  userLocation={currentUserLocation || undefined}
+                />
+              )}
 
               {/* Selected Location Display */}
               {newTaskLocation && newTaskPlaceName && (
@@ -836,6 +1084,18 @@ export default function CalendarScreen() {
                       {newTaskAddress}
                     </Text>
                   </View>
+                  {/* Change location button */}
+                  <TouchableOpacity
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setNewTaskLocation(null);
+                      setNewTaskPlaceName('');
+                      setNewTaskAddress('');
+                    }}
+                    style={styles.changeLocationButton}
+                  >
+                    <Ionicons name="close-circle" size={24} color={Colors[colorScheme ?? 'light'].icon} />
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -937,6 +1197,201 @@ export default function CalendarScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
+      {/* Edit Task Modal */}
+      {editingEvent && (
+        <Modal visible={showEditModal} animationType="slide" transparent={true}>
+          <View style={styles.modalOverlay}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+              style={{ flex: 1, justifyContent: 'flex-end' }}
+            >
+              <View style={[styles.modalContent, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+                <View style={styles.modalHeader}>
+                  <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
+                    Edit Task
+                  </Text>
+                  <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                    <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
+                  </TouchableOpacity>
+                </View>
+
+                <ScrollView
+                  style={styles.formContainer}
+                  contentContainerStyle={{ paddingBottom: Spacing.xl }}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={true}
+                >
+                    {/* Title */}
+                    <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      Title *
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        Typography.bodyLarge,
+                        {
+                          backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                          color: Colors[colorScheme ?? 'light'].text,
+                        },
+                      ]}
+                      value={editingEvent.title}
+                      onChangeText={(text) => setEditingEvent({ ...editingEvent, title: text })}
+                      placeholder="What are you planning?"
+                      placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
+                    />
+
+                    {/* Description */}
+                    <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      Description
+                    </Text>
+                    <TextInput
+                      style={[
+                        styles.input,
+                        styles.textArea,
+                        Typography.bodyLarge,
+                        {
+                          backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                          color: Colors[colorScheme ?? 'light'].text,
+                        },
+                      ]}
+                      value={editingEvent.description || ''}
+                      onChangeText={(text) => setEditingEvent({ ...editingEvent, description: text })}
+                      placeholder="Add details (optional)"
+                      placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
+                      multiline
+                      numberOfLines={3}
+                    />
+
+                    {/* Category */}
+                    <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      Category
+                    </Text>
+                    <View style={styles.categoryGrid}>
+                      {CATEGORIES.map((cat) => (
+                        <TouchableOpacity
+                          key={cat.id}
+                          style={[
+                            styles.categoryButton,
+                            {
+                              backgroundColor: editingEvent.category === cat.id ? cat.color : (isDark ? '#2f3133' : '#f5f5f5'),
+                            },
+                          ]}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setEditingEvent({ ...editingEvent, category: cat.id });
+                          }}
+                        >
+                          <Ionicons
+                            name={cat.icon as any}
+                            size={20}
+                            color={editingEvent.category === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].icon}
+                          />
+                          <Text
+                            style={[
+                              Typography.labelSmall,
+                              {
+                                color: editingEvent.category === cat.id ? '#ffffff' : Colors[colorScheme ?? 'light'].text,
+                                marginTop: 4,
+                              },
+                            ]}
+                          >
+                            {cat.label}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+
+                    {/* Time Display (read-only for now) */}
+                    <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      Time
+                    </Text>
+                    <View style={[styles.readOnlyField, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}>
+                      <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
+                      <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text, marginLeft: Spacing.sm }]}>
+                        {new Date(editingEvent.start_time).toLocaleString('en-US', {
+                          weekday: 'short',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: 'numeric',
+                          minute: '2-digit',
+                        })}
+                      </Text>
+                    </View>
+
+                    {/* Location */}
+                    <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      Location *
+                    </Text>
+
+                    {/* Location selector - similar to create modal */}
+                    <LocationAutocomplete
+                      value={editingEvent.address}
+                      onChangeText={(text) => setEditingEvent({ ...editingEvent, address: text })}
+                      onSelectLocation={(location) => {
+                        setEditingEvent({
+                          ...editingEvent,
+                          address: location.address,
+                          location: {
+                            latitude: location.latitude,
+                            longitude: location.longitude,
+                          },
+                        });
+
+                        // Auto-update category based on place types
+                        if (location.types && location.types.length > 0) {
+                          const suggestedCategory = getCategoryFromPlaceTypes(location.types);
+                          setEditingEvent(prev => ({ ...prev, category: suggestedCategory }));
+                        }
+                      }}
+                      placeholder="Search for a location"
+                      isDark={isDark}
+                      userLocation={currentUserLocation || undefined}
+                    />
+
+                    {/* View on Map Button */}
+                    <TouchableOpacity
+                      style={[styles.viewMapButton, { backgroundColor: `${BrandColors.loopBlue}1A`, borderColor: BrandColors.loopBlue }]}
+                      onPress={() => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                        setShowEditModal(false);
+                        setViewMode('loop'); // Switch to map view
+                      }}
+                    >
+                      <Ionicons name="map" size={20} color={BrandColors.loopBlue} />
+                      <Text style={[Typography.labelLarge, { color: BrandColors.loopBlue, marginLeft: 8 }]}>
+                        View on Loop Map
+                      </Text>
+                    </TouchableOpacity>
+
+                    {/* Action Buttons */}
+                    <View style={styles.modalActions}>
+                      <TouchableOpacity
+                        style={[styles.deleteButton, { borderColor: '#ef4444' }]}
+                        onPress={handleDeleteEvent}
+                      >
+                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                        <Text style={[Typography.labelLarge, { color: '#ef4444', marginLeft: 8 }]}>
+                          Delete
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={[styles.saveButton, { backgroundColor: BrandColors.loopBlue }]}
+                        onPress={handleUpdateEvent}
+                      >
+                        <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
+                        <Text style={[Typography.labelLarge, { color: '#ffffff', marginLeft: 8 }]}>
+                          Save
+                        </Text>
+                      </TouchableOpacity>
+                    </View>
+                  </ScrollView>
+                </View>
+              </KeyboardAvoidingView>
+            </View>
+        </Modal>
+      )}
+
       {/* Feedback Modal */}
       {feedbackActivity && (
         <FeedbackModal
@@ -973,6 +1428,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
+  },
+  syncButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.sm,
+    backgroundColor: `${BrandColors.loopBlue}1A`, // 10% opacity
+    borderRadius: BorderRadius.md,
+    marginRight: Spacing.sm,
+  },
+  syncText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
   toggleButton: {
     flexDirection: 'row',
@@ -1221,5 +1690,65 @@ const styles = StyleSheet.create({
   },
   selectedLocationText: {
     flex: 1,
+  },
+  changeLocationButton: {
+    padding: Spacing.xs,
+    marginLeft: Spacing.sm,
+  },
+  readOnlyField: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  viewMapButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+    marginVertical: Spacing.md,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+    marginTop: Spacing.xl,
+    marginBottom: Spacing.xl * 2,
+  },
+  deleteButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 2,
+  },
+  saveButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    ...Shadows.md,
+  },
+  deleteSwipeAction: {
+    backgroundColor: '#ef4444',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    paddingRight: Spacing.lg,
+    marginBottom: Spacing.md,
+    borderRadius: BorderRadius.md,
+    width: 100,
+  },
+  deleteSwipeText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 4,
   },
 });

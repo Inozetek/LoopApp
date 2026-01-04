@@ -21,7 +21,7 @@ const DEMO_USER_ID = 'demo-user-123';
 
 /**
  * Find activities that were completed but haven't received feedback
- * Checks for events that ended in the last 24 hours
+ * Checks for events that ended in the last 3 hours (not 24 hours to avoid stale prompts)
  */
 export async function getPendingFeedbackActivities(
   userId: string
@@ -33,16 +33,22 @@ export async function getPendingFeedbackActivities(
 
   try {
     const now = new Date();
-    const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    // CRITICAL FIX: Only check events from last 3 hours (not 24 hours)
+    // After 3 hours, user won't remember the experience well enough
+    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
 
-    // Find completed calendar events from the last 24 hours
+    // CRITICAL FIX: Also set a minimum time (30 minutes ago)
+    // Don't prompt immediately after event ends - give user time to leave/travel
+    const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
+
+    // Find completed calendar events from the last 3 hours (but not within last 30 min)
     const { data: completedEvents, error: eventsError } = await supabase
       .from('calendar_events')
       .select('id, title, category, activity_id, end_time, source')
       .eq('user_id', userId)
       .eq('status', 'scheduled')
-      .gte('end_time', yesterday.toISOString())
-      .lte('end_time', now.toISOString())
+      .gte('end_time', threeHoursAgo.toISOString())
+      .lte('end_time', thirtyMinutesAgo.toISOString())
       .order('end_time', { ascending: false });
 
     if (eventsError) throw eventsError;
@@ -181,6 +187,198 @@ export async function shouldPromptForFeedback(
   } catch (error) {
     console.error('Error checking feedback prompt:', error);
     return { shouldPrompt: false };
+  }
+}
+
+/**
+ * Submit user feedback for a completed activity
+ */
+export async function submitFeedback(feedback: {
+  userId: string;
+  activityId: string;
+  recommendationId?: string;
+  rating: 'thumbs_up' | 'thumbs_down';
+  tags?: string[];
+  notes?: string;
+  completedAt: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    console.log('📝 Submitting feedback:', feedback);
+
+    // CRITICAL FIX: Verify activity exists before inserting feedback
+    // This prevents foreign key constraint violations (code 23503)
+    if (feedback.activityId) {
+      const { data: activityExists, error: checkError } = await supabase
+        .from('activities')
+        .select('id')
+        .eq('id', feedback.activityId)
+        .single();
+
+      if (checkError || !activityExists) {
+        console.warn('⚠️  Activity not found in database, skipping activity_id');
+        // Clear activity_id if it doesn't exist (manual calendar events)
+        feedback.activityId = null as any;
+      }
+    }
+
+    // 1. Insert feedback into database
+    const feedbackRecord: any = {
+      user_id: feedback.userId,
+      rating: feedback.rating,
+      feedback_tags: feedback.tags || [],
+      feedback_notes: feedback.notes || null,
+      completed_at: feedback.completedAt,
+    };
+
+    // Only add activity_id if it exists in database
+    if (feedback.activityId) {
+      feedbackRecord.activity_id = feedback.activityId;
+    }
+
+    // Only add recommendation_id if provided
+    if (feedback.recommendationId) {
+      feedbackRecord.recommendation_id = feedback.recommendationId;
+    }
+
+    const { data: feedbackData, error: feedbackError } = await supabase
+      .from('feedback')
+      .insert(feedbackRecord)
+      .select()
+      .single();
+
+    if (feedbackError) {
+      console.error('❌ Error inserting feedback:', feedbackError);
+      return { success: false, error: feedbackError.message };
+    }
+
+    console.log('✅ Feedback inserted successfully:', feedbackData.id);
+
+    // 2. Update user's AI profile based on feedback
+    await updateAIProfile(feedback);
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('❌ Error submitting feedback:', error);
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Update user's AI profile based on feedback
+ */
+async function updateAIProfile(feedback: {
+  userId: string;
+  activityId: string;
+  rating: 'thumbs_up' | 'thumbs_down';
+  tags?: string[];
+}): Promise<void> {
+  try {
+    console.log('🧠 Updating AI profile for user:', feedback.userId);
+
+    // 1. Fetch current user profile
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('ai_profile')
+      .eq('id', feedback.userId)
+      .single();
+
+    if (userError || !user) {
+      console.error('❌ Error fetching user:', userError);
+      return;
+    }
+
+    // 2. Get activity details
+    const { data: activity, error: activityError } = await supabase
+      .from('activities')
+      .select('category, subcategory, price_range')
+      .eq('id', feedback.activityId)
+      .single();
+
+    if (activityError || !activity) {
+      console.error('❌ Error fetching activity:', activityError);
+      return;
+    }
+
+    // 3. Parse existing AI profile (with defaults)
+    const currentProfile = user.ai_profile || {
+      preferred_distance_miles: 5.0,
+      budget_level: 2,
+      favorite_categories: [],
+      disliked_categories: [],
+      price_sensitivity: 'medium',
+      time_preferences: [],
+      distance_tolerance: 'medium',
+    };
+
+    // 4. Update profile based on rating
+    const updatedProfile = { ...currentProfile };
+
+    if (feedback.rating === 'thumbs_up') {
+      // Add to favorite categories
+      if (!updatedProfile.favorite_categories.includes(activity.category)) {
+        updatedProfile.favorite_categories.push(activity.category);
+      }
+      // Remove from disliked
+      updatedProfile.disliked_categories = updatedProfile.disliked_categories.filter(
+        (cat: string) => cat !== activity.category
+      );
+      // Update budget level if activity has price range
+      if (activity.price_range) {
+        updatedProfile.budget_level = Math.round(
+          updatedProfile.budget_level * 0.7 + activity.price_range * 0.3
+        );
+      }
+      console.log('👍 Added', activity.category, 'to favorites');
+    } else if (feedback.rating === 'thumbs_down' && feedback.tags) {
+      // Process negative feedback tags
+      for (const tag of feedback.tags) {
+        switch (tag) {
+          case 'too_expensive':
+            updatedProfile.budget_level = Math.max(1, updatedProfile.budget_level - 0.5);
+            updatedProfile.price_sensitivity = 'high';
+            break;
+          case 'too_far':
+            updatedProfile.preferred_distance_miles = Math.max(
+              1,
+              updatedProfile.preferred_distance_miles * 0.8
+            );
+            updatedProfile.distance_tolerance = 'low';
+            break;
+          case 'boring':
+          case 'too_crowded':
+            if (!updatedProfile.disliked_categories.includes(activity.category)) {
+              updatedProfile.disliked_categories.push(activity.category);
+            }
+            updatedProfile.favorite_categories = updatedProfile.favorite_categories.filter(
+              (cat: string) => cat !== activity.category
+            );
+            break;
+        }
+      }
+    }
+
+    // 5. Limit array sizes
+    if (updatedProfile.favorite_categories.length > 10) {
+      updatedProfile.favorite_categories = updatedProfile.favorite_categories.slice(-10);
+    }
+    if (updatedProfile.disliked_categories.length > 10) {
+      updatedProfile.disliked_categories = updatedProfile.disliked_categories.slice(-10);
+    }
+
+    // 6. Update database
+    const { error: updateError } = await supabase
+      .from('users')
+      .update({ ai_profile: updatedProfile })
+      .eq('id', feedback.userId);
+
+    if (updateError) {
+      console.error('❌ Error updating AI profile:', updateError);
+      return;
+    }
+
+    console.log('✅ AI profile updated successfully');
+  } catch (error) {
+    console.error('❌ Error updating AI profile:', error);
   }
 }
 

@@ -19,11 +19,14 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LoopMapView } from '@/components/loop-map-view';
+import { DiscoveryModeToggle, type DiscoveryMode } from '@/components/discovery-mode-toggle';
+import { CategorySelector } from '@/components/category-selector';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, Shadows } from '@/constants/brand';
 import type { DashboardData, DashboardView, DashboardNotification } from '@/types/dashboard';
 import { fetchDashboardData, markDashboardViewed, dismissNotification } from '@/services/dashboard-aggregator';
 import { useAuth } from '@/contexts/auth-context';
+import type { FeedFilters } from '@/components/feed-filters';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -31,9 +34,29 @@ interface DailyDashboardModalProps {
   visible: boolean;
   onClose: () => void;
   isFirstLoadToday?: boolean;
+
+  // Discovery controls
+  discoveryMode?: DiscoveryMode;
+  onDiscoveryModeChange?: (mode: DiscoveryMode) => void;
+  selectedCategories?: string[];
+  onCategoriesChange?: (categories: string[]) => void;
+
+  // Filter controls
+  filters?: FeedFilters;
+  onClearAllFilters?: () => void;
 }
 
-export function DailyDashboardModal({ visible, onClose, isFirstLoadToday = false }: DailyDashboardModalProps) {
+export function DailyDashboardModal({
+  visible,
+  onClose,
+  isFirstLoadToday = false,
+  discoveryMode = 'curated',
+  onDiscoveryModeChange,
+  selectedCategories = [],
+  onCategoriesChange,
+  filters,
+  onClearAllFilters,
+}: DailyDashboardModalProps) {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -148,7 +171,25 @@ export function DailyDashboardModal({ visible, onClose, isFirstLoadToday = false
                 { color: currentView === 'map' ? '#FFFFFF' : colors.textSecondary },
               ]}
             >
-              Loop Map
+              Map
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => handleViewToggle('controls')}
+            style={[
+              styles.viewToggleButton,
+              currentView === 'controls' && styles.viewToggleButtonActive,
+              { backgroundColor: currentView === 'controls' ? BrandColors.loopBlue : 'transparent' },
+            ]}
+          >
+            <Text
+              style={[
+                styles.viewToggleText,
+                { color: currentView === 'controls' ? '#FFFFFF' : colors.textSecondary },
+              ]}
+            >
+              Controls
             </Text>
           </Pressable>
         </View>
@@ -175,6 +216,18 @@ export function DailyDashboardModal({ visible, onClose, isFirstLoadToday = false
               <MapView
                 tasks={data.today_tasks}
                 homeLocation={data.home_location}
+                colors={colors}
+              />
+            )}
+
+            {currentView === 'controls' && (
+              <ControlsView
+                discoveryMode={discoveryMode}
+                onDiscoveryModeChange={onDiscoveryModeChange}
+                selectedCategories={selectedCategories}
+                onCategoriesChange={onCategoriesChange}
+                filters={filters}
+                onClearAllFilters={onClearAllFilters}
                 colors={colors}
               />
             )}
@@ -332,6 +385,132 @@ function MapView({ tasks, homeLocation, colors }: MapViewProps) {
         homeLocation={homeLocation}
       />
     </View>
+  );
+}
+
+// ============================================================================
+// CONTROLS VIEW COMPONENT
+// ============================================================================
+
+interface ControlsViewProps {
+  discoveryMode: DiscoveryMode;
+  onDiscoveryModeChange?: (mode: DiscoveryMode) => void;
+  selectedCategories: string[];
+  onCategoriesChange?: (categories: string[]) => void;
+  filters?: FeedFilters;
+  onClearAllFilters?: () => void;
+  colors: any;
+}
+
+function ControlsView({
+  discoveryMode,
+  onDiscoveryModeChange,
+  selectedCategories,
+  onCategoriesChange,
+  filters,
+  onClearAllFilters,
+  colors,
+}: ControlsViewProps) {
+  const hasActiveFilters =
+    (filters?.timeOfDay && filters.timeOfDay !== 'any') ||
+    (filters?.maxDistance && filters.maxDistance < 100) ||
+    (filters?.priceRange && filters.priceRange !== 'any') ||
+    selectedCategories.length > 0;
+
+  return (
+    <ScrollView
+      style={styles.scrollView}
+      contentContainerStyle={styles.scrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      {/* HEADING */}
+      <Text style={[styles.greeting, Typography.headlineLarge, { color: colors.text }]}>
+        Feed Controls
+      </Text>
+      <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginBottom: Spacing.xl }]}>
+        Customize your recommendation feed with discovery mode and filters
+      </Text>
+
+      {/* DISCOVERY MODE TOGGLE */}
+      {onDiscoveryModeChange && (
+        <DiscoveryModeToggle
+          mode={discoveryMode}
+          onModeChange={onDiscoveryModeChange}
+        />
+      )}
+
+      {/* CATEGORY SELECTOR */}
+      {onCategoriesChange && (
+        <CategorySelector
+          selectedCategories={selectedCategories}
+          onCategoriesChange={onCategoriesChange}
+          mode="multi"
+        />
+      )}
+
+      {/* ACTIVE FILTERS SUMMARY */}
+      <View style={styles.activeFiltersSection}>
+        <Text style={[Typography.titleMedium, { color: colors.text, marginBottom: Spacing.md }]}>
+          Active Filters
+        </Text>
+
+        {!hasActiveFilters ? (
+          <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+            No filters applied
+          </Text>
+        ) : (
+          <>
+            <View style={styles.filterChipsContainer}>
+              {filters?.timeOfDay && filters.timeOfDay !== 'any' && (
+                <View style={[styles.filterChip, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+                  <Text style={[Typography.labelSmall, { color: colors.text }]}>
+                    Time: {filters.timeOfDay}
+                  </Text>
+                </View>
+              )}
+
+              {filters?.maxDistance && filters.maxDistance < 100 && (
+                <View style={[styles.filterChip, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+                  <Text style={[Typography.labelSmall, { color: colors.text }]}>
+                    Distance: {filters.maxDistance} mi
+                  </Text>
+                </View>
+              )}
+
+              {filters?.priceRange && filters.priceRange !== 'any' && (
+                <View style={[styles.filterChip, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+                  <Text style={[Typography.labelSmall, { color: colors.text }]}>
+                    Price: {'$'.repeat(typeof filters.priceRange === 'number' ? filters.priceRange : 1)}
+                  </Text>
+                </View>
+              )}
+
+              {selectedCategories.length > 0 && (
+                <View style={[styles.filterChip, { backgroundColor: colors.cardBackground, borderColor: colors.border }]}>
+                  <Text style={[Typography.labelSmall, { color: colors.text }]}>
+                    {selectedCategories.length} {selectedCategories.length === 1 ? 'category' : 'categories'}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            {onClearAllFilters && (
+              <Pressable
+                style={[styles.clearAllButton, { backgroundColor: BrandColors.error }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onClearAllFilters();
+                }}
+              >
+                <Text style={[Typography.labelLarge, { color: '#FFFFFF' }]}>
+                  Clear All Filters
+                </Text>
+              </Pressable>
+            )}
+          </>
+        )}
+      </View>
+    </ScrollView>
   );
 }
 
@@ -666,5 +845,32 @@ const styles = StyleSheet.create({
   emptyMapSubtext: {
     fontSize: 14,
     textAlign: 'center',
+  },
+
+  // Active Filters Section
+  activeFiltersSection: {
+    marginTop: Spacing.lg,
+    padding: Spacing.lg,
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    borderRadius: BorderRadius.lg,
+  },
+  filterChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
+  filterChip: {
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  clearAllButton: {
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
+    alignItems: 'center',
+    marginTop: Spacing.sm,
   },
 });
