@@ -15,19 +15,21 @@ import {
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
 } from 'react-native';
-// Conditionally import react-native-maps only on native platforms
-let MapView: any;
-let Marker: any;
-let Callout: any;
-let PROVIDER_GOOGLE: any;
-
-if (Platform.OS !== 'web') {
-  const maps = require('react-native-maps');
-  MapView = maps.default;
-  Marker = maps.Marker;
-  Callout = maps.Callout;
-  PROVIDER_GOOGLE = maps.PROVIDER_GOOGLE;
-}
+// NOTE: react-native-maps disabled for web compatibility
+// Map preview in create event modal is temporarily disabled
+// TODO: Create separate MapPreview component with .web.tsx version
+// let MapView: any;
+// let Marker: any;
+// let Callout: any;
+// let PROVIDER_GOOGLE: any;
+//
+// if (Platform.OS !== 'web') {
+//   const maps = require('react-native-maps');
+//   MapView = maps.default;
+//   Marker = maps.Marker;
+//   Callout = maps.Callout;
+//   PROVIDER_GOOGLE = maps.PROVIDER_GOOGLE;
+// }
 
 import { Calendar, DateData } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
@@ -1112,8 +1114,9 @@ export default function CalendarScreen() {
                 </View>
               )}
 
-              {/* Map Preview */}
-              {newTaskLocation && Platform.OS !== 'web' && (
+              {/* Map Preview - Temporarily disabled for web compatibility */}
+              {/* TODO: Re-enable with separate MapPreview component */}
+              {/* {newTaskLocation && Platform.OS !== 'web' && MapView && (
                 <View style={styles.mapPreview}>
                   <MapView
                     provider={PROVIDER_GOOGLE}
@@ -1139,7 +1142,6 @@ export default function CalendarScreen() {
                       pinColor={BrandColors.loopBlue}
                     />
                   </MapView>
-                  {/* Map instruction hint */}
                   <View style={styles.mapHint}>
                     <Ionicons name="information-circle" size={14} color={Colors[colorScheme ?? 'light'].icon} />
                     <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 4 }]}>
@@ -1147,13 +1149,13 @@ export default function CalendarScreen() {
                     </Text>
                   </View>
                 </View>
-              )}
-              {newTaskLocation && Platform.OS === 'web' && (
+              )} */}
+              {newTaskLocation && (
                 <View style={styles.mapPreview}>
-                  <View style={[styles.map, { justifyContent: 'center', alignItems: 'center', backgroundColor: Colors[colorScheme ?? 'light'].cardBackground }]}>
-                    <Ionicons name="map" size={40} color={Colors[colorScheme ?? 'light'].icon} />
-                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginTop: 8, textAlign: 'center' }]}>
-                      Map preview available on mobile
+                  <View style={[styles.map, { backgroundColor: Colors[colorScheme ?? 'light'].card, justifyContent: 'center', alignItems: 'center' }]}>
+                    <Ionicons name="map-outline" size={48} color={BrandColors.loopBlue} />
+                    <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].text, marginTop: 8 }]}>
+                      {Platform.OS === 'web' ? 'Map preview available on mobile' : 'Map preview temporarily unavailable'}
                     </Text>
                   </View>
                 </View>
