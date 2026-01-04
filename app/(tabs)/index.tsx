@@ -46,6 +46,16 @@ import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service'
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
 
+// Type for user preferences (from Supabase Json type)
+type UserPreferences = {
+  budget?: number;
+  max_distance_miles?: number;
+  preferred_times?: string[];
+  notification_enabled?: boolean;
+  last_search_radius?: number;
+  [key: string]: any; // Allow other properties
+};
+
 // UI Configuration: Set to false to use spinner instead of shimmer for pull-to-refresh
 const USE_SHIMMER_FOR_REFRESH = true;
 
@@ -309,7 +319,8 @@ export default function RecommendationFeedScreen() {
     const loadSavedRadius = async () => {
       if (!user) return;
 
-      const savedRadius = user.preferences?.last_search_radius;
+      const prefs = user.preferences as UserPreferences;
+      const savedRadius = prefs?.last_search_radius;
       if (savedRadius && savedRadius > 10) {
         console.log(`📍 Restoring saved search radius: ${savedRadius} miles`);
         searchRadiusRef.current = savedRadius;
@@ -325,11 +336,12 @@ export default function RecommendationFeedScreen() {
       if (!user || searchRadius <= 10) return;
 
       try {
+        const prefs = (user.preferences as UserPreferences) || {};
         await supabase
           .from('users')
           .update({
             preferences: {
-              ...user.preferences,
+              ...prefs,
               last_search_radius: searchRadius
             }
           })
@@ -561,9 +573,10 @@ export default function RecommendationFeedScreen() {
 
       // Generate recommendations
       // Use filter's maxDistance if set (100 = "any"), otherwise use user preference
+      const prefs = user.preferences as UserPreferences;
       const effectiveMaxDistance = filters.maxDistance < 100
         ? filters.maxDistance
-        : (user.preferences?.max_distance_miles || 10);
+        : (prefs?.max_distance_miles || 10);
 
       const params: RecommendationParams = {
         user,
@@ -1140,7 +1153,7 @@ export default function RecommendationFeedScreen() {
             photoUrl: s.photoUrl,
             phone: s.place.formatted_phone_number,
             website: s.place.website,
-            hours: s.place.opening_hours,
+            // hours property omitted - opening_hours format doesn't match Record<string, string>
             tags: s.place.types,
             isSponsored: s.isSponsored,
             googlePlaceId: s.place.place_id,
@@ -1312,7 +1325,6 @@ export default function RecommendationFeedScreen() {
           score: s.score,
           businessHours: s.businessHours,
           hasEstimatedHours: s.hasEstimatedHours,
-          suggestedTime: s.suggestedTime,
           scoreBreakdown: {
             baseScore: s.scoreBreakdown.baseScore,
             locationScore: s.scoreBreakdown.locationScore,
@@ -1523,7 +1535,7 @@ export default function RecommendationFeedScreen() {
     const newDistance = currentDistance + 10;
 
     setFilters({ ...filters, maxDistance: newDistance });
-    setActiveFilters({ ...(activeFilters || {}), maxDistance: newDistance });
+    setActiveFilters({ ...(activeFilters || {} as SearchFilters), maxDistance: newDistance } as SearchFilters);
     setFeedExhausted(false);
     feedExhaustedRef.current = false;
 
@@ -1538,7 +1550,7 @@ export default function RecommendationFeedScreen() {
     console.log('🌍 Removing distance filter');
 
     setFilters({ ...filters, maxDistance: 100 });
-    setActiveFilters({ ...(activeFilters || {}), maxDistance: 100 });
+    setActiveFilters({ ...(activeFilters || {} as SearchFilters), maxDistance: 100 } as SearchFilters);
     setFeedExhausted(false);
     feedExhaustedRef.current = false;
 
@@ -1565,20 +1577,19 @@ export default function RecommendationFeedScreen() {
       if (!user) return;
 
       // Determine search location (custom location or user's current location)
-      const searchLocation = searchFilters.location
+      let searchLocation: PlaceLocation | null = searchFilters.location
         ? { lat: searchFilters.location.latitude, lng: searchFilters.location.longitude }
         : userLocation;
 
       if (!searchLocation) {
         const location = await getCurrentLocation();
-        searchLocation.lat = location.latitude;
-        searchLocation.lng = location.longitude;
+        searchLocation = { lat: location.latitude, lng: location.longitude };
       }
 
       // Build recommendation params with advanced filters
       const params: RecommendationParams = {
         user,
-        userLocation: searchLocation,
+        userLocation: searchLocation as PlaceLocation,
         homeLocation: user.home_location && (user.home_location as any).coordinates
           ? { lat: (user.home_location as any).coordinates[1], lng: (user.home_location as any).coordinates[0] }
           : undefined,
@@ -1862,11 +1873,12 @@ export default function RecommendationFeedScreen() {
     if (user) {
       setTimeout(async () => {
         try {
+          const prefs = (user.preferences as UserPreferences) || {};
           await supabase
             .from('users')
             .update({
               preferences: {
-                ...user.preferences,
+                ...prefs,
                 discovery_mode: mode,
               }
             })
@@ -1890,11 +1902,12 @@ export default function RecommendationFeedScreen() {
     if (user) {
       setTimeout(async () => {
         try {
+          const prefs = (user.preferences as UserPreferences) || {};
           await supabase
             .from('users')
             .update({
               preferences: {
-                ...user.preferences,
+                ...prefs,
                 preferred_categories: categories,
               }
             })

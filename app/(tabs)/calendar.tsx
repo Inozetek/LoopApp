@@ -181,7 +181,7 @@ export default function CalendarScreen() {
   const [freeTimeSlots, setFreeTimeSlots] = useState<Array<{
     start: Date;
     end: Date;
-    durationHours: number;
+    durationMinutes: number;
   }>>([]);
   const [showFreeTime, setShowFreeTime] = useState(false);
 
@@ -1340,7 +1340,7 @@ export default function CalendarScreen() {
                         // Auto-update category based on place types
                         if (location.types && location.types.length > 0) {
                           const suggestedCategory = getCategoryFromPlaceTypes(location.types);
-                          setEditingEvent(prev => ({ ...prev, category: suggestedCategory }));
+                          setEditingEvent(prev => prev ? { ...prev, category: suggestedCategory } : prev);
                         }
                       }}
                       placeholder="Search for a location"
