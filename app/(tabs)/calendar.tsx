@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -514,8 +514,16 @@ export default function CalendarScreen() {
   const handleCloseFeedbackModal = () => {
     setShowFeedbackModal(false);
     setFeedbackActivity(null);
-    // Reload events in case more feedback is pending
-    checkForPendingFeedback();
+
+    // Reload events list to reflect the completed status
+    loadEvents();
+
+    // Wait 2 seconds before checking for more pending feedback
+    // This prevents the same modal from reopening immediately
+    // and gives the database time to fully commit the status update
+    setTimeout(() => {
+      checkForPendingFeedback();
+    }, 2000);
   };
 
   const handleEventPress = (event: CalendarEvent) => {
@@ -655,6 +663,44 @@ export default function CalendarScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setViewMode(viewMode === 'list' ? 'loop' : 'list');
   };
+
+  // Memoize tasks for LoopMapView to prevent unnecessary re-renders
+  const loopMapTasks = useMemo(() => {
+    return events.map(event => ({
+      id: event.id,
+      title: event.title,
+      latitude: event.location.latitude,
+      longitude: event.location.longitude,
+      address: event.address,
+      start_time: event.start_time,
+      category: event.category,
+    }));
+  }, [events]);
+
+  // Memoize home location parsing for LoopMapView
+  const parsedHomeLocation = useMemo(() => {
+    if (!user?.home_location) return undefined;
+
+    const loc = user.home_location as any;
+    // Handle PostGIS object format: { coordinates: [lng, lat] }
+    if (loc && typeof loc === 'object' && 'coordinates' in loc) {
+      return {
+        latitude: loc.coordinates[1],
+        longitude: loc.coordinates[0],
+      };
+    }
+    // Handle PostGIS string format: "POINT(lng lat)"
+    if (typeof loc === 'string') {
+      const match = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+      if (match) {
+        return {
+          latitude: parseFloat(match[2]),
+          longitude: parseFloat(match[1]),
+        };
+      }
+    }
+    return undefined;
+  }, [user?.home_location]);
 
   return (
     <SwipeableLayout>
@@ -876,23 +922,8 @@ export default function CalendarScreen() {
 
           {/* Map View */}
           <LoopMapView
-            tasks={events.map(event => ({
-              id: event.id,
-              title: event.title,
-              latitude: event.location.latitude,
-              longitude: event.location.longitude,
-              address: event.address,
-              start_time: event.start_time,
-              category: event.category,
-            }))}
-            homeLocation={
-              user?.home_location
-                ? {
-                    latitude: parseFloat((user.home_location as string).split(',')[0]),
-                    longitude: parseFloat((user.home_location as string).split(',')[1]),
-                  }
-                : undefined
-            }
+            tasks={loopMapTasks}
+            homeLocation={parsedHomeLocation}
             onTaskPress={(taskId) => {
               const task = events.find(e => e.id === taskId);
               if (task) {
@@ -1422,7 +1453,8 @@ export default function CalendarScreen() {
         <FeedbackModal
           visible={showFeedbackModal}
           onClose={handleCloseFeedbackModal}
-          activityId={feedbackActivity.activityId || feedbackActivity.eventId}
+          eventId={feedbackActivity.eventId} // Calendar event ID to mark as completed
+          activityId={feedbackActivity.activityId || null} // Null for manual calendar events
           activityName={feedbackActivity.activityName}
           activityCategory={feedbackActivity.activityCategory}
           userId={user?.id || ''}

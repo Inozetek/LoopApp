@@ -5,7 +5,7 @@
  * Shows numbered task pins connected by polylines, forming a literal loop.
  */
 
-import React, { useRef, useEffect, useMemo } from 'react';
+import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandColors, Typography, Spacing } from '@/constants/brand';
@@ -45,43 +45,20 @@ interface LoopMapViewProps {
 
 export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewProps) {
   const mapRef = useRef<any>(null);
+  const [mapReady, setMapReady] = useState(false);
+  const lastFitRef = useRef<string>('');
 
   // Default to Dallas if no location provided (demo mode)
-  const defaultHome = homeLocation || {
+  const defaultHome = useMemo(() => homeLocation || {
     latitude: 32.7767,
     longitude: -96.7970,
-  };
+  }, [homeLocation?.latitude, homeLocation?.longitude]);
 
-  // Fit map to show all tasks
-  useEffect(() => {
-    if (tasks.length > 0 && mapRef.current) {
-      const coordinates = [
-        defaultHome,
-        ...tasks.map(t => ({ latitude: t.latitude, longitude: t.longitude })).filter(coord =>
-          coord.latitude && coord.longitude &&
-          !isNaN(coord.latitude) && !isNaN(coord.longitude)
-        ),
-      ];
-
-      // Slight delay to ensure map is rendered
-      setTimeout(() => {
-        try {
-          mapRef.current?.fitToCoordinates(coordinates, {
-            edgePadding: { top: 50, right: 50, bottom: 50, left: 50 },
-            animated: true,
-          });
-        } catch (error) {
-          console.error('Error fitting map to coordinates:', error);
-        }
-      }, 300); // Increased delay for more reliability
-    }
-  }, [tasks, defaultHome.latitude, defaultHome.longitude]);
-
-  // Build route coordinates (home → task1 → task2 → ... → home)
-  const routeCoordinates = [
-    defaultHome,
-    ...tasks
+  // Memoize valid task coordinates to prevent recalculation
+  const validTaskCoords = useMemo(() => {
+    return tasks
       .map(task => ({
+        id: task.id,
         latitude: task.latitude,
         longitude: task.longitude,
       }))
@@ -90,14 +67,57 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
         !isNaN(coord.latitude) && !isNaN(coord.longitude) &&
         coord.latitude >= -90 && coord.latitude <= 90 &&
         coord.longitude >= -180 && coord.longitude <= 180
-      ),
+      );
+  }, [tasks]);
+
+  // Build route coordinates (home → task1 → task2 → ... → home)
+  const routeCoordinates = useMemo(() => [
+    defaultHome,
+    ...validTaskCoords.map(({ latitude, longitude }) => ({ latitude, longitude })),
     defaultHome, // Complete the loop
-  ];
+  ], [defaultHome, validTaskCoords]);
 
   // Calculate route statistics (distance and time)
   const routeStats = useMemo(() => {
     return calculateRouteStats(routeCoordinates);
   }, [routeCoordinates]);
+
+  // Create a stable key for fit comparison
+  const fitKey = useMemo(() => {
+    return validTaskCoords.map(c => `${c.id}`).join(',') + `|${defaultHome.latitude},${defaultHome.longitude}`;
+  }, [validTaskCoords, defaultHome]);
+
+  // Fit map to show all tasks - only when tasks actually change
+  useEffect(() => {
+    if (!mapReady || validTaskCoords.length === 0 || !mapRef.current) return;
+
+    // Prevent duplicate fits
+    if (lastFitRef.current === fitKey) return;
+    lastFitRef.current = fitKey;
+
+    const coordinates = [
+      defaultHome,
+      ...validTaskCoords.map(({ latitude, longitude }) => ({ latitude, longitude })),
+    ];
+
+    // Delay to ensure map is rendered
+    const timeoutId = setTimeout(() => {
+      try {
+        mapRef.current?.fitToCoordinates(coordinates, {
+          edgePadding: { top: 80, right: 50, bottom: 80, left: 50 },
+          animated: true,
+        });
+      } catch (error) {
+        console.error('Error fitting map to coordinates:', error);
+      }
+    }, 500);
+
+    return () => clearTimeout(timeoutId);
+  }, [mapReady, fitKey, defaultHome, validTaskCoords]);
+
+  const handleMapReady = useCallback(() => {
+    setMapReady(true);
+  }, []);
 
   const getCategoryColor = (category: string): string => {
     const colors: { [key: string]: string } = {
@@ -158,6 +178,7 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
         }}
         showsUserLocation
         showsMyLocationButton
+        onMapReady={handleMapReady}
       >
         {/* Home Marker (Starting Point) */}
         <Marker
