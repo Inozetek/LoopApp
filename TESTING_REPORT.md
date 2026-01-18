@@ -22,9 +22,9 @@
 ### Top Priority Issues (Fix Before Launch)
 
 1. ~~**Eventbrite search endpoint deprecated**~~ → ✅ RESOLVED: Disabled via feature flag, documented alternatives
-2. **Interest taxonomy mismatch** - 18 vs 42 categories across codebase
-3. **No push notification permission** - Users can't get recommendations
-4. **Duplicate onboarding components** - Maintenance burden
+2. ~~**Interest taxonomy mismatch**~~ → ✅ RESOLVED: Unified taxonomy with 18 user-friendly labels mapped to 42 category IDs
+3. ~~**No push notification permission**~~ → ✅ RESOLVED: Added Step 4 to onboarding flow
+4. ~~**Duplicate onboarding components**~~ → ✅ RESOLVED: Removed `manual-onboarding-flow.tsx`
 5. ~~**Update eventbrite-service.ts**~~ → ✅ RESOLVED: Added deprecation notice, service disabled
 
 ---
@@ -203,12 +203,12 @@ Sources:
 ### 3.1 Current Flow Structure
 
 ```
-Welcome Screen → Name Input → Interest Selection → Location Setup → Complete
-     (Step 0)      (Step 1)       (Step 2)           (Step 3)
+Welcome → Name → Interests → Location → Notifications → Complete
+(Step 0)  (1)      (2)         (3)         (4)
 ```
 
 **Duration:** <2 minutes
-**Data Collected:** Name, 1-10 interests, home address (required), work address (optional)
+**Data Collected:** Name, 1-10 interests (unified taxonomy), home address (required), work address (optional), notification permission
 
 ### 3.2 Issues Found
 
@@ -216,15 +216,15 @@ Welcome Screen → Name Input → Interest Selection → Location Setup → Comp
 
 | Issue | Description | Impact |
 |-------|-------------|--------|
-| **No Push Notification Permission** | Never requests notification permission | Users won't receive proactive recommendations |
-| **Interest Taxonomy Mismatch** | Onboarding: 18 interests, ACTIVITY_CATEGORIES: 42 interests, Profile: 12 interests | Inconsistent user experience, scoring gaps |
+| ~~**No Push Notification Permission**~~ | ✅ RESOLVED: Added Step 4 to onboarding | - |
+| ~~**Interest Taxonomy Mismatch**~~ | ✅ RESOLVED: Single source of truth in `constants/activity-categories.ts` | - |
 
 #### 🟡 Medium Issues
 
 | Issue | Description | Impact |
 |-------|-------------|--------|
-| **Duplicate Onboarding Components** | `onboarding.tsx` (4 steps) + `manual-onboarding-flow.tsx` (5 steps) both exist | Maintenance burden, confusion |
-| **Hardcoded Interest Lists** | Interests defined in 4 different places | Hard to maintain, sync issues |
+| ~~**Duplicate Onboarding Components**~~ | ✅ RESOLVED: Removed `manual-onboarding-flow.tsx` | - |
+| ~~**Hardcoded Interest Lists**~~ | ✅ RESOLVED: All use `ONBOARDING_INTERESTS` from `activity-categories.ts` | - |
 | **Privacy Settings Hidden** | Users don't see/configure privacy during onboarding | May not realize Loop is discoverable |
 | **No Onboarding Analytics** | No tracking of drop-off rates | Can't optimize conversion |
 | **Calendar Sync Deferred** | Permission requested but sync never implemented | Feature appears broken |
@@ -350,8 +350,8 @@ Sponsor Boost:     +0-30% (organic/boosted/premium)
 
 | Task | Effort | Impact |
 |------|--------|--------|
-| Unify interest taxonomy to single source of truth | 2-3 hrs | Consistency |
-| Remove duplicate onboarding component | 1 hr | Maintainability |
+| ~~Unify interest taxonomy to single source of truth~~ | ✅ Done | Consistency |
+| ~~Remove duplicate onboarding component~~ | ✅ Done | Maintainability |
 | Fix Jest configuration for full test suite | 1-2 hrs | Quality assurance |
 | Add onboarding analytics tracking | 2 hrs | Conversion insights |
 | Implement actual calendar sync | 3-4 hrs | Feature completion |
@@ -458,15 +458,15 @@ Sponsor Boost:     +0-30% (organic/boosted/premium)
 
 ## Appendix B: Files with Issues
 
-**High Priority:**
-- `services/eventbrite-service.ts` - Uses deprecated API
-- `app/auth/onboarding.tsx` - Missing notification permission
-- `constants/activity-categories.ts` - Not used in onboarding
+**High Priority (All Resolved):**
+- ~~`services/eventbrite-service.ts`~~ - ✅ Disabled with deprecation notice
+- ~~`app/auth/onboarding.tsx`~~ - ✅ Added notification permission (Step 4)
+- ~~`constants/activity-categories.ts`~~ - ✅ Now exports `ONBOARDING_INTERESTS` and `INTEREST_GROUPS`
 
 **Medium Priority:**
-- `app/(tabs)/index.tsx` - 16 lint warnings
-- `app/(tabs)/friends.tsx` - Unescaped entities
-- `jest.config.js` - Transform config needs update
+- `app/(tabs)/index.tsx` - 16 lint warnings (cosmetic)
+- `app/(tabs)/friends.tsx` - Unescaped entities (cosmetic)
+- `jest.config.js` - Transform config needs update for full test suite
 
 ---
 
@@ -480,11 +480,13 @@ The Loop app has a **solid foundation** with well-designed architecture, beautif
 1. ✅ **Google Places API** - Working (NEW API v1 correctly integrated)
 2. ✅ **Ticketmaster API** - Working (20 events found in testing)
 3. ✅ **Eventbrite disabled** - Feature flag set to false, deprecation documented
+4. ✅ **Push notification permission** - Added as Step 4 in onboarding flow
+5. ✅ **Interest taxonomy unified** - Single source of truth in `constants/activity-categories.ts`
+6. ✅ **Duplicate onboarding removed** - Deleted `manual-onboarding-flow.tsx`
 
 **⏳ Pending:**
 1. ⏳ **Groupon API** - Awaiting developer account approval
-2. ⚠️ **No notification permission** - Still needs to be added to onboarding
-3. ⚠️ **Interest taxonomy mismatch** - 18 vs 42 categories needs unification
+2. ⚠️ **Jest configuration** - Needs update for React Native modules
 
 ### Current Data Source Coverage
 
@@ -499,6 +501,8 @@ The Loop app has a **solid foundation** with well-designed architecture, beautif
 
 The app is **ready for internal testing** with Google Places + Ticketmaster providing good coverage. Once Groupon is approved, we'll have a compelling MVP for all four test personas.
 
-**Remaining Critical Fix:** Add push notification permission to onboarding (30 min effort)
+**All critical issues have been resolved.**
 
 **Next Milestone:** Groupon integration once approved → fills budget-conscious gap for Jake persona
+
+**Optional improvements:** Fix Jest configuration, add onboarding analytics, implement calendar sync
