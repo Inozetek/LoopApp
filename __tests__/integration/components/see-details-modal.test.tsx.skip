@@ -1,0 +1,654 @@
+/**
+ * See Details Modal Integration Tests
+ *
+ * Tests the complete functionality of the activity details modal including:
+ * - Static map preview
+ * - Uber affiliate deep linking
+ * - Google Places reviews integration
+ * - Review topic bubbles
+ * - Button visibility and functionality
+ */
+
+import React from 'react';
+import { render, waitFor, fireEvent } from '@testing-library/react-native';
+import { Linking, Alert } from 'react-native';
+import SeeDetailsModal from '@/components/see-details-modal';
+import { getPlaceReviews } from '@/services/google-places';
+import type { ScoredRecommendation } from '@/types/activity';
+
+// Mock dependencies
+jest.mock('@/services/google-places');
+jest.mock('react-native/Libraries/Linking/Linking', () => ({
+  openURL: jest.fn(),
+  canOpenURL: jest.fn(),
+}));
+jest.mock('react-native/Libraries/Alert/Alert', () => ({
+  alert: jest.fn(),
+}));
+
+// Test timeout
+jest.setTimeout(30000);
+
+// Helper to create mock recommendations
+function createMockRecommendation(overrides?: Partial<ScoredRecommendation>): ScoredRecommendation {
+  return {
+    place_id: 'test-place-123',
+    title: 'Test Restaurant',
+    category: 'Dining',
+    source: 'google_places',
+    formatted_address: '123 Main St, Dallas, TX 75201',
+    location: {
+      latitude: 32.7767,
+      longitude: -96.797,
+    },
+    photoUrl: 'https://example.com/photo.jpg',
+    photos: ['https://example.com/photo1.jpg', 'https://example.com/photo2.jpg'],
+    rating: 4.5,
+    user_ratings_total: 250,
+    price_level: 2,
+    score: 85,
+    reasons: ['Great location', 'Matches your interests'],
+    activity: {
+      name: 'Test Restaurant',
+      googlePlaceId: 'ChIJ-test-123',
+      location: {
+        latitude: 32.7767,
+        longitude: -96.797,
+        address: '123 Main St, Dallas, TX 75201',
+      },
+      website: 'https://testrestaurant.com',
+      phone: '(214) 555-1234',
+      reviewsCount: 250,
+    },
+    ...overrides,
+  } as ScoredRecommendation;
+}
+
+// Helper to create mock reviews
+function createMockReview(rating: number, text: string) {
+  return {
+    authorAttribution: {
+      displayName: 'Test Reviewer',
+    },
+    rating,
+    text: {
+      text,
+      languageCode: 'en',
+    },
+    relativePublishTimeDescription: '2 weeks ago',
+  };
+}
+
+// TODO: These tests need React Native testing environment (jest-expo or similar)
+// Currently skipped because ts-jest doesn't support JSX component rendering
+describe.skip('See Details Modal - Integration Tests', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  describe('Static Map Preview', () => {
+    it('should display static map when activity has location', async () => {
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Should show "Location" section
+      await waitFor(() => {
+        expect(getByText('Location')).toBeTruthy();
+      });
+    });
+
+    it('should generate correct static map URL with activity location', async () => {
+      const recommendation = createMockRecommendation({
+        activity: {
+          location: {
+            latitude: 32.7767,
+            longitude: -96.797,
+            address: '123 Main St',
+          },
+        } as any,
+      });
+
+      const { findByTestId } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Note: We'd need to add testID to the Image component in see-details-modal.tsx
+      // This is a placeholder for the actual test
+      expect(recommendation.activity?.location).toBeDefined();
+      expect(recommendation.activity?.location.latitude).toBe(32.7767);
+    });
+
+    it('should open directions when map is tapped', async () => {
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Find and tap the map overlay
+      const mapOverlay = getByText('Tap for directions');
+      fireEvent.press(mapOverlay.parent!);
+
+      // Should call Linking.openURL with navigation URL
+      await waitFor(() => {
+        expect(Linking.openURL).toHaveBeenCalled();
+      });
+    });
+
+    it('should not show map when location is missing', () => {
+      const recommendation = createMockRecommendation({
+        activity: undefined,
+      });
+
+      const { queryByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Should not show "Location" section
+      expect(queryByText('Location')).toBeNull();
+    });
+  });
+
+  describe('Uber Affiliate Deep Linking', () => {
+    it('should show Uber button when location exists', async () => {
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getByText('Uber')).toBeTruthy();
+      });
+    });
+
+    it('should open Uber app when button is pressed and app is installed', async () => {
+      (Linking.canOpenURL as jest.Mock).mockResolvedValue(true);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      const uberButton = getByText('Uber');
+      fireEvent.press(uberButton);
+
+      await waitFor(() => {
+        expect(Linking.openURL).toHaveBeenCalled();
+        const callUrl = (Linking.openURL as jest.Mock).mock.calls[0][0];
+
+        expect(callUrl).toContain('uber://');
+        expect(callUrl).toContain('dropoff[latitude]=32.7767');
+        expect(callUrl).toContain('dropoff[longitude]=-96.797');
+      });
+    });
+
+    it('should fallback to web URL when Uber app is not installed', async () => {
+      (Linking.canOpenURL as jest.Mock).mockResolvedValue(false);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      const uberButton = getByText('Uber');
+      fireEvent.press(uberButton);
+
+      await waitFor(() => {
+        expect(Linking.openURL).toHaveBeenCalled();
+        const callUrl = (Linking.openURL as jest.Mock).mock.calls[0][0];
+
+        expect(callUrl).toContain('https://m.uber.com');
+      });
+    });
+
+    it('should include affiliate code when enabled', async () => {
+      // Note: This test would require mocking AFFILIATE_CONFIG
+      // For now, we verify the URL structure
+      (Linking.canOpenURL as jest.Mock).mockResolvedValue(true);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      const uberButton = getByText('Uber');
+      fireEvent.press(uberButton);
+
+      await waitFor(() => {
+        expect(Linking.openURL).toHaveBeenCalled();
+      });
+    });
+
+    it('should handle Uber opening errors gracefully', async () => {
+      (Linking.canOpenURL as jest.Mock).mockResolvedValue(true);
+      (Linking.openURL as jest.Mock).mockRejectedValue(new Error('Failed to open Uber'));
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      const uberButton = getByText('Uber');
+      fireEvent.press(uberButton);
+
+      await waitFor(() => {
+        expect(Alert.alert).toHaveBeenCalledWith(
+          'Error',
+          'Could not open Uber. Please try again.'
+        );
+      });
+    });
+
+    it('should not show Uber button when location is missing', () => {
+      const recommendation = createMockRecommendation({
+        activity: undefined,
+      });
+
+      const { queryByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      expect(queryByText('Uber')).toBeNull();
+    });
+  });
+
+  describe('Google Places Reviews Integration', () => {
+    it('should fetch and display reviews when modal opens', async () => {
+      const mockReviews = [
+        createMockReview(5, 'Great food and excellent service!'),
+        createMockReview(4, 'Good atmosphere, friendly staff'),
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Should call getPlaceReviews with place ID
+      await waitFor(() => {
+        expect(getPlaceReviews).toHaveBeenCalledWith('ChIJ-test-123');
+      });
+
+      // Should display reviews
+      await waitFor(() => {
+        expect(getByText(/Great food and excellent service/)).toBeTruthy();
+        expect(getByText(/Good atmosphere, friendly staff/)).toBeTruthy();
+      });
+    });
+
+    it('should show loading indicator while fetching reviews', async () => {
+      (getPlaceReviews as jest.Mock).mockImplementation(
+        () => new Promise(resolve => setTimeout(() => resolve([]), 1000))
+      );
+
+      const recommendation = createMockRecommendation();
+
+      const { findByTestId } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Note: Would need to add testID to ActivityIndicator in see-details-modal.tsx
+      // This is a placeholder for the actual test
+    });
+
+    it('should handle review fetch errors gracefully', async () => {
+      (getPlaceReviews as jest.Mock).mockRejectedValue(new Error('API Error'));
+
+      const recommendation = createMockRecommendation();
+
+      const { queryByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Should not crash, should handle error gracefully
+      await waitFor(() => {
+        expect(getPlaceReviews).toHaveBeenCalled();
+      });
+
+      // Should not show reviews
+      expect(queryByText('Reviews')).toBeNull();
+    });
+
+    it('should show "No reviews available" when reviews are empty', async () => {
+      (getPlaceReviews as jest.Mock).mockResolvedValue([]);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getByText('No reviews available')).toBeTruthy();
+      });
+    });
+
+    it('should not fetch reviews for events', async () => {
+      const recommendation = createMockRecommendation({
+        source: 'ticketmaster',
+        event_metadata: {
+          event_url: 'https://ticketmaster.com/event',
+        } as any,
+      });
+
+      render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getPlaceReviews).not.toHaveBeenCalled();
+      });
+    });
+
+    it('should display reviewer names and ratings', async () => {
+      const mockReviews = [
+        {
+          authorAttribution: {
+            displayName: 'John Doe',
+          },
+          rating: 5,
+          text: {
+            text: 'Excellent!',
+            languageCode: 'en',
+          },
+          relativePublishTimeDescription: '1 week ago',
+        },
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getByText('John Doe')).toBeTruthy();
+        expect(getByText('1 week ago')).toBeTruthy();
+      });
+    });
+  });
+
+  describe('Review Topic Bubbles', () => {
+    it('should display topic bubbles extracted from reviews', async () => {
+      const mockReviews = [
+        createMockReview(5, 'Great food and excellent service!'),
+        createMockReview(5, 'Amazing food, loved the menu'),
+        createMockReview(4, 'Good atmosphere and friendly staff'),
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Should display topic bubbles
+      await waitFor(() => {
+        // Should find food and service topics
+        expect(getByText(/food/i)).toBeTruthy();
+      });
+    });
+
+    it('should show positive topics with green color', async () => {
+      const mockReviews = [
+        createMockReview(5, 'Great food!'),
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        // Note: Would need to check actual styling in real test
+        expect(getByText(/Great/i)).toBeTruthy();
+      });
+    });
+
+    it('should show negative topics with red color', async () => {
+      const mockReviews = [
+        createMockReview(2, 'Terrible food and bad service'),
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getByText(/Terrible/i)).toBeTruthy();
+      });
+    });
+
+    it('should show topic count when mentioned multiple times', async () => {
+      const mockReviews = [
+        createMockReview(5, 'Great food'),
+        createMockReview(5, 'Great food'),
+        createMockReview(5, 'Great food'),
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        // Should show count (3)
+        expect(getByText(/(3)/)).toBeTruthy();
+      });
+    });
+
+    it('should not show topic bubbles when reviews are empty', async () => {
+      (getPlaceReviews as jest.Mock).mockResolvedValue([]);
+
+      const recommendation = createMockRecommendation();
+
+      const { queryByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        // Should not find any topic bubbles
+        expect(queryByText(/Great/i)).toBeNull();
+      });
+    });
+  });
+
+  describe('Complete Integration', () => {
+    it('should display all new features together', async () => {
+      const mockReviews = [
+        createMockReview(5, 'Great food and service!'),
+      ];
+
+      (getPlaceReviews as jest.Mock).mockResolvedValue(mockReviews);
+      (Linking.canOpenURL as jest.Mock).mockResolvedValue(true);
+
+      const recommendation = createMockRecommendation();
+
+      const { getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation}
+          onClose={() => {}}
+        />
+      );
+
+      // Should have:
+      // 1. Static map
+      await waitFor(() => {
+        expect(getByText('Location')).toBeTruthy();
+      });
+
+      // 2. Uber button
+      await waitFor(() => {
+        expect(getByText('Uber')).toBeTruthy();
+      });
+
+      // 3. Reviews
+      await waitFor(() => {
+        expect(getByText(/Great food/)).toBeTruthy();
+      });
+
+      // 4. Topic bubbles
+      await waitFor(() => {
+        expect(getByText(/food/i)).toBeTruthy();
+      });
+    });
+
+    it('should refresh reviews when modal reopens with different recommendation', async () => {
+      const mockReviews1 = [createMockReview(5, 'Review 1')];
+      const mockReviews2 = [createMockReview(4, 'Review 2')];
+
+      (getPlaceReviews as jest.Mock)
+        .mockResolvedValueOnce(mockReviews1)
+        .mockResolvedValueOnce(mockReviews2);
+
+      const recommendation1 = createMockRecommendation({
+        place_id: 'place-1',
+        activity: {
+          googlePlaceId: 'ChIJ-place-1',
+        } as any,
+      });
+
+      const recommendation2 = createMockRecommendation({
+        place_id: 'place-2',
+        activity: {
+          googlePlaceId: 'ChIJ-place-2',
+        } as any,
+      });
+
+      const { rerender, getByText } = render(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation1}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getByText('Review 1')).toBeTruthy();
+      });
+
+      // Reopen with different recommendation
+      rerender(
+        <SeeDetailsModal
+          visible={true}
+          recommendation={recommendation2}
+          onClose={() => {}}
+        />
+      );
+
+      await waitFor(() => {
+        expect(getByText('Review 2')).toBeTruthy();
+      });
+    });
+  });
+});
