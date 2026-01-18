@@ -22,6 +22,7 @@ import { processReferralCode, completeReferral } from '@/services/referral-servi
 import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
 import { requestCalendarPermissions, syncCalendarToDatabase } from '@/services/calendar-service';
+import { requestNotificationPermissions } from '@/services/notification-service';
 
 // Common interest categories for Loop
 const INTEREST_OPTIONS = [
@@ -56,6 +57,8 @@ export default function OnboardingScreen() {
   const [isFetchingLocation, setIsFetchingLocation] = useState(false);
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [calendarSynced, setCalendarSynced] = useState(false);
+  const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
 
   // Step 1: Basic info
   const [firstName, setFirstName] = useState('');
@@ -195,7 +198,34 @@ export default function OnboardingScreen() {
       }
       setStep(3);
     } else if (step === 3) {
+      // Validate home address before moving to notifications step
+      if (!homeAddress.trim()) {
+        Alert.alert('Error', 'Please enter your home address');
+        return;
+      }
+      setStep(4);
+    } else if (step === 4) {
       await completeOnboarding();
+    }
+  }
+
+  async function handleEnableNotifications() {
+    setIsRequestingNotifications(true);
+    try {
+      const granted = await requestNotificationPermissions();
+      setNotificationsEnabled(granted);
+
+      if (granted) {
+        Alert.alert(
+          'Notifications Enabled',
+          'You will receive timely reminders for activities and departure alerts.',
+          [{ text: 'Great!' }]
+        );
+      }
+    } catch (error) {
+      console.error('Error requesting notification permissions:', error);
+    } finally {
+      setIsRequestingNotifications(false);
     }
   }
 
@@ -367,7 +397,7 @@ export default function OnboardingScreen() {
 
     return (
       <View style={styles.progressContainer}>
-        {[1, 2, 3].map((s) => (
+        {[1, 2, 3, 4].map((s) => (
           <View
             key={s}
             style={[
@@ -575,6 +605,49 @@ export default function OnboardingScreen() {
     );
   }
 
+  function renderStep4() {
+    return (
+      <View style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
+        <ThemedText style={[styles.title, { fontSize: 32, marginBottom: 16, textAlign: 'center' }]}>
+          Stay in the Loop
+        </ThemedText>
+        <ThemedText style={[styles.subtitle, { textAlign: 'center', fontSize: 16, opacity: 0.8, lineHeight: 24 }]}>
+          Get timely reminders for activities and departure alerts so you never miss out
+        </ThemedText>
+
+        <View style={styles.notificationSection}>
+          <TouchableOpacity
+            style={[
+              styles.notificationButton,
+              {
+                backgroundColor: notificationsEnabled ? colors.tint + '20' : colors.tint,
+                borderColor: notificationsEnabled ? '#10b981' : colors.tint,
+              },
+            ]}
+            onPress={handleEnableNotifications}
+            disabled={isLoading || isRequestingNotifications || notificationsEnabled}
+          >
+            {isRequestingNotifications ? (
+              <ActivityIndicator size="small" color={notificationsEnabled ? '#10b981' : '#fff'} />
+            ) : notificationsEnabled ? (
+              <Text style={[styles.notificationButtonText, { color: '#10b981' }]}>
+                ✓ Notifications Enabled
+              </Text>
+            ) : (
+              <Text style={[styles.notificationButtonText, { color: '#fff' }]}>
+                Enable Notifications
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <ThemedText style={[styles.skipText, { marginTop: 16 }]}>
+            You can change this later in settings
+          </ThemedText>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ThemedView style={{ flex: 1, paddingTop: Platform.OS === 'android' ? 60 : 50 }}>
       <KeyboardAvoidingView
@@ -592,10 +665,11 @@ export default function OnboardingScreen() {
           {step === 1 && renderStep1()}
           {step === 2 && renderStep2()}
           {step === 3 && renderStep3()}
+          {step === 4 && renderStep4()}
         </ScrollView>
 
         <View style={styles.buttonContainer}>
-          {step > 0 && step !== 3 && (
+          {step > 0 && step < 4 && (
             <TouchableOpacity
               style={[styles.backButton, { borderColor: colors.icon }]}
               onPress={handleBack}
@@ -608,7 +682,7 @@ export default function OnboardingScreen() {
           <TouchableOpacity
             style={[
               styles.nextButton,
-              { backgroundColor: colors.tint, flex: step > 0 && step !== 3 ? 1 : undefined },
+              { backgroundColor: colors.tint, flex: step > 0 && step < 4 ? 1 : undefined },
             ]}
             onPress={handleNext}
             disabled={isLoading}
@@ -617,7 +691,7 @@ export default function OnboardingScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.nextButtonText}>
-                {step === 0 ? "Let's Go!" : step === 3 ? 'Get Started' : 'Next'}
+                {step === 0 ? "Let's Go!" : step === 4 ? 'Get Started' : 'Next'}
               </Text>
             )}
           </TouchableOpacity>
@@ -763,6 +837,24 @@ const styles = StyleSheet.create({
     opacity: 0.5,
     textAlign: 'center',
     marginTop: -4,
+  },
+  notificationSection: {
+    marginTop: 48,
+    width: '100%',
+    alignItems: 'center',
+  },
+  notificationButton: {
+    height: 56,
+    borderRadius: 28,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 48,
+    minWidth: 240,
+  },
+  notificationButtonText: {
+    fontSize: 18,
+    fontWeight: '600',
   },
   buttonContainer: {
     flexDirection: 'row',
