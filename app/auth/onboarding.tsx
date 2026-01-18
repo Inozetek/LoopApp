@@ -23,28 +23,7 @@ import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
 import { requestCalendarPermissions, syncCalendarToDatabase } from '@/services/calendar-service';
 import { requestNotificationPermissions } from '@/services/notification-service';
-
-// Common interest categories for Loop
-const INTEREST_OPTIONS = [
-  'Dining',
-  'Fitness',
-  'Entertainment',
-  'Arts & Culture',
-  'Sports',
-  'Nightlife',
-  'Shopping',
-  'Outdoor Activities',
-  'Music',
-  'Movies',
-  'Coffee & Cafes',
-  'Gaming',
-  'Photography',
-  'Food & Cooking',
-  'Wellness',
-  'Technology',
-  'Reading',
-  'Travel',
-];
+import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 
 export default function OnboardingScreen() {
   const { session, user, updateUserProfile } = useAuth();
@@ -472,8 +451,9 @@ export default function OnboardingScreen() {
           contentContainerStyle={styles.interestsContainer}
           showsVerticalScrollIndicator={false}
         >
-          {INTEREST_OPTIONS.map((interest) => {
+          {ONBOARDING_INTERESTS.map((interest) => {
             const isSelected = selectedInterests.includes(interest);
+            const group = INTEREST_GROUPS[interest];
             return (
               <TouchableOpacity
                 key={interest}
@@ -493,7 +473,7 @@ export default function OnboardingScreen() {
                     { color: isSelected ? '#fff' : colors.text },
                   ]}
                 >
-                  {interest}
+                  {group?.icon} {interest}
                 </Text>
               </TouchableOpacity>
             );

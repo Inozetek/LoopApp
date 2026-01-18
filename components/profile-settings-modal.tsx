@@ -33,6 +33,7 @@ import {
 } from '@/services/location-service';
 import { Linking } from 'react-native';
 import { handleError, validateRequired } from '@/utils/error-handler';
+import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 
 interface ProfileSettingsModalProps {
   visible: boolean;
@@ -42,27 +43,6 @@ interface ProfileSettingsModalProps {
   userEmail: string;
   userLoopScore: number;
 }
-
-const AVAILABLE_INTERESTS = [
-  'Coffee',
-  'Dining',
-  'Live Music',
-  'Fitness',
-  'Outdoor',
-  'Culture',
-  'Bars',
-  'Shopping',
-  'Sports',
-  'Movies',
-  'Art',
-  'Theater',
-  'Hiking',
-  'Yoga',
-  'Brunch',
-  'Nightlife',
-  'Gaming',
-  'Photography',
-];
 
 export function ProfileSettingsModal({
   visible,
@@ -399,35 +379,38 @@ export function ProfileSettingsModal({
                 Select at least 3 to get better recommendations
               </Text>
               <View style={styles.interestsGrid}>
-                {AVAILABLE_INTERESTS.map((interest) => (
-                  <TouchableOpacity
-                    key={interest}
-                    onPress={() => toggleInterest(interest)}
-                    style={[
-                      styles.interestChip,
-                      interests.includes(interest) && styles.interestChipSelected,
-                      {
-                        backgroundColor: interests.includes(interest)
-                          ? BrandColors.loopBlue
-                          : (isDark ? '#2f3133' : '#f5f5f5'),
-                        borderColor: interests.includes(interest)
-                          ? BrandColors.loopBlue
-                          : colors.border,
-                      },
-                    ]}
-                  >
-                    <Text
+                {ONBOARDING_INTERESTS.map((interest) => {
+                  const group = INTEREST_GROUPS[interest];
+                  return (
+                    <TouchableOpacity
+                      key={interest}
+                      onPress={() => toggleInterest(interest)}
                       style={[
-                        Typography.bodyMedium,
+                        styles.interestChip,
+                        interests.includes(interest) && styles.interestChipSelected,
                         {
-                          color: interests.includes(interest) ? '#ffffff' : colors.text,
+                          backgroundColor: interests.includes(interest)
+                            ? BrandColors.loopBlue
+                            : (isDark ? '#2f3133' : '#f5f5f5'),
+                          borderColor: interests.includes(interest)
+                            ? BrandColors.loopBlue
+                            : colors.border,
                         },
                       ]}
                     >
-                      {interest}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={[
+                          Typography.bodyMedium,
+                          {
+                            color: interests.includes(interest) ? '#ffffff' : colors.text,
+                          },
+                        ]}
+                      >
+                        {group?.icon} {interest}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
             </View>
 

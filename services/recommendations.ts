@@ -2,6 +2,11 @@
 /**
  * Recommendation Engine
  * Scores and ranks activities based on user preferences, location, and context
+ *
+ * Multi-Source Support (Phase 1):
+ * - Google Places API (default)
+ * - Eventbrite API (events)
+ * - Yelp API (enhanced ratings) - Phase 2
  */
 
 // Production-ready imports - NO MOCK DATA
@@ -9,7 +14,33 @@ import { getCachedUnsplashImage } from './unsplash';
 import { getBusinessHours, suggestVisitTime } from '@/utils/business-hours';
 import { supabase } from '@/lib/supabase';
 import type { User } from '@/types/database';
-import type { Activity } from '@/types/activity';
+import type { Activity, UnifiedActivity, SearchParams as MultiSourceSearchParams } from '@/types/activity';
+
+// Multi-source integration
+import { activitySources, isMixedFeedEnabled } from './activity-source';
+import './google-places-service'; // Import to ensure Google Places service is registered
+import './ticketmaster-service'; // Import to ensure Ticketmaster service is registered
+import './yelp-service'; // Import to ensure Yelp service is registered (postponed - no free tier)
+import './groupon-service'; // Import to ensure Groupon service is registered
+import './songkick-service'; // Import to ensure Songkick service is registered (postponed - $500/mo)
+import './eventbrite-service'; // Import to ensure Eventbrite service is registered
+
+// City-based caching (Phase 4)
+import { detectUserCity, detectUserCityWithFallback } from './city-detection';
+import { checkCityCache, seedCityData, getCachedPlaces } from './cache-manager';
+
+// Unified interest taxonomy
+import {
+  INTEREST_GROUPS,
+  ACTIVITY_CATEGORIES,
+  mapInterestsToCategoryIds,
+  categoryMatchesInterests,
+} from '@/constants/activity-categories';
+
+// NEW: Data source integrations (Day 1 Sprint)
+import { matchFacebookLikedPlace } from './facebook-graph';
+import { matchTimelineVisitedPlace, calculateFreshnessFactor } from './google-timeline';
+import type { FacebookData, GoogleTimelineData } from '@/types/user';
 
 // Generic place patterns to filter (unless user has positive feedback history)
 const GENERIC_PLACE_PATTERNS = [
@@ -71,6 +102,9 @@ export interface PlaceResult {
   opening_hours?: {
     open_now?: boolean;
   };
+  source?: 'google_places' | 'ticketmaster' | 'yelp'; // Activity source
+  event_metadata?: any; // Event details (for Ticketmaster events)
+  yelp_metadata?: any; // Yelp details (for Yelp places)
 }
 
 // Helper function: Check if place name matches generic patterns
@@ -115,39 +149,41 @@ function matchesUserInterests(place: PlaceResult, user: User): boolean {
 }
 
 // Helper function: Map user interest categories to Google Places API types
-// NOTE: Only using types supported by Google Places API (New) v1
+// Uses unified taxonomy from constants/activity-categories.ts
 // See: https://developers.google.com/maps/documentation/places/web-service/place-types
 function mapInterestsToGoogleTypes(interests: string[]): string[] {
-  const interestToTypeMap: Record<string, string[]> = {
-    // Food & Drink
+  const googleTypes = new Set<string>();
+
+  // Get category IDs for user interests using unified taxonomy
+  const categoryIds = mapInterestsToCategoryIds(interests);
+
+  // Map each category ID to its Google Places types
+  for (const categoryId of categoryIds) {
+    const category = ACTIVITY_CATEGORIES.find(c => c.id === categoryId);
+    if (category?.googlePlacesTypes) {
+      category.googlePlacesTypes.forEach(type => googleTypes.add(type));
+    }
+  }
+
+  // Fallback mappings for common interests that may not have direct category matches
+  // This handles edge cases and ensures broad coverage
+  const fallbackMap: Record<string, string[]> = {
     'Dining': ['restaurant', 'meal_takeaway', 'meal_delivery'],
     'Coffee & Cafes': ['cafe', 'coffee_shop'],
     'Bars & Nightlife': ['bar', 'night_club'],
-    'Breakfast': ['breakfast_restaurant', 'brunch_restaurant'],
-
-    // Entertainment
-    'Music': ['night_club', 'bar'], // Note: live_music_venue not supported by API
     'Entertainment': ['movie_theater', 'bowling_alley', 'amusement_park', 'performing_arts_theater'],
     'Arts & Culture': ['art_gallery', 'museum', 'cultural_center', 'performing_arts_theater'],
-    'Live Music': ['night_club', 'bar'], // Note: music_venue not supported by API
-
-    // Activities
     'Sports': ['stadium', 'sports_complex', 'sports_club'],
     'Fitness': ['gym', 'fitness_center', 'yoga_studio', 'sports_complex'],
-    'Outdoor': ['park', 'hiking_area', 'campground', 'national_park'],
+    'Outdoor Activities': ['park', 'hiking_area', 'campground', 'national_park'],
     'Shopping': ['shopping_mall', 'store', 'clothing_store', 'book_store'],
-
-    // Other
-    'Parks': ['park', 'dog_park'],
-    'Events': ['event_venue', 'banquet_hall', 'convention_center'],
   };
 
-  const googleTypes = new Set<string>();
-
+  // Add fallback types for interests that didn't map through taxonomy
   for (const interest of interests) {
-    const types = interestToTypeMap[interest];
-    if (types) {
-      types.forEach(type => googleTypes.add(type));
+    const fallbackTypes = fallbackMap[interest];
+    if (fallbackTypes) {
+      fallbackTypes.forEach(type => googleTypes.add(type));
     }
   }
 
@@ -170,24 +206,43 @@ function calculateDistance(point1: PlaceLocation, point2: PlaceLocation): number
   return R * c;
 }
 
-// Helper function: Map place types to category
+// Helper function: Map place types to user-facing category label
+// Uses unified taxonomy from constants/activity-categories.ts
 function mapPlaceTypeToCategory(types: string[]): string {
-  const categoryMap: Record<string, string> = {
+  // Try to find a matching category using the unified taxonomy
+  for (const type of types) {
+    const category = ACTIVITY_CATEGORIES.find(c =>
+      c.googlePlacesTypes?.includes(type)
+    );
+    if (category) {
+      // Find which interest group contains this category
+      for (const [interestLabel, group] of Object.entries(INTEREST_GROUPS)) {
+        if (group.categoryIds.includes(category.id)) {
+          return interestLabel;
+        }
+      }
+      // If no interest group, return the category name
+      return category.name;
+    }
+  }
+
+  // Fallback mapping for types not in taxonomy
+  const fallbackMap: Record<string, string> = {
     restaurant: 'Dining',
-    cafe: 'Coffee',
-    bar: 'Bars',
-    night_club: 'Nightlife',
+    cafe: 'Coffee & Cafes',
+    bar: 'Bars & Nightlife',
+    night_club: 'Bars & Nightlife',
     gym: 'Fitness',
-    park: 'Outdoor',
-    museum: 'Culture',
+    park: 'Outdoor Activities',
+    museum: 'Arts & Culture',
     movie_theater: 'Entertainment',
     shopping_mall: 'Shopping',
-    art_gallery: 'Art',
+    art_gallery: 'Arts & Culture',
   };
 
   for (const type of types) {
-    if (categoryMap[type]) {
-      return categoryMap[type];
+    if (fallbackMap[type]) {
+      return fallbackMap[type];
     }
   }
   return 'Other';
@@ -230,29 +285,50 @@ function getPlacePhotoUrl(photoReference: string): string {
   return url;
 }
 
-// Convert Activity to PlaceResult (for mock data compatibility)
-function activityToPlaceResult(activity: Activity): PlaceResult {
-  return {
-    place_id: activity.googlePlaceId || activity.id,
-    name: activity.name,
-    vicinity: activity.location.address,
-    formatted_address: activity.location.address,
-    description: activity.description,
-    geometry: {
-      location: {
-        lat: activity.location.latitude,
-        lng: activity.location.longitude,
-      },
-    },
-    types: [activity.category.toLowerCase()],
-    rating: activity.rating,
-    user_ratings_total: activity.reviewsCount,
-    price_level: activity.priceRange,
-    photos: activity.photoUrl ? [{ photo_reference: activity.photoUrl }] : [],
-    opening_hours: {
-      open_now: true,
-    },
-  };
+/**
+ * Enrich place with additional photos from Place Details API
+ * Used for places with <2 photos to enable photo carousel
+ */
+async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_reference: string }>> {
+  const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+
+  if (!API_KEY) {
+    console.error('❌ No Google Places API key - cannot enrich photos');
+    return [];
+  }
+
+  try {
+    console.log(`📸 Enriching photos for place: ${placeId}`);
+
+    const response = await fetch(
+      `https://places.googleapis.com/v1/${placeId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          'X-Goog-FieldMask': 'photos', // Only request photos to minimize cost
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`❌ Failed to fetch place details: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const photos = data.photos || [];
+
+    console.log(`📸 Place Details returned ${photos.length} photos`);
+
+    return photos.map((photo: any) => ({
+      photo_reference: photo.name, // 'places/PLACE_ID/photos/PHOTO_ID' format
+    }));
+  } catch (error) {
+    console.error('❌ Error enriching photos:', error);
+    return [];
+  }
 }
 
 // Search places by text query using NEW Google Places API
@@ -358,7 +434,7 @@ async function searchPlacesByText(params: {
 }
 
 // Search nearby places using NEW Google Places API
-async function searchNearbyPlaces(params: {
+export async function searchNearbyPlaces(params: {
   location: PlaceLocation;
   radius: number;
   maxResults?: number;
@@ -477,6 +553,76 @@ async function searchNearbyPlaces(params: {
   }
 }
 
+/**
+ * Multi-Source Activity Search (Phase 1)
+ *
+ * Searches all available activity sources (Google Places, Eventbrite, Yelp)
+ * Falls back to Google Places only if mixed feed is disabled
+ *
+ * @param params Search parameters
+ * @returns Combined results from all sources (or Google Places only)
+ */
+async function searchActivitiesMultiSource(params: {
+  location: PlaceLocation;
+  radius: number;
+  maxResults?: number;
+  includedTypes?: string[];
+  userInterests?: string[];
+}): Promise<PlaceResult[]> {
+  const { location, radius, maxResults = 20, includedTypes, userInterests } = params;
+
+  // Check if mixed feed is enabled
+  const mixedFeedEnabled = isMixedFeedEnabled();
+  console.log(`[MultiSource] ========================================`);
+  console.log(`[MultiSource] Mixed feed check:`, mixedFeedEnabled);
+  console.log(`[MultiSource] ENABLE_MIXED_FEED env:`, process.env.EXPO_PUBLIC_ENABLE_MIXED_FEED);
+  console.log(`[MultiSource] ENABLE_TICKETMASTER env:`, process.env.EXPO_PUBLIC_ENABLE_TICKETMASTER);
+  console.log(`[MultiSource] ========================================`);
+
+  if (!mixedFeedEnabled) {
+    console.log('[MultiSource] Mixed feed disabled, using Google Places only');
+    return searchNearbyPlaces({ location, radius, maxResults, includedTypes });
+  }
+
+  console.log('[MultiSource] Mixed feed enabled, searching all sources...');
+
+  // Build multi-source search params
+  const searchParams: MultiSourceSearchParams = {
+    latitude: location.lat,
+    longitude: location.lng,
+    radius,
+    interests: userInterests,
+    limit: maxResults,
+  };
+
+  try {
+    // Search all available sources in parallel
+    const activities: UnifiedActivity[] = await activitySources.searchAll(searchParams);
+
+    console.log(`[MultiSource] Received ${activities.length} activities from all sources`);
+
+    // Log source breakdown
+    const sourceBreakdown = activities.reduce((acc, activity) => {
+      acc[activity.source] = (acc[activity.source] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    console.log('[MultiSource] Source breakdown:', sourceBreakdown);
+
+    // Convert UnifiedActivity[] to PlaceResult[]
+    // Map editorial_summary to description for consistency
+    return activities.map(activity => ({
+      ...activity,
+      description: activity.editorial_summary, // Map Ticketmaster/Google descriptions
+    })) as PlaceResult[];
+
+  } catch (error) {
+    console.error('[MultiSource] Search failed, falling back to Google Places:', error);
+
+    // Graceful degradation: Fall back to Google Places only
+    return searchNearbyPlaces({ location, radius, maxResults, includedTypes });
+  }
+}
+
 export interface ScoredRecommendation {
   place: PlaceResult;
   score: number;
@@ -486,8 +632,18 @@ export interface ScoredRecommendation {
     timeScore: number;
     feedbackScore: number;
     collaborativeScore: number;
+    eventUrgencyScore: number; // NEW: Urgency bonus for events happening soon
     sponsoredBoost: number;
     recencyPenalty?: number; // NEW: Penalty for recently shown places (Phase 1.3)
+    // NEW: 8 Data Source Boosts (Day 1 Sprint + Feedback Loop)
+    facebookExactPlaceBoost?: number; // +30 points for exact liked place match
+    facebookCategoryBoost?: number; // +15 points for liked category match
+    googleTimelineVisitBoost?: number; // +20-35 points for visited places
+    googleTimelineCategoryBoost?: number; // +10-20 points for category frequency
+    calendarPatternBoost?: number; // +10-25 points for time-based patterns
+    budgetBoost?: number; // +15/-10 points for price match/mismatch
+    loopVisitHistoryBoost?: number; // +15-40 points for Loop app visit history
+    loopFeedbackBoost?: number; // +20/-20 points for Loop app ratings
     finalScore: number;
   };
   distance: number; // miles
@@ -516,6 +672,68 @@ export interface RecommendationParams {
   date?: Date; // Search for specific date (future recommendations)
   openNow?: boolean; // Only show places that are currently open
   discoveryMode?: 'curated' | 'explore'; // Discovery mode: curated (conservative) vs explore (adventurous)
+}
+
+/**
+ * Get cache refresh cadence based on user's subscription tier
+ * Free: 60 days, Plus: 30 days, Premium: 15 days
+ */
+function getCadenceForUser(user: User): number {
+  switch (user.subscription_tier) {
+    case 'premium':
+      return 15;
+    case 'plus':
+      return 30;
+    case 'free':
+    default:
+      return 60;
+  }
+}
+
+/**
+ * Get list of Google Places types to cache based on user's interests
+ * Uses category-based lazy loading strategy
+ */
+function getUserCategoriesForCaching(interests: string[]): string[] {
+  // Map user interests to Google Places types
+  const allTypes = mapInterestsToGoogleTypes(interests);
+
+  // Deduplicate and return
+  const uniqueTypes = Array.from(new Set(allTypes));
+
+  console.log(`📦 User categories for caching: ${uniqueTypes.slice(0, 5).join(', ')}${uniqueTypes.length > 5 ? ` and ${uniqueTypes.length - 5} more...` : ''}`);
+
+  return uniqueTypes;
+}
+
+/**
+ * Convert Activity object (from cache) to PlaceResult format (for scoring)
+ */
+function activityToPlaceResult(activity: Activity): PlaceResult {
+  return {
+    place_id: activity.googlePlaceId || activity.id,
+    name: activity.name,
+    vicinity: activity.location.address,
+    formatted_address: activity.location.address,
+    description: activity.description,
+    formatted_phone_number: activity.phone,
+    website: activity.website,
+    geometry: {
+      location: {
+        lat: activity.location.latitude,
+        lng: activity.location.longitude,
+      },
+    },
+    types: activity.category ? [activity.category] : [],
+    rating: activity.rating,
+    user_ratings_total: activity.reviewsCount,
+    price_level: activity.priceRange,
+    photos: activity.photoUrl ? [{ photo_reference: activity.photoUrl }] : [],
+    opening_hours: {
+      open_now: undefined, // Not stored in cache
+    },
+    source: 'google_places',
+  };
 }
 
 /**
@@ -593,6 +811,115 @@ export async function generateRecommendations(
     console.log(`🔄 Infinite scroll mode: Hard-excluding ${excludedPlaceIds.size} places currently in feed`);
   } else {
     excludedPlaceIds = new Set(); // No hard exclusion for pull-to-refresh
+  }
+
+  // Step 0.7: Fetch upcoming calendar events for context-aware location scoring
+  let upcomingCalendarEvents: Array<{
+    id: string;
+    title: string;
+    start_time: string;
+    location: { coordinates: [number, number] };
+  }> = [];
+
+  try {
+    const sevenDaysFromNow = new Date();
+    sevenDaysFromNow.setDate(sevenDaysFromNow.getDate() + 7);
+
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .select('id, title, start_time, location')
+      .eq('user_id', user.id)
+      .eq('status', 'scheduled')
+      .gte('start_time', new Date().toISOString())
+      .lte('start_time', sevenDaysFromNow.toISOString())
+      .not('location', 'is', null)
+      .order('start_time', { ascending: true })
+      .limit(5);
+
+    if (error) {
+      console.error('⚠️ Error fetching calendar events:', error);
+    } else if (data) {
+      upcomingCalendarEvents = data as any[];
+      console.log(`📅 Context: ${upcomingCalendarEvents.length} upcoming events for context-aware scoring`);
+    }
+  } catch (error) {
+    console.error('⚠️ Exception fetching calendar events:', error);
+  }
+
+  // Step 0.8: Fetch Loop app visit history (completed calendar events by address)
+  // Build map: address -> visit count
+  const visitHistoryByAddress = new Map<string, number>();
+  const visitHistoryByPlaceId = new Map<string, number>();
+
+  try {
+    const { data: completedEvents, error } = await supabase
+      .from('calendar_events')
+      .select('address, activity_id')
+      .eq('user_id', user.id)
+      .eq('status', 'completed')
+      .not('address', 'is', null);
+
+    if (error) {
+      console.error('⚠️ Error fetching visit history:', error);
+    } else if (completedEvents) {
+      completedEvents.forEach((event: any) => {
+        if (event.address) {
+          const normalizedAddress = event.address.toLowerCase().trim();
+          visitHistoryByAddress.set(
+            normalizedAddress,
+            (visitHistoryByAddress.get(normalizedAddress) || 0) + 1
+          );
+        }
+        if (event.activity_id) {
+          visitHistoryByPlaceId.set(
+            event.activity_id,
+            (visitHistoryByPlaceId.get(event.activity_id) || 0) + 1
+          );
+        }
+      });
+      console.log(`🏛️ Visit history: ${visitHistoryByAddress.size} unique addresses visited`);
+    }
+  } catch (error) {
+    console.error('⚠️ Exception fetching visit history:', error);
+  }
+
+  // Step 0.9: Fetch Loop app feedback (ratings by place_id or activity name)
+  // Build map: place_id -> { thumbsUp: number, thumbsDown: number, tags: string[] }
+  const feedbackByPlaceId = new Map<string, { thumbsUp: number; thumbsDown: number; tags: string[] }>();
+
+  try {
+    const { data: feedbackData, error } = await supabase
+      .from('feedback')
+      .select('activity_id, rating, feedback_tags')
+      .eq('user_id', user.id);
+
+    if (error) {
+      console.error('⚠️ Error fetching feedback:', error);
+    } else if (feedbackData) {
+      feedbackData.forEach((fb: any) => {
+        if (!fb.activity_id) return;
+
+        const existing = feedbackByPlaceId.get(fb.activity_id) || {
+          thumbsUp: 0,
+          thumbsDown: 0,
+          tags: [],
+        };
+
+        if (fb.rating === 'thumbs_up') {
+          existing.thumbsUp++;
+        } else if (fb.rating === 'thumbs_down') {
+          existing.thumbsDown++;
+          if (fb.feedback_tags) {
+            existing.tags.push(...(fb.feedback_tags as string[]));
+          }
+        }
+
+        feedbackByPlaceId.set(fb.activity_id, existing);
+      });
+      console.log(`👍 Feedback: ${feedbackByPlaceId.size} places rated`);
+    }
+  } catch (error) {
+    console.error('⚠️ Exception fetching feedback:', error);
   }
 
   // Step 1: Query Google Places API for nearby activities
@@ -696,48 +1023,131 @@ export async function generateRecommendations(
 
   // Query 3-5 different category groups in parallel to get variety
   // Prioritize user interests, but also include some variety
-  // For infinite scroll: Query ALL categories with higher maxResults to find fresh content
-  const groupsToQuery = isInfiniteScrollMode ? categoryGroups : categoryGroups.slice(0, 3);
+  // OPTIMIZATION: For infinite scroll, query fewer categories (5 instead of 12) for faster loading
+  // Still fetch more results per category (50 vs 20) to get enough variety
+  const groupsToQuery = isInfiniteScrollMode ? categoryGroups.slice(0, 5) : categoryGroups.slice(0, 3);
   const fetchLimit = isInfiniteScrollMode ? 50 : 20; // Fetch more during infinite scroll
 
   console.log(`🔍 Querying ${groupsToQuery.length} category groups in parallel (${fetchLimit} results each)`);
 
   let nearbyPlaces: PlaceResult[] = [];
   try {
-    // Query multiple categories in parallel
-    const placePromises = groupsToQuery.map(group =>
-      searchNearbyPlaces({
-        location: userLocation,
-        radius: Math.min(radiusMeters, 50000),
-        maxResults: fetchLimit,
-        includedTypes: group.types,
-      }).then(places => {
-        console.log(`📍 ${group.name}: Found ${places.length} places`);
-        return places;
-      })
-    );
+    // ========================================================================
+    // CITY-BASED CACHING (Phase 4)
+    // Query database cache instead of Google Places API for cost optimization
+    // ========================================================================
 
-    const placeArrays = await Promise.all(placePromises);
-
-    // Combine and deduplicate
-    const allPlaces = placeArrays.flat();
-    const uniquePlaces = new Map<string, PlaceResult>();
-    allPlaces.forEach(place => {
-      if (!uniquePlaces.has(place.place_id)) {
-        uniquePlaces.set(place.place_id, place);
-      }
+    // Step 1: Detect user's city from current GPS location (where user is NOW)
+    console.log('🏙️ Detecting user city for cache lookup...');
+    const cityInfo = await detectUserCityWithFallback(user, {
+      lat: userLocation.lat,
+      lng: userLocation.lng
     });
 
-    nearbyPlaces = Array.from(uniquePlaces.values());
-    console.log(`✅ Combined ${allPlaces.length} places into ${nearbyPlaces.length} unique places`);
+    if (!cityInfo) {
+      console.log('ℹ️ No city data available (user needs to set home address) - using API mode');
+      // Fallback: Use original API-based approach if city detection fails
+      const placePromises = groupsToQuery.map(group =>
+        searchActivitiesMultiSource({
+          location: userLocation,
+          radius: Math.min(radiusMeters, 50000),
+          maxResults: fetchLimit,
+          includedTypes: group.types,
+          userInterests: user.interests as string[],
+        })
+      );
+      const placeArrays = await Promise.all(placePromises);
+      const allPlaces = placeArrays.flat();
+      const uniquePlaces = new Map<string, PlaceResult>();
+      allPlaces.forEach(place => {
+        if (!uniquePlaces.has(place.place_id)) {
+          uniquePlaces.set(place.place_id, place);
+        }
+      });
+      nearbyPlaces = Array.from(uniquePlaces.values());
+      console.log(`✅ Fallback: ${nearbyPlaces.length} places from API`);
+    } else {
+      console.log(`📍 User city: ${cityInfo.city}, ${cityInfo.state}`);
+
+      // Step 2: Check if cache exists and is fresh
+      const refreshCadence = getCadenceForUser(user);
+      console.log(`⏰ Cache refresh cadence: ${refreshCadence} days (${user.subscription_tier} tier)`);
+
+      const cacheStatus = await checkCityCache(cityInfo.city, cityInfo.state, refreshCadence);
+
+      // Step 3: Seed cache if needed (first time or stale)
+      if (!cacheStatus.exists || cacheStatus.isStale) {
+        console.log(`🌱 Cache ${!cacheStatus.exists ? 'missing' : 'stale'} - seeding ${cityInfo.city}...`);
+
+        const userCategories = getUserCategoriesForCaching(user.interests as string[] || []);
+
+        // Seed cache with user's interested categories only
+        const seedCount = await seedCityData(
+          cityInfo.city,
+          cityInfo.state,
+          cityInfo.lat,
+          cityInfo.lng,
+          userCategories.slice(0, 10), // Limit to 10 categories to avoid excessive API calls
+          refreshCadence
+        );
+
+        console.log(`✅ Seeded ${seedCount} places for ${cityInfo.city}`);
+      } else {
+        console.log(`✅ Cache fresh: ${cacheStatus.count} places, last cached ${cacheStatus.lastCached?.toLocaleDateString()}`);
+      }
+
+      // Step 4: Query cached places from database
+      console.log('📥 Loading places from cache...');
+      const cachedActivities = await getCachedPlaces(
+        cityInfo.city,
+        cityInfo.state,
+        categories ? categories[0] : undefined, // Category filter if specified
+        maxResults * 5 // Over-fetch for filtering and diversity
+      );
+
+      console.log(`✅ Loaded ${cachedActivities.length} cached places`);
+
+      // Step 5: Convert Activity objects to PlaceResult format for scoring
+      nearbyPlaces = cachedActivities.map(activity => activityToPlaceResult(activity));
+
+      console.log(`✅ Converted ${nearbyPlaces.length} activities to place results`);
+
+      // Step 6: ALWAYS fetch Ticketmaster events (time-sensitive, not cached)
+      // Events should be fresh since they're date-specific and change daily
+      if (isMixedFeedEnabled()) {
+        console.log('🎟️ Fetching fresh Ticketmaster events to supplement cached Google Places...');
+        try {
+          const ticketmasterResults = await searchActivitiesMultiSource({
+            location: userLocation,
+            radius: Math.min(radiusMeters, 50000),
+            maxResults: 20,
+            userInterests: user.interests as string[],
+          });
+
+          // Filter to only keep Ticketmaster events (exclude Google Places duplicates)
+          const ticketmasterEvents = ticketmasterResults.filter(place => place.source === 'ticketmaster');
+
+          console.log(`✅ Found ${ticketmasterEvents.length} Ticketmaster events to add to feed`);
+
+          // Merge Ticketmaster events with cached Google Places
+          nearbyPlaces = [...nearbyPlaces, ...ticketmasterEvents];
+
+          console.log(`✅ Final: ${nearbyPlaces.length} total places (${cachedActivities.length} cached + ${ticketmasterEvents.length} events)`);
+        } catch (error) {
+          console.error('⚠️ Failed to fetch Ticketmaster events:', error);
+          // Continue with cached Google Places only
+        }
+      }
+    }
 
   } catch (error) {
     console.error('Error fetching nearby places:', error);
-    // Fallback to single broad query
-    nearbyPlaces = await searchNearbyPlaces({
+    // Fallback to single broad query (with multi-source support)
+    nearbyPlaces = await searchActivitiesMultiSource({
       location: userLocation,
       radius: Math.min(radiusMeters, 50000),
       maxResults: 20,
+      userInterests: user.interests as string[],
     });
   }
 
@@ -783,13 +1193,14 @@ export async function generateRecommendations(
 
     console.log(`⚠️ Need more places (${freshPlaces.length}/${targetFreshPlaces}), expanding search radius (attempt ${expansionAttempts})...`);
 
-    // Query multiple categories in parallel for expansion too
+    // Query multiple categories in parallel for expansion too (with multi-source support)
     const expandPlacePromises = groupsToQuery.map(group =>
-      searchNearbyPlaces({
+      searchActivitiesMultiSource({
         location: userLocation,
         radius: expansionRadius,
         maxResults: fetchLimit, // Use same limit as initial query
         includedTypes: group.types,
+        userInterests: user.interests as string[],
       })
     );
 
@@ -936,6 +1347,7 @@ export async function generateRecommendations(
       workLocation,
       timeOfDay,
       recentlyShown, // Pass recency map for soft exclusion penalty
+      upcomingCalendarEvents, // NEW: Pass calendar events for context-aware location scoring
     });
 
     // Removed zero-score threshold filter - let all places through
@@ -966,9 +1378,9 @@ export async function generateRecommendations(
 
     // Try to get multiple photos from Google Places
     if (place.photos && place.photos.length > 0) {
-      console.log(`📸 ${place.name} has ${place.photos.length} photos from Google API`);
-      console.log(`📸 First photo object:`, JSON.stringify(place.photos[0], null, 2));
-      console.log(`📸 First photo reference: "${place.photos[0]?.photo_reference}"`);
+      console.log(`\n📸 ========== PHOTO DEBUG: ${place.name} ==========`);
+      console.log(`📸 Total photos from Google API: ${place.photos.length}`);
+      console.log(`📸 All photo objects:`, JSON.stringify(place.photos, null, 2));
 
       // CRITICAL: Check if API key exists
       const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
@@ -989,21 +1401,24 @@ export async function generateRecommendations(
             return '';
           }
 
-          // CRITICAL: Validate it's a photo reference, not a full URL
-          // This prevents double URL concatenation
+          // Handle both Ticketmaster (full URLs) and Google Places (references)
+          let url: string;
+
           if (photoRef.startsWith('http://') || photoRef.startsWith('https://')) {
-            console.error(`❌ Photo ${idx + 1}: photo_reference is a full URL, not a reference!`);
-            console.error(`   Got: "${photoRef.substring(0, 100)}..."`);
-            console.error(`   This indicates corrupted data - skipping this photo`);
-            return '';
+            // Ticketmaster: photo_reference is already a full URL
+            url = photoRef;
+            console.log(`📸 Photo ${idx + 1}: Ticketmaster URL (direct use): ${url.substring(0, 100)}...`);
+          } else {
+            // Google Places: photo_reference needs conversion to URL
+            url = getPlacePhotoUrl(photoRef);
+            console.log(`📸 Photo ${idx + 1}: Google Places URL (converted): ${url?.substring(0, 100)}...`);
+
+            if (!url) {
+              console.error(`❌ getPlacePhotoUrl returned empty for photo ${idx + 1}`);
+              return '';
+            }
           }
 
-          const url = getPlacePhotoUrl(photoRef);
-          console.log(`📸 Photo ${idx + 1}: Generated URL="${url?.substring(0, 100)}..."`);
-
-          if (!url) {
-            console.error(`❌ getPlacePhotoUrl returned empty for photo ${idx + 1}`);
-          }
           return url;
         }).filter(Boolean);
 
@@ -1013,10 +1428,38 @@ export async function generateRecommendations(
           photoUrl = allPhotos[0]; // Primary photo
           console.log(`✅ Using Google photo for ${place.name}: ${photoUrl.substring(0, 100)}...`);
 
-          // Only populate photoUrls array if we have 3+ photos (for carousel)
-          if (allPhotos.length >= 3) {
+          // Only populate photoUrls array if we have 2+ photos (for carousel)
+          if (allPhotos.length >= 2) {
             photoUrls = allPhotos;
-            console.log(`📸 ${place.name}: Carousel enabled with ${allPhotos.length} photos`);
+            console.log(`✅ CAROUSEL ENABLED: ${place.name} has ${allPhotos.length} photos`);
+            console.log(`📸 Carousel URLs:`, photoUrls.map(url => url.substring(0, 80) + '...'));
+          } else if (allPhotos.length === 1 && place.place_id) {
+            // Try to enrich with additional photos from Place Details API
+            console.log(`📸 Enriching ${place.name} - currently has only ${allPhotos.length} photo`);
+
+            const additionalPhotos = await enrichPlacePhotos(place.place_id);
+
+            if (additionalPhotos.length > 0) {
+              // Combine original photo with additional photos
+              const enrichedPhotos = [
+                ...allPhotos,
+                ...additionalPhotos.slice(1, 5).map(photo => {
+                  const photoRef = photo.photo_reference;
+                  return getPlacePhotoUrl(photoRef);
+                }).filter(Boolean)
+              ];
+
+              console.log(`📸 Enrichment successful: ${place.name} now has ${enrichedPhotos.length} photos`);
+
+              if (enrichedPhotos.length >= 2) {
+                photoUrls = enrichedPhotos;
+                console.log(`✅ CAROUSEL ENABLED (after enrichment): ${place.name}`);
+              }
+            } else {
+              console.log(`⚠️ No additional photos found for ${place.name}`);
+            }
+          } else {
+            console.log(`⚠️ Not enough photos for carousel: ${place.name} has ${allPhotos.length} photos (need 2+)`);
           }
         } else {
           console.error(`❌ No valid photo URLs generated for ${place.name} - all URLs were empty!`);
@@ -1060,7 +1503,16 @@ export async function generateRecommendations(
 
   // Step 3.5: Add slight randomization to introduce variety on refresh
   // Keep top-scored items near the top, but shuffle middle/lower items more
+  // IMPORTANT: Skip randomization for events - they need precise urgency ranking
   const shuffledRecommendations = scoredRecommendations.map((rec, index) => {
+    // Events need precise urgency ranking - NO randomization
+    // Concert tonight must stay ranked above concert next week
+    if (rec.place.source === 'ticketmaster') {
+      console.log(`🎫 Event (no randomization): ${rec.place.name} - score: ${rec.score}`);
+      return rec;
+    }
+
+    // Randomize Google Places for variety
     // Higher ranked items get less randomization
     const rankFactor = index / scoredRecommendations.length; // 0 to 1
     const randomOffset = (Math.random() - 0.5) * 10 * rankFactor; // ±5 points max, scaled by rank
@@ -1073,6 +1525,63 @@ export async function generateRecommendations(
   // Re-sort with randomized scores
   shuffledRecommendations.sort((a, b) => b.score - a.score);
 
+  // Step 3.5: Filter out activities already scheduled for today
+  // Prevents showing duplicate recommendations for same-day calendar events
+  const todayStart = new Date();
+  todayStart.setHours(0, 0, 0, 0);
+  const todayEnd = new Date();
+  todayEnd.setHours(23, 59, 59, 999);
+
+  try {
+    // Query calendar events for today with activity_ids
+    const { data: todayEvents, error: eventsError } = await supabase
+      .from('calendar_events')
+      .select('activity_id')
+      .eq('user_id', user.id)
+      .eq('status', 'scheduled')
+      .gte('start_time', todayStart.toISOString())
+      .lte('start_time', todayEnd.toISOString())
+      .not('activity_id', 'is', null);
+
+    if (eventsError) {
+      console.error('⚠️ Error fetching today\'s calendar events:', eventsError);
+    } else if (todayEvents && todayEvents.length > 0) {
+      const activityIds = todayEvents.map((e: any) => e.activity_id).filter(Boolean);
+
+      if (activityIds.length > 0) {
+        // Get google_place_ids from activities table
+        const { data: activities, error: activitiesError } = await supabase
+          .from('activities')
+          .select('google_place_id')
+          .in('id', activityIds);
+
+        if (activitiesError) {
+          console.error('⚠️ Error fetching activity place IDs:', activitiesError);
+        } else if (activities && activities.length > 0) {
+          const scheduledPlaceIds = new Set(
+            activities.map((a: any) => a.google_place_id).filter(Boolean)
+          );
+
+          if (scheduledPlaceIds.size > 0) {
+            console.log(`📅 Filtering out ${scheduledPlaceIds.size} activities already scheduled for today`);
+
+            // Filter out recommendations matching today's scheduled activities
+            shuffledRecommendations = shuffledRecommendations.filter(rec => {
+              if (scheduledPlaceIds.has(rec.place.place_id)) {
+                console.log(`  ⏭️ Skipping "${rec.place.name}" (already scheduled today)`);
+                return false;
+              }
+              return true;
+            });
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.error('⚠️ Exception during same-day duplicate filtering:', error);
+    // Continue without filtering - don't break recommendations if this fails
+  }
+
   // Step 4: Apply business rules
   const finalRecommendations = applyBusinessRules(shuffledRecommendations, maxResults);
 
@@ -1084,6 +1593,15 @@ export async function generateRecommendations(
 /**
  * Calculate activity score (0-100 points)
  * Based on MVP algorithm from CLAUDE.md
+ * NOW WITH 8 DATA SOURCE INTEGRATIONS (Day 1 Sprint + Feedback Loop):
+ * 1. Facebook exact place matches (+30)
+ * 2. Facebook category matches (+15)
+ * 3. Google Timeline visited places (+20-35)
+ * 4. Google Timeline category frequency (+10-20)
+ * 5. Calendar patterns (+10-25)
+ * 6. Budget/price matching (+15/-10)
+ * 7. Loop app visit history (+15-40) - NEW!
+ * 8. Loop app feedback ratings (+20/-20) - NEW!
  */
 function calculateActivityScore(params: {
   place: PlaceResult;
@@ -1094,32 +1612,70 @@ function calculateActivityScore(params: {
   workLocation?: PlaceLocation;
   timeOfDay?: string;
   recentlyShown?: Map<string, { timestamp: number; hoursSince: number }>; // Phase 1.3
+  upcomingCalendarEvents?: Array<{
+    id: string;
+    title: string;
+    start_time: string;
+    location: { coordinates: [number, number] };
+  }>;
+  visitHistoryByAddress?: Map<string, number>; // NEW: Loop app visit counts by address
+  visitHistoryByPlaceId?: Map<string, number>; // NEW: Loop app visit counts by place ID
+  feedbackByPlaceId?: Map<string, { thumbsUp: number; thumbsDown: number; tags: string[] }>; // NEW: Loop app feedback
 }): ScoredRecommendation['scoreBreakdown'] {
-  const { place, category, distance, user, homeLocation, workLocation, timeOfDay, recentlyShown } = params;
+  const {
+    place,
+    category,
+    distance,
+    user,
+    homeLocation,
+    workLocation,
+    timeOfDay,
+    recentlyShown,
+    upcomingCalendarEvents,
+    visitHistoryByAddress,
+    visitHistoryByPlaceId,
+    feedbackByPlaceId
+  } = params;
 
   let baseScore = 0;
   let locationScore = 0;
   let timeScore = 0;
   let feedbackScore = 5; // Neutral default
   let collaborativeScore = 0;
+  let eventUrgencyScore = 0; // NEW: Urgency bonus for events happening soon
   let sponsoredBoost = 0;
 
-  // === BASE SCORE (50 points max) ===
+  // NEW: 8 Data Source Boosts (Day 1 Sprint + Feedback Loop)
+  let facebookExactPlaceBoost = 0;
+  let facebookCategoryBoost = 0;
+  let googleTimelineVisitBoost = 0;
+  let googleTimelineCategoryBoost = 0;
+  let calendarPatternBoost = 0;
+  let budgetBoost = 0;
+  let loopVisitHistoryBoost = 0; // NEW: Visits in Loop app
+  let loopFeedbackBoost = 0; // NEW: User ratings in Loop app
+
+  // === BASE SCORE (50 → 55 points max for events) ===
   // Interest match guides scoring but doesn't filter - allow discovery
   const userInterests = user.interests || [];
   const topInterests = user.ai_profile?.favorite_categories || userInterests.slice(0, 3);
   const { discoveryMode = 'curated' } = params;
+  const isEvent = place.source === 'ticketmaster';
 
   if (topInterests.includes(category)) {
     baseScore = 30; // Top 3 interests - STRONG match
+    if (isEvent) baseScore += 5; // Event bonus: unique, one-time opportunities → 35 total
   } else if (userInterests.includes(category)) {
     baseScore = 20; // Other interests - GOOD match
+    if (isEvent) baseScore += 3; // Event bonus → 23 total
   } else {
     // Discovery mode affects non-matching interests
     if (discoveryMode === 'explore') {
       baseScore = 15; // More generous in explore mode - encourage discovery
+      if (isEvent) baseScore += 2; // Event bonus → 17 total
     } else {
       baseScore = 10; // Conservative in curated mode - focus on known interests
+      if (isEvent) baseScore += 2; // Event bonus → 12 total
     }
   }
 
@@ -1137,7 +1693,7 @@ function calculateActivityScore(params: {
   else if (reviewCount >= 200) baseScore += 5; // Popular
   else if (reviewCount >= 50) baseScore += 2; // Moderately popular
 
-  baseScore = Math.min(baseScore, 50); // Cap at 50
+  baseScore = Math.min(baseScore, 55); // Cap at 55 (raised from 50 to accommodate event bonus)
 
   // === LOCATION SCORE (20 points max) ===
   const userMaxDistance = user.preferences?.max_distance_miles || 5;
@@ -1160,7 +1716,47 @@ function calculateActivityScore(params: {
     locationScore += 5;
   }
 
-  locationScore = Math.min(locationScore, 20); // Cap at 20
+  // === FUTURE CONTEXT BONUS (adds to location score) ===
+  // Boost activities near user's upcoming calendar events
+  let futureContextBonus = 0;
+
+  if (upcomingCalendarEvents && upcomingCalendarEvents.length > 0) {
+    for (const calendarEvent of upcomingCalendarEvents) {
+      // DEFENSIVE CHECK: Ensure location data exists and is properly formatted
+      if (!calendarEvent.location ||
+          !calendarEvent.location.coordinates ||
+          !Array.isArray(calendarEvent.location.coordinates) ||
+          calendarEvent.location.coordinates.length < 2) {
+        console.log(`⚠️ Skipping calendar event "${calendarEvent.title}" - invalid location data`);
+        continue;
+      }
+
+      const eventLocation = {
+        lat: calendarEvent.location.coordinates[1], // PostGIS stores [lng, lat]
+        lng: calendarEvent.location.coordinates[0],
+      };
+
+      const distanceFromEvent = calculateDistance(eventLocation, place.geometry.location);
+      const hoursUntilEvent = (new Date(calendarEvent.start_time).getTime() - Date.now()) / (1000 * 60 * 60);
+
+      // Only consider events in next 7 days
+      if (hoursUntilEvent > 0 && hoursUntilEvent <= 168) {
+        if (distanceFromEvent <= 0.5) {
+          // Very close to upcoming event (within 0.5 miles)
+          const timeRelevance = hoursUntilEvent <= 24 ? 15 : 10; // Higher if event is tomorrow
+          futureContextBonus = Math.max(futureContextBonus, timeRelevance);
+          console.log(`🎯 Near "${calendarEvent.title}" (${distanceFromEvent.toFixed(2)}mi): +${timeRelevance}`);
+        } else if (distanceFromEvent <= 1.5) {
+          // Nearby upcoming event (within 1.5 miles)
+          const timeRelevance = hoursUntilEvent <= 24 ? 10 : 6;
+          futureContextBonus = Math.max(futureContextBonus, timeRelevance);
+        }
+      }
+    }
+  }
+
+  locationScore += futureContextBonus;
+  locationScore = Math.min(locationScore, 30); // Cap raised from 20 → 30 for future context
 
   // === TIME CONTEXT SCORE (15 points max) ===
   const currentTimeOfDay = timeOfDay || getCurrentTimeOfDay();
@@ -1179,9 +1775,193 @@ function calculateActivityScore(params: {
 
   timeScore = Math.min(timeScore, 15); // Cap at 15
 
+  // === DATA SOURCE INTEGRATIONS (Day 1 Sprint) ===
+  // Source 1 & 2: Facebook Liked Places (EXACT match = +30, category only = +15)
+  if (user.facebook_data) {
+    const facebookData = user.facebook_data as FacebookData;
+    if (facebookData.liked_places && facebookData.liked_places.length > 0) {
+      const facebookMatch = matchFacebookLikedPlace(
+        facebookData.liked_places[0], // TODO: Check all liked places, not just first
+        place.name,
+        category
+      );
+
+      if (facebookMatch.type === 'exact') {
+        facebookExactPlaceBoost = 30;
+        console.log(`🎯 FB EXACT MATCH: ${place.name} (+30 points)`);
+      } else if (facebookMatch.type === 'category') {
+        facebookCategoryBoost = 15;
+        console.log(`📂 FB CATEGORY MATCH: ${category} (+15 points)`);
+      }
+    }
+  }
+
+  // Source 3 & 4: Google Timeline Visited Places (+20-35 for exact, +10-20 for category frequency)
+  if (user.google_timeline) {
+    const timelineData = user.google_timeline as GoogleTimelineData;
+    if (timelineData.visited_places && timelineData.visited_places.length > 0) {
+      const timelineMatch = matchTimelineVisitedPlace(
+        timelineData,
+        place.name,
+        category
+      );
+
+      if (timelineMatch.match) {
+        if (timelineMatch.visitCount >= 1) {
+          // This is an exact place match or strong category match
+          googleTimelineVisitBoost = timelineMatch.boost;
+          console.log(`📍 TIMELINE MATCH: ${place.name} (${timelineMatch.visitCount} visits, +${timelineMatch.boost} points)`);
+
+          // Apply freshness factor (prefer recent visits)
+          const visitedPlace = timelineData.visited_places.find(
+            p => p.place_name.toLowerCase().includes(place.name.toLowerCase())
+          );
+          if (visitedPlace) {
+            const freshness = calculateFreshnessFactor(visitedPlace.last_visit);
+            googleTimelineVisitBoost = Math.round(googleTimelineVisitBoost * freshness);
+            console.log(`  ⏰ Freshness factor: ${freshness}x → ${googleTimelineVisitBoost} points`);
+          }
+        } else {
+          // Category frequency match
+          googleTimelineCategoryBoost = timelineMatch.boost;
+          console.log(`📊 CATEGORY FREQUENCY: ${category} (+${timelineMatch.boost} points)`);
+        }
+      }
+    }
+  }
+
+  // Source 5: Calendar Patterns (time-based boosting based on user's schedule)
+  // Analyze user's calendar for recurring patterns (e.g., "Dinner every Friday 7pm")
+  if (user.ai_profile?.calendar_patterns) {
+    const patterns = user.ai_profile.calendar_patterns;
+    const now = new Date();
+    const currentDay = now.toLocaleDateString('en-US', { weekday: 'lowercase' });
+    const currentHour = now.getHours();
+
+    for (const pattern of patterns) {
+      // Check if current day matches pattern
+      const dayMatch = pattern.day === currentDay ||
+                      (pattern.days && pattern.days.includes(currentDay));
+
+      if (dayMatch && pattern.category === category) {
+        // Parse pattern time (e.g., "19:00")
+        const [patternHour] = pattern.time.split(':').map(Number);
+
+        // Strong match if within 2 hours of usual time
+        if (Math.abs(currentHour - patternHour) <= 2) {
+          calendarPatternBoost = 25;
+          console.log(`📅 STRONG CALENDAR PATTERN: ${category} on ${currentDay} at ${pattern.time} (+25 points)`);
+          break;
+        }
+        // Moderate match if same day
+        else {
+          calendarPatternBoost = Math.max(calendarPatternBoost, 15);
+          console.log(`📅 CALENDAR PATTERN: ${category} on ${currentDay} (+15 points)`);
+        }
+      }
+    }
+  }
+
+  // Source 6: Budget/Price Matching (inferred from user's budget level)
+  const userBudgetLevel = user.ai_profile?.budget_level || user.preferences?.budget || 2;
+  const placePriceLevel = place.price_level || 0;
+
+  if (placePriceLevel > 0) {
+    // Perfect match (same price level)
+    if (placePriceLevel === userBudgetLevel) {
+      budgetBoost = 15;
+      console.log(`💰 PERFECT PRICE MATCH: ${'$'.repeat(placePriceLevel)} (+15 points)`);
+    }
+    // One level off (acceptable)
+    else if (Math.abs(placePriceLevel - userBudgetLevel) === 1) {
+      budgetBoost = 5;
+      console.log(`💵 CLOSE PRICE MATCH: ${'$'.repeat(placePriceLevel)} vs ${'$'.repeat(userBudgetLevel)} (+5 points)`);
+    }
+    // Two levels off (too expensive or too cheap)
+    else if (Math.abs(placePriceLevel - userBudgetLevel) >= 2) {
+      budgetBoost = -10;
+      console.log(`💸 PRICE MISMATCH: ${'$'.repeat(placePriceLevel)} vs ${'$'.repeat(userBudgetLevel)} (-10 points)`);
+    }
+  }
+
+  // Source 7: Loop App Visit History (user has been here before via Loop!)
+  if (visitHistoryByPlaceId || visitHistoryByAddress) {
+    let visitCount = 0;
+
+    // Try matching by place ID first (most accurate)
+    if (visitHistoryByPlaceId && place.place_id) {
+      visitCount = visitHistoryByPlaceId.get(place.place_id) || 0;
+    }
+
+    // Fallback: Try matching by address (fuzzy match)
+    if (visitCount === 0 && visitHistoryByAddress && place.formatted_address) {
+      const normalizedAddress = place.formatted_address.toLowerCase().trim();
+      visitCount = visitHistoryByAddress.get(normalizedAddress) || 0;
+    }
+
+    if (visitCount > 0) {
+      // Boost based on frequency (similar to Google Timeline but even stronger since they used Loop!)
+      if (visitCount >= 10) {
+        loopVisitHistoryBoost = 40; // Frequent favorite (10+ visits via Loop)
+        console.log(`🔄 LOOP REGULAR: ${place.name} (${visitCount} visits, +40 points)`);
+      } else if (visitCount >= 5) {
+        loopVisitHistoryBoost = 30; // Regular spot (5-9 visits)
+        console.log(`🔄 LOOP FREQUENT: ${place.name} (${visitCount} visits, +30 points)`);
+      } else if (visitCount >= 2) {
+        loopVisitHistoryBoost = 20; // Repeat visitor (2-4 visits)
+        console.log(`🔄 LOOP REPEAT: ${place.name} (${visitCount} visits, +20 points)`);
+      } else {
+        loopVisitHistoryBoost = 15; // Been here once (1 visit)
+        console.log(`🔄 LOOP VISITED: ${place.name} (${visitCount} visit, +15 points)`);
+      }
+    }
+  }
+
+  // Source 8: Loop App Feedback (user has rated this place!)
+  if (feedbackByPlaceId && place.place_id) {
+    const feedback = feedbackByPlaceId.get(place.place_id);
+
+    if (feedback) {
+      const { thumbsUp, thumbsDown, tags } = feedback;
+      const netRating = thumbsUp - thumbsDown;
+
+      // Strong positive feedback
+      if (netRating >= 2) {
+        loopFeedbackBoost = 20; // Multiple thumbs up
+        console.log(`👍👍 LOVED THIS: ${place.name} (+${thumbsUp}, -${thumbsDown}, +20 points)`);
+      } else if (netRating === 1) {
+        loopFeedbackBoost = 15; // Positive overall
+        console.log(`👍 LIKED THIS: ${place.name} (+${thumbsUp}, -${thumbsDown}, +15 points)`);
+      }
+      // Neutral feedback (mixed reviews)
+      else if (netRating === 0) {
+        loopFeedbackBoost = 0; // Neutral
+        console.log(`😐 MIXED FEELINGS: ${place.name} (+${thumbsUp}, -${thumbsDown}, 0 points)`);
+      }
+      // Negative feedback
+      else if (netRating === -1) {
+        loopFeedbackBoost = -10; // Slight dislike
+        console.log(`👎 DISLIKED: ${place.name} (+${thumbsUp}, -${thumbsDown}, -10 points)`);
+      } else {
+        loopFeedbackBoost = -20; // Strong negative
+        console.log(`👎👎 DID NOT LIKE: ${place.name} (+${thumbsUp}, -${thumbsDown}, -20 points)`);
+
+        // Extra penalty if specific negative tags match this category
+        if (tags.includes('Too expensive') && placePriceLevel >= 3) {
+          loopFeedbackBoost -= 5;
+          console.log(`  💸 User said "too expensive" before → -5 more`);
+        }
+        if (tags.includes('Too far') && distance > 3) {
+          loopFeedbackBoost -= 5;
+          console.log(`  🚗 User said "too far" before → -5 more`);
+        }
+      }
+    }
+  }
+
   // === FEEDBACK HISTORY SCORE (15 points max) ===
-  // TODO: Implement once we have feedback data
-  // For now, use neutral score
+  // Now integrated above as loopFeedbackBoost!
+  // Keep this neutral base score for backwards compatibility
   feedbackScore = 5;
 
   // === COLLABORATIVE FILTERING (10 points max) ===
@@ -1226,9 +2006,59 @@ function calculateActivityScore(params: {
     // After 72h: no penalty (fully eligible)
   }
 
+  // === EVENT URGENCY SCORE (15 points max) ===
+  // Events happening soon get higher priority than distant events
+  if (isEvent && place.event_metadata) {
+    const eventStartTime = new Date(place.event_metadata.start_time);
+    const hoursUntilEvent = (eventStartTime.getTime() - Date.now()) / (1000 * 60 * 60);
+
+    if (hoursUntilEvent < 0) {
+      // Event already passed - exclude from results
+      eventUrgencyScore = -100;
+      console.log(`⏳ Event passed: -100 (removed from feed)`);
+    } else if (hoursUntilEvent <= 24) {
+      // Event TODAY or tomorrow - MAXIMUM urgency
+      eventUrgencyScore = 15;
+      console.log(`🚨 URGENT (${hoursUntilEvent.toFixed(1)}h): +15`);
+    } else if (hoursUntilEvent <= 72) {
+      // Event in 1-3 days - HIGH urgency
+      eventUrgencyScore = 12;
+      console.log(`⏰ Soon (${(hoursUntilEvent/24).toFixed(1)}d): +12`);
+    } else if (hoursUntilEvent <= 168) {
+      // Event this week (3-7 days) - MODERATE urgency
+      eventUrgencyScore = 8;
+      console.log(`📅 This week: +8`);
+    } else if (hoursUntilEvent <= 720) {
+      // Event this month (7-30 days) - MILD urgency
+      eventUrgencyScore = 4;
+      console.log(`📆 This month: +4`);
+    } else {
+      // Event 30+ days away - LOW urgency
+      eventUrgencyScore = 2;
+      console.log(`🗓️  Distant: +2`);
+    }
+  }
+
   // === FINAL SCORE ===
+  // Now includes 8 data source boosts! (6 from Day 1 + 2 from Loop app feedback loop)
   const finalScore = Math.round(
-    baseScore + locationScore + timeScore + feedbackScore + collaborativeScore + sponsoredBoost + recencyPenalty
+    baseScore +
+    locationScore +
+    timeScore +
+    feedbackScore +
+    collaborativeScore +
+    eventUrgencyScore +
+    sponsoredBoost +
+    recencyPenalty +
+    // NEW: 8 Data Source Boosts (Day 1 Sprint + Feedback Loop)
+    facebookExactPlaceBoost +
+    facebookCategoryBoost +
+    googleTimelineVisitBoost +
+    googleTimelineCategoryBoost +
+    calendarPatternBoost +
+    budgetBoost +
+    loopVisitHistoryBoost + // NEW: Loop app visit history (+15 to +40)
+    loopFeedbackBoost // NEW: Loop app feedback ratings (+20 to -20)
   );
 
   return {
@@ -1237,9 +2067,19 @@ function calculateActivityScore(params: {
     timeScore,
     feedbackScore,
     collaborativeScore,
+    eventUrgencyScore, // NEW: Urgency bonus for events happening soon
     sponsoredBoost,
     recencyPenalty, // NEW: Included in Phase 1.3
-    finalScore: Math.max(0, Math.min(finalScore, 100)), // Don't go below 0, cap at 100
+    // NEW: 8 Data Source Boosts (Day 1 Sprint + Feedback Loop)
+    facebookExactPlaceBoost,
+    facebookCategoryBoost,
+    googleTimelineVisitBoost,
+    googleTimelineCategoryBoost,
+    calendarPatternBoost,
+    budgetBoost,
+    loopVisitHistoryBoost, // NEW: Loop app visit history (+15 to +40)
+    loopFeedbackBoost, // NEW: Loop app feedback ratings (+20 to -20)
+    finalScore: Math.max(0, Math.min(finalScore, 150)), // Raised cap from 100 to 150 to accommodate new boosts
   };
 }
 
@@ -1339,6 +2179,53 @@ function generateExplanation(params: {
   const { place, category, distance, user, scoreBreakdown } = params;
   const parts: string[] = [];
 
+  // EVENT-SPECIFIC EXPLANATIONS (Ticketmaster events)
+  if (place.source === 'ticketmaster' && place.event_metadata) {
+    const eventStart = new Date(place.event_metadata.start_time);
+    const hoursUntil = (eventStart.getTime() - Date.now()) / (1000 * 60 * 60);
+    const daysUntil = Math.floor(hoursUntil / 24);
+
+    // Event timing (highest priority for events)
+    if (hoursUntil <= 24 && hoursUntil > 0) {
+      parts.push("🎟️ Tonight!");
+    } else if (daysUntil === 1) {
+      parts.push("🎟️ Tomorrow");
+    } else if (daysUntil <= 3) {
+      parts.push(`🎟️ This ${eventStart.toLocaleDateString('en-US', { weekday: 'long' })}`);
+    } else if (daysUntil <= 7) {
+      parts.push("🎟️ This week");
+    } else if (daysUntil <= 14) {
+      parts.push("🎟️ Next week");
+    } else if (daysUntil <= 30) {
+      parts.push(`🎟️ ${eventStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`);
+    } else {
+      parts.push(`🎟️ ${eventStart.toLocaleDateString('en-US', { month: 'short' })}`);
+    }
+
+    // Event location context
+    if (distance <= 2) {
+      parts.push("nearby");
+    } else if (distance <= 10) {
+      parts.push(`${distance.toFixed(1)} mi away`);
+    }
+
+    // Interest match for events
+    const interests = user.interests || [];
+    const matchingInterest = interests.find(interest =>
+      category.toLowerCase().includes(interest.toLowerCase()) ||
+      place.name.toLowerCase().includes(interest.toLowerCase())
+    );
+
+    if (matchingInterest) {
+      parts.push(`you love ${matchingInterest}`);
+    }
+
+    // Combine event parts
+    return parts.join(' • ');
+  }
+
+  // REGULAR PLACE EXPLANATIONS (Google Places, restaurants, etc.)
+
   // 1. LOCATION CONTEXT (highest priority)
   const isOnRoute = scoreBreakdown.locationScore >= 15; // "on route" bonus from scoring
 
@@ -1392,6 +2279,76 @@ function generateExplanation(params: {
 }
 
 /**
+ * Deduplicate events by name and date
+ * Prevents showing the same event multiple times (e.g., "Tianyu Lights Festival" appearing 4-5 times)
+ */
+function deduplicateEventsByNameAndDate(
+  recommendations: ScoredRecommendation[]
+): ScoredRecommendation[] {
+  const seen = new Map<string, ScoredRecommendation>();
+
+  for (const rec of recommendations) {
+    if (rec.place.source === 'ticketmaster' && rec.place.event_metadata) {
+      // Create unique key: event name + date
+      const eventDate = new Date(rec.place.event_metadata.start_time);
+      const dateKey = eventDate.toISOString().split('T')[0]; // YYYY-MM-DD
+      const nameKey = rec.place.name.toLowerCase().trim();
+      const uniqueKey = `${nameKey}|${dateKey}`;
+
+      if (seen.has(uniqueKey)) {
+        // Keep higher-scored version
+        const existing = seen.get(uniqueKey)!;
+        if (rec.score > existing.score) {
+          seen.set(uniqueKey, rec);
+          console.log(`🔄 Duplicate event replaced: ${rec.place.name} on ${dateKey} (higher score)`);
+        } else {
+          console.log(`🔄 Duplicate event removed: ${rec.place.name} on ${dateKey}`);
+        }
+      } else {
+        seen.set(uniqueKey, rec);
+      }
+    } else {
+      // Non-events: use place_id as key (will be handled by existing deduplication)
+      const key = rec.place.place_id;
+      if (!seen.has(key)) {
+        seen.set(key, rec);
+      }
+    }
+  }
+
+  const result = Array.from(seen.values());
+  if (result.length < recommendations.length) {
+    console.log(`🧹 Event deduplication: ${recommendations.length} → ${result.length} (removed ${recommendations.length - result.length} duplicate events)`);
+  }
+  return result;
+}
+
+/**
+ * Prevent consecutive duplicates in feed
+ * Ensures no two consecutive recommendations are the same place
+ */
+function preventConsecutiveDuplicates(
+  recommendations: ScoredRecommendation[]
+): ScoredRecommendation[] {
+  const result: ScoredRecommendation[] = [];
+  let lastPlaceId: string | null = null;
+
+  for (const rec of recommendations) {
+    if (rec.place.place_id !== lastPlaceId) {
+      result.push(rec);
+      lastPlaceId = rec.place.place_id;
+    } else {
+      console.log(`⏭️ Skipping consecutive duplicate: ${rec.place.name}`);
+    }
+  }
+
+  if (result.length < recommendations.length) {
+    console.log(`🧹 Consecutive duplicate prevention: ${recommendations.length} → ${result.length} (removed ${recommendations.length - result.length} consecutive duplicates)`);
+  }
+  return result;
+}
+
+/**
  * Apply business rules to final recommendations
  */
 function applyBusinessRules(
@@ -1416,9 +2373,15 @@ function applyBusinessRules(
     return true;
   });
 
+  // Rule 2a: Deduplicate events by name+date (prevents "Tianyu Lights" appearing 4x)
+  let dedupedRecommendations = deduplicateEventsByNameAndDate(uniqueRecommendations);
+
+  // Rule 2b: Prevent consecutive duplicates (same place twice in a row)
+  dedupedRecommendations = preventConsecutiveDuplicates(dedupedRecommendations);
+
   // Rule 3: Let all recommendations through (removed artificial high-score limit)
   // If you have 10 great Italian restaurants nearby, user sees all 10
-  let balancedRecommendations = uniqueRecommendations;
+  let balancedRecommendations = dedupedRecommendations;
 
   // Rule 4: AGGRESSIVE category diversity enforcement (min 7 categories in top 10)
   const MIN_CATEGORIES_IN_TOP_10 = 7; // Force variety
@@ -1471,7 +2434,70 @@ function applyBusinessRules(
     balancedRecommendations = [...diversityWindow, ...balancedRecommendations.slice(15)];
   }
 
-  // Rule 5: Respect price range filter
+  // Rule 5: Event balance (prevent spam, ensure visibility)
+  const MAX_EVENTS_IN_TOP_10 = 4; // Cap at 40% events in top 10
+  const MIN_EVENTS_IN_TOP_20 = 2; // Ensure minimum event visibility
+
+  const eventsInTop10 = balancedRecommendations
+    .slice(0, 10)
+    .filter(r => r.place.source === 'ticketmaster').length;
+
+  if (eventsInTop10 > MAX_EVENTS_IN_TOP_10) {
+    console.log(`⚠️ Too many events in top 10: ${eventsInTop10} (max ${MAX_EVENTS_IN_TOP_10})`);
+
+    // Keep highest-scoring events, move others down
+    const top10Events = balancedRecommendations
+      .slice(0, 10)
+      .filter(r => r.place.source === 'ticketmaster')
+      .sort((a, b) => b.score - a.score);
+
+    const eventsToKeep = top10Events.slice(0, MAX_EVENTS_IN_TOP_10);
+    const eventsToMove = top10Events.slice(MAX_EVENTS_IN_TOP_10);
+
+    // Rebuild top 10: keep best events + all non-events
+    const top10NonEvents = balancedRecommendations
+      .slice(0, 10)
+      .filter(r => r.place.source !== 'ticketmaster');
+
+    const newTop10 = [...eventsToKeep, ...top10NonEvents]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 10);
+
+    // Merge moved events back into rest of list
+    const rest = balancedRecommendations.slice(10);
+    const newRest = [...eventsToMove, ...rest].sort((a, b) => b.score - a.score);
+
+    balancedRecommendations = [...newTop10, ...newRest];
+
+    console.log(`✅ Event balance: Moved ${eventsToMove.length} events down, kept ${eventsToKeep.length} in top 10`);
+  }
+
+  // Ensure minimum event visibility if available
+  const totalEvents = balancedRecommendations.filter(r => r.place.source === 'ticketmaster').length;
+  if (totalEvents >= MIN_EVENTS_IN_TOP_20) {
+    const eventsInTop20 = balancedRecommendations
+      .slice(0, 20)
+      .filter(r => r.place.source === 'ticketmaster').length;
+
+    if (eventsInTop20 < MIN_EVENTS_IN_TOP_20) {
+      console.log(`⚠️ Too few events in top 20: ${eventsInTop20} (min ${MIN_EVENTS_IN_TOP_20})`);
+
+      // Promote best events to ensure 2 in top 20
+      const allEvents = balancedRecommendations
+        .filter(r => r.place.source === 'ticketmaster')
+        .sort((a, b) => b.score - a.score);
+
+      const eventsToPromote = allEvents.slice(0, MIN_EVENTS_IN_TOP_20);
+      const nonEvents = balancedRecommendations.filter(r => r.place.source !== 'ticketmaster');
+
+      // Merge and re-sort
+      balancedRecommendations = [...eventsToPromote, ...nonEvents].sort((a, b) => b.score - a.score);
+
+      console.log(`✅ Event visibility: Promoted events to ensure ${MIN_EVENTS_IN_TOP_20} in top 20`);
+    }
+  }
+
+  // Rule 6: Respect price range filter
   // TODO: Filter by user budget preference
 
   // Return top N results

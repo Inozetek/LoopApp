@@ -29,22 +29,7 @@ import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
-
-// Available interests (same as onboarding)
-const AVAILABLE_INTERESTS = [
-  'Dining',
-  'Coffee & Cafes',
-  'Sports',
-  'Fitness',
-  'Music',
-  'Entertainment',
-  'Nightlife',
-  'Shopping',
-  'Arts & Culture',
-  'Outdoors & Nature',
-  'Family & Kids',
-  'Wellness & Spa',
-];
+import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -285,8 +270,9 @@ export default function ProfileScreen() {
           </Text>
 
           <View style={styles.interestsGrid}>
-            {AVAILABLE_INTERESTS.map((interest) => {
+            {ONBOARDING_INTERESTS.map((interest) => {
               const isSelected = selectedInterests.includes(interest);
+              const group = INTEREST_GROUPS[interest];
               return (
                 <TouchableOpacity
                   key={interest}
@@ -303,7 +289,7 @@ export default function ProfileScreen() {
                     styles.interestText,
                     { color: isSelected ? '#FFFFFF' : colors.text }
                   ]}>
-                    {interest}
+                    {group?.icon} {interest}
                   </Text>
                   {isSelected && (
                     <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
