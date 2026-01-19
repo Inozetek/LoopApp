@@ -14,9 +14,11 @@ import {
   Image,
   Dimensions,
   FlatList,
+  Linking,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Activity, Recommendation } from '@/types/activity';
+import { Activity, Recommendation, UnifiedActivity, EventMetadata } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
@@ -334,6 +336,33 @@ function ActivityCardIntelligentComponent({
     return reasons.join(' • ');
   };
 
+  // Check if this is an event (has event_metadata)
+  const isEvent = Boolean((recommendation as any).event_metadata);
+  const eventMetadata: EventMetadata | undefined = (recommendation as any).event_metadata;
+
+  // Debug logging for events
+  if (isEvent) {
+    console.log(`🎫 Event card: ${recommendation.title}`, {
+      hasEventMetadata: !!eventMetadata,
+      hasEventUrl: !!eventMetadata?.event_url,
+      eventUrl: eventMetadata?.event_url,
+      startTime: eventMetadata?.start_time,
+    });
+  }
+
+  // Format event date for badge
+  const formatEventDate = (isoString: string) => {
+    const date = new Date(isoString);
+    const month = date.toLocaleDateString('en-US', { month: 'short' });
+    const day = date.getDate();
+    const time = date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    });
+    return `${month} ${day} • ${time}`;
+  };
+
   // Fallback image if no imageUrl provided
   const imageSource = !imageError && recommendation.imageUrl
     ? { uri: recommendation.imageUrl }
@@ -372,10 +401,10 @@ function ActivityCardIntelligentComponent({
           borderColor: getBorderColor(),
         }
       ]}>
-        {/* HERO IMAGE (60% of card) - Carousel if 3+ photos, single image otherwise */}
+        {/* HERO IMAGE (60% of card) - Carousel if 2+ photos, single image otherwise */}
         <View style={styles.imageContainer}>
-          {recommendation.photos && recommendation.photos.length >= 3 ? (
-            // Instagram-style carousel for 3+ photos
+          {recommendation.photos && recommendation.photos.length >= 2 ? (
+            // Instagram-style carousel for 2+ photos
             <PhotoCarousel
               photos={recommendation.photos}
               imageError={imageError}
@@ -417,15 +446,32 @@ function ActivityCardIntelligentComponent({
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
+            {/* Event Badge (for Ticketmaster events) */}
+            {isEvent && eventMetadata && eventMetadata.start_time && (
+              <View style={styles.eventBadge}>
+                <View style={styles.eventBadgeHeader}>
+                  <Ionicons name="calendar" size={14} color="#fff" />
+                  <Text style={styles.eventBadgeDate}>
+                    {formatEventDate(eventMetadata.start_time)}
+                  </Text>
+                </View>
+                {eventMetadata.is_free === true && (
+                  <View style={styles.freeBadge}>
+                    <Text style={styles.freeBadgeText}>FREE</Text>
+                  </View>
+                )}
+              </View>
+            )}
+
             {/* Top Match Badge (Score >= 60) */}
-            {isTopMatch && (
+            {isTopMatch && !isEvent && (
               <View style={styles.topMatchBadge}>
                 <Text style={styles.topMatchText}>🎯 Top Match</Text>
               </View>
             )}
 
-            {/* Open Now Badge */}
-            {recommendation.openNow && (
+            {/* Open Now Badge (only for places, not events) */}
+            {!isEvent && recommendation.openNow && (
               <View style={styles.openNowBadge}>
                 <View style={styles.greenDot} />
                 <Text style={styles.openNowText}>Open Now</Text>
@@ -443,7 +489,7 @@ function ActivityCardIntelligentComponent({
           {/* Category Badge (bottom left of image) */}
           <View style={styles.categoryBadgeOverlay} pointerEvents="box-none">
             <View style={[styles.categoryBadge, { backgroundColor: 'rgba(0, 0, 0, 0.6)' }]}>
-              <Text style={styles.categoryText}>{recommendation.category}</Text>
+              <Text style={styles.categoryText}>{recommendation.category || 'Activity'}</Text>
             </View>
           </View>
         </View>
@@ -453,6 +499,7 @@ function ActivityCardIntelligentComponent({
           style={styles.content}
           onPress={onSeeDetails}
           onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+          pointerEvents="box-none"
         >
           {/* Title */}
           <Text style={[styles.title, Typography.titleLarge, { color: colors.text }]} numberOfLines={2}>
@@ -498,62 +545,79 @@ function ActivityCardIntelligentComponent({
           </View>
 
           {/* Stacked Score Bar */}
-          {score && (
-            <StackedScoreBar scoreBreakdown={score} />
+          {recommendation.scoreBreakdown && (
+            <StackedScoreBar scoreBreakdown={recommendation.scoreBreakdown} />
+          )}
+
+          {/* Event Description (for events only) */}
+          {isEvent && recommendation.description && typeof recommendation.description === 'string' && recommendation.description.trim() !== '' && (
+            <Text
+              style={[styles.eventDescription, { color: colors.textSecondary }]}
+              numberOfLines={3}
+            >
+              {recommendation.description.trim()}
+            </Text>
           )}
         </Pressable>
 
         {/* AI MATCH SCORE TILE (Top right of card) */}
-        {recommendation.score && (
-          <View style={[
-            styles.matchScoreTile,
-            {
-              backgroundColor:
-                recommendation.score >= 85 ? 'rgba(52, 211, 153, 0.12)' : // Mint tint (85-100%)
-                recommendation.score >= 75 ? 'rgba(96, 165, 250, 0.12)' : // Sky tint (75-85%)
-                recommendation.score >= 60 ? 'rgba(167, 139, 250, 0.12)' : // Lavender tint (60-75%)
-                recommendation.score >= 35 ? 'rgba(251, 191, 36, 0.12)' : // Golden tint (35-60%)
-                'rgba(251, 113, 133, 0.12)' // Rose tint (20-35%)
-            }
-          ]}>
-            <Text style={[
-              styles.matchScoreNumber,
+        {(() => {
+          const score = recommendation.score ?? 0;
+          if (score <= 0) return null;
+          return (
+            <View style={[
+              styles.matchScoreTile,
               {
-                color:
-                  recommendation.score >= 85 ? '#34d399' : // Mint
-                  recommendation.score >= 75 ? '#60a5fa' : // Sky
-                  recommendation.score >= 60 ? '#a78bfa' : // Lavender
-                  recommendation.score >= 35 ? '#fbbf24' : // Golden
-                  '#fb7185' // Rose
+                backgroundColor:
+                  score >= 85 ? 'rgba(52, 211, 153, 0.12)' : // Mint tint (85-100%)
+                  score >= 75 ? 'rgba(96, 165, 250, 0.12)' : // Sky tint (75-85%)
+                  score >= 60 ? 'rgba(167, 139, 250, 0.12)' : // Lavender tint (60-75%)
+                  score >= 35 ? 'rgba(251, 191, 36, 0.12)' : // Golden tint (35-60%)
+                  'rgba(251, 113, 133, 0.12)' // Rose tint (20-35%)
               }
             ]}>
-              {Math.round(recommendation.score)}
-            </Text>
-            <Text style={[
-              styles.matchScoreLabel,
-              {
-                color:
-                  recommendation.score >= 85 ? '#34d399' : // Mint
-                  recommendation.score >= 75 ? '#60a5fa' : // Sky
-                  recommendation.score >= 60 ? '#a78bfa' : // Lavender
-                  recommendation.score >= 35 ? '#fbbf24' : // Golden
-                  '#fb7185' // Rose
-              }
-            ]}>
-              MATCH
-            </Text>
-          </View>
-        )}
+              <Text style={[
+                styles.matchScoreNumber,
+                {
+                  color:
+                    score >= 85 ? '#34d399' : // Mint
+                    score >= 75 ? '#60a5fa' : // Sky
+                    score >= 60 ? '#a78bfa' : // Lavender
+                    score >= 35 ? '#fbbf24' : // Golden
+                    '#fb7185' // Rose
+                }
+              ]}>
+                {Math.round(score)}
+              </Text>
+              <Text style={[
+                styles.matchScoreLabel,
+                {
+                  color:
+                    score >= 85 ? '#34d399' : // Mint
+                    score >= 75 ? '#60a5fa' : // Sky
+                    score >= 60 ? '#a78bfa' : // Lavender
+                    score >= 35 ? '#fbbf24' : // Golden
+                    '#fb7185' // Rose
+                }
+              ]}>
+                MATCH
+              </Text>
+            </View>
+          );
+        })()}
 
-        {/* CIRCULAR CTA BUTTON (10% - bottom right corner) */}
-        <Pressable
-          style={[styles.circularButton, { backgroundColor: colors.primary }]}
-          onPress={onAddToCalendar}
-          onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-          disabled={isRemoving}
-        >
-          <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
-        </Pressable>
+        {/* CTA BUTTONS (bottom right corner) */}
+        <View style={styles.ctaButtonsContainer}>
+          {/* Circular Add to Calendar Button */}
+          <Pressable
+            style={[styles.circularButton, { backgroundColor: colors.primary }]}
+            onPress={onAddToCalendar}
+            onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+            disabled={isRemoving}
+          >
+            <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
+          </Pressable>
+        </View>
       </View>
     </Animated.View>
   );
@@ -675,6 +739,37 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
+  eventBadge: {
+    backgroundColor: BrandColors.loopOrange,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.sm,
+    gap: Spacing.xs,
+  },
+  eventBadgeHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  eventBadgeDate: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
+  },
+  freeBadge: {
+    backgroundColor: BrandColors.success,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: BorderRadius.sm,
+    alignSelf: 'flex-start',
+  },
+  freeBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.5,
+  },
   categoryBadgeOverlay: {
     position: 'absolute',
     bottom: Spacing.sm,
@@ -731,6 +826,14 @@ const styles = StyleSheet.create({
     flex: 1,
     lineHeight: 18,
   },
+  eventDescription: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    fontStyle: 'italic',
+    paddingHorizontal: Spacing.xs,
+  },
 
   // AI MATCH SCORE TILE (Soft tinted background style - matches screenshots)
   matchScoreTile: {
@@ -760,11 +863,40 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
 
-  // CIRCULAR CTA BUTTON (10%)
-  circularButton: {
+  // CTA BUTTONS CONTAINER
+  ctaButtonsContainer: {
     position: 'absolute',
     bottom: Spacing.md,
     right: Spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    zIndex: 100, // Ensure buttons are above all other card elements
+    elevation: 100, // Android elevation
+  },
+
+  // BUY TICKETS BUTTON
+  ticketButton: {
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  ticketButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+
+  // CIRCULAR CTA BUTTON (10%)
+  circularButton: {
     width: 48,
     height: 48,
     borderRadius: 24,
@@ -809,15 +941,15 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // STACKED SCORE BAR
+  // STACKED SCORE BAR (Compact version)
   stackedBar: {
-    marginTop: Spacing.sm,
+    marginTop: Spacing.xs, // Reduced from sm
   },
   stackedBarContainer: {
     flexDirection: 'row',
-    height: 8,
+    height: 6, // Reduced from 8
     backgroundColor: '#E5E7EB',
-    borderRadius: 4,
+    borderRadius: 3, // Reduced from 4
     overflow: 'hidden',
   },
   stackedBarSegment: {
@@ -826,21 +958,21 @@ const styles = StyleSheet.create({
   stackedBarLegend: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
-    gap: Spacing.md,
-    marginTop: Spacing.xs,
+    gap: Spacing.sm, // Reduced from md
+    marginTop: 6, // Reduced spacing
   },
   legendItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 3, // Reduced from 4
   },
   legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 6, // Reduced from 8
+    height: 6, // Reduced from 8
+    borderRadius: 3, // Reduced from 4
   },
   legendText: {
-    fontSize: 11,
+    fontSize: 10, // Reduced from 11
     fontWeight: '600',
     color: '#6B7280',
   },

@@ -18,7 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { processReferralCode, completeReferral } from '@/services/referral-service';
+import { processReferralCode } from '@/services/referral-service';
 import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
 import { requestCalendarPermissions, syncCalendarToDatabase } from '@/services/calendar-service';
@@ -307,10 +307,7 @@ export default function OnboardingScreen() {
             );
 
             if (referralResult.success) {
-              // Complete the referral to grant rewards
-              await completeReferral(session.user.id);
-
-              // Show success message
+              // Show success message (rewards already granted by processReferralCode)
               Alert.alert(
                 '🎉 Welcome Bonus!',
                 'You received 7 days of Loop Plus free!\n\nYour friend also earned rewards for inviting you.',

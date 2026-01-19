@@ -18,13 +18,19 @@ import {
   Linking,
   Alert,
   Platform,
+  TouchableOpacity,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Recommendation } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { getStaticMapUrl } from '@/utils/maps';
+import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
+import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
+import { extractReviewTopics, type ReviewTopic } from '@/utils/review-topics';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -171,6 +177,43 @@ export function SeeDetailsModal({
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
+  // Reviews state
+  const [reviews, setReviews] = useState<PlaceReview[]>([]);
+  const [reviewTopics, setReviewTopics] = useState<ReviewTopic[]>([]);
+  const [loadingReviews, setLoadingReviews] = useState(false);
+
+  // Fetch reviews when modal opens for non-event recommendations
+  useEffect(() => {
+    const googlePlaceId = recommendation?.activity?.googlePlaceId;
+    const isEvent = !!(recommendation as any)?.event_metadata?.event_url;
+
+    if (visible && !isEvent && googlePlaceId) {
+      const fetchReviews = async () => {
+        setLoadingReviews(true);
+        try {
+          const placeReviews = await getPlaceReviews(googlePlaceId);
+          setReviews(placeReviews);
+
+          // Extract topics from reviews
+          const topics = extractReviewTopics(placeReviews);
+          setReviewTopics(topics);
+        } catch (error) {
+          console.error('Failed to fetch reviews:', error);
+          setReviews([]);
+          setReviewTopics([]);
+        } finally {
+          setLoadingReviews(false);
+        }
+      };
+
+      fetchReviews();
+    } else {
+      // Reset reviews when modal closes or for events
+      setReviews([]);
+      setReviewTopics([]);
+    }
+  }, [visible, recommendation?.activity?.googlePlaceId]);
+
   useEffect(() => {
     if (visible) {
       Animated.parallel([
@@ -218,6 +261,24 @@ export function SeeDetailsModal({
   const getPriceDisplay = (priceRange?: number) => {
     if (!priceRange || priceRange === 0) return 'Free';
     return '$'.repeat(Math.max(1, priceRange));
+  };
+
+  const formatEventDateTime = (dateTimeString: string) => {
+    try {
+      const eventDate = new Date(dateTimeString);
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      };
+      return eventDate.toLocaleDateString('en-US', options);
+    } catch {
+      return dateTimeString;
+    }
   };
 
   // Fallback image
@@ -317,6 +378,161 @@ export function SeeDetailsModal({
                 </View>
               )}
 
+              {/* Map Preview Section */}
+              {recommendation.activity?.location && (
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Location
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      const { latitude, longitude } = recommendation.activity!.location;
+                      const url = Platform.select({
+                        ios: `http://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=d`,
+                        android: `google.navigation:q=${latitude},${longitude}`,
+                        default: `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`,
+                      });
+                      Linking.openURL(url);
+                    }}
+                    style={styles.mapPreviewContainer}
+                  >
+                    <Image
+                      source={{
+                        uri: getStaticMapUrl({
+                          latitude: recommendation.activity.location.latitude,
+                          longitude: recommendation.activity.location.longitude,
+                        })
+                      }}
+                      style={styles.mapPreview}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.mapOverlay}>
+                      <IconSymbol name="map" size={20} color="#fff" />
+                      <Text style={styles.mapOverlayText}>Tap for directions</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* Reviews Section (for non-event venues only) */}
+              {!((recommendation as any).event_metadata) && recommendation.activity?.googlePlaceId && (
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Reviews
+                  </Text>
+
+                  {loadingReviews ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <Text style={[{ color: colors.icon }]}>Loading reviews...</Text>
+                    </View>
+                  ) : reviews.length > 0 ? (
+                    <>
+                      {/* Review Topic Bubbles */}
+                      {reviewTopics.length > 0 && (
+                        <View style={styles.topicBubblesContainer}>
+                          {reviewTopics.map((topic, index) => (
+                            <View
+                              key={index}
+                              style={[
+                                styles.topicBubble,
+                                {
+                                  backgroundColor: topic.sentiment === 'positive'
+                                    ? 'rgba(16, 185, 129, 0.15)'  // Green tint
+                                    : 'rgba(239, 68, 68, 0.15)',  // Red tint
+                                  borderColor: topic.sentiment === 'positive'
+                                    ? '#10b981'
+                                    : '#ef4444',
+                                },
+                              ]}
+                            >
+                              <IconSymbol
+                                name={topic.sentiment === 'positive' ? 'hand.thumbsup.fill' : 'hand.thumbsdown.fill'}
+                                size={12}
+                                color={topic.sentiment === 'positive' ? '#10b981' : '#ef4444'}
+                              />
+                              <Text
+                                style={[
+                                  styles.topicText,
+                                  {
+                                    color: topic.sentiment === 'positive' ? '#10b981' : '#ef4444',
+                                  },
+                                ]}
+                              >
+                                {topic.topic}
+                              </Text>
+                              {topic.count > 1 && (
+                                <Text style={[styles.topicCount, { color: colors.icon }]}>
+                                  ({topic.count})
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      <ScrollView
+                      horizontal
+                      showsHorizontalScrollIndicator={false}
+                      style={styles.reviewsContainer}
+                    >
+                      {reviews.slice(0, 5).map((review, index) => (
+                        <View key={index} style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                          {/* Reviewer Avatar + Name */}
+                          <View style={styles.reviewHeader}>
+                            {review.authorAttribution.photoUri ? (
+                              <Image
+                                source={{ uri: review.authorAttribution.photoUri }}
+                                style={styles.reviewerAvatar}
+                              />
+                            ) : (
+                              <View style={[styles.reviewerAvatar, styles.reviewerAvatarPlaceholder, { backgroundColor: BrandColors.loopBlue }]}>
+                                <Text style={styles.reviewerInitial}>
+                                  {review.authorAttribution.displayName[0]}
+                                </Text>
+                              </View>
+                            )}
+                            <View style={styles.reviewerInfo}>
+                              <Text style={[styles.reviewerName, { color: colors.text }]} numberOfLines={1}>
+                                {review.authorAttribution.displayName}
+                              </Text>
+                              <Text style={[styles.reviewDate, { color: colors.icon }]}>
+                                {review.relativePublishTimeDescription}
+                              </Text>
+                            </View>
+                          </View>
+
+                          {/* Star Rating */}
+                          <View style={styles.reviewRating}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <IconSymbol
+                                key={star}
+                                name={star <= review.rating ? 'star.fill' : 'star'}
+                                size={14}
+                                color={star <= review.rating ? '#FFD700' : colors.icon}
+                              />
+                            ))}
+                          </View>
+
+                          {/* Review Text */}
+                          <Text
+                            style={[styles.reviewText, { color: colors.text }]}
+                            numberOfLines={4}
+                          >
+                            {review.text.text}
+                          </Text>
+                        </View>
+                      ))}
+                    </ScrollView>
+                    </>
+                  ) : (
+                    <Text style={[styles.noReviewsText, { color: colors.icon }]}>
+                      No reviews available
+                    </Text>
+                  )}
+                </View>
+              )}
+
               {/* AI Explanation */}
               <View style={styles.section}>
                 <View style={styles.aiHeader}>
@@ -373,11 +589,112 @@ export function SeeDetailsModal({
                 </View>
               </View>
 
+              {/* Event Details Section (for events only) */}
+              {(recommendation as any).event_metadata && (
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>Event Details</Text>
+
+                  {/* BIG TICKET BUTTON - PRIMARY ACTION */}
+                  {(recommendation as any).event_metadata?.event_url && typeof (recommendation as any).event_metadata.event_url === 'string' && (
+                    <Pressable
+                      style={styles.primaryTicketButton}
+                      onPress={async () => {
+                        try {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+                          console.log('🎟️ Opening event page:', (recommendation as any).event_metadata.event_url);
+
+                          const url = (recommendation as any).event_metadata.event_url;
+                          const canOpen = await Linking.canOpenURL(url);
+
+                          if (canOpen) {
+                            await Linking.openURL(url);
+                            console.log('✅ Opened Ticketmaster page successfully');
+                          } else {
+                            console.error('❌ Cannot open URL:', url);
+                            Alert.alert('Error', 'Unable to open ticket page. Please check your internet connection.');
+                          }
+                        } catch (error) {
+                          console.error('❌ Error opening ticket page:', error);
+                          Alert.alert('Error', 'Failed to open ticket page. Please try again.');
+                        }
+                      }}
+                    >
+                      <Ionicons name="ticket" size={24} color="#fff" />
+                      <Text style={styles.primaryTicketButtonText}>Get Tickets</Text>
+                      <Ionicons name="arrow-forward" size={20} color="#fff" />
+                    </Pressable>
+                  )}
+
+                  {/* Event Date & Time */}
+                  {(recommendation as any).event_metadata?.start_time && typeof (recommendation as any).event_metadata.start_time === 'string' && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="calendar-outline" size={20} color={colors.textSecondary} />
+                      <Text style={[styles.detailText, { color: colors.text }]}>
+                        {formatEventDateTime((recommendation as any).event_metadata.start_time)}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Duration */}
+                  {(recommendation as any).event_metadata.duration_minutes && typeof (recommendation as any).event_metadata.duration_minutes === 'number' && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="time-outline" size={20} color={colors.textSecondary} />
+                      <Text style={[styles.detailText, { color: colors.text }]}>
+                        {(recommendation as any).event_metadata.duration_minutes} minutes
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Organizer/Venue */}
+                  {(recommendation as any).event_metadata.organizer && typeof (recommendation as any).event_metadata.organizer === 'string' && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="business-outline" size={20} color={colors.textSecondary} />
+                      <Text style={[styles.detailText, { color: colors.text }]}>
+                        {(recommendation as any).event_metadata.organizer}
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Ticket Price */}
+                  {(recommendation as any).event_metadata.ticket_price &&
+                   typeof (recommendation as any).event_metadata.ticket_price.min === 'number' &&
+                   typeof (recommendation as any).event_metadata.ticket_price.max === 'number' && (
+                    <View style={styles.detailRow}>
+                      <Ionicons name="pricetag-outline" size={20} color={colors.textSecondary} />
+                      <Text style={[styles.detailText, { color: colors.text }]}>
+                        ${((recommendation as any).event_metadata.ticket_price.min / 100).toFixed(0)} - ${((recommendation as any).event_metadata.ticket_price.max / 100).toFixed(0)}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
               {/* Quick Actions */}
               <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
                 <View style={styles.actionButtons}>
-                  {/* Website Button */}
+                  {/* Event Page Button (for events) */}
+                  {(recommendation as any).event_metadata?.event_url && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: '#FF4444', backgroundColor: 'rgba(255, 68, 68, 0.05)' }]}
+                      onPress={async () => {
+                        try {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          const url = (recommendation as any).event_metadata.event_url;
+                          await Linking.openURL(url);
+                        } catch {
+                          Alert.alert('Error', 'Unable to open event page');
+                        }
+                      }}
+                    >
+                      <Ionicons name="ticket-outline" size={20} color="#FF4444" />
+                      <Text style={[styles.actionButtonText, { color: '#FF4444', fontWeight: '600' }]}>
+                        Event Page
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {/* Website Button (for venue/organizer website) */}
                   {recommendation.activity?.website && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon }]}
@@ -493,8 +810,54 @@ export function SeeDetailsModal({
                     </Pressable>
                   )}
 
-                  {/* Reviews Button */}
-                  {recommendation.activity?.googlePlaceId && (
+                  {/* Uber Button */}
+                  {recommendation.activity?.location && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: colors.icon, backgroundColor: 'rgba(0, 0, 0, 0.05)' }]}
+                      onPress={async () => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+                        const { latitude, longitude } = recommendation.activity!.location;
+                        const name = recommendation.title;
+
+                        // Build Uber deep link with affiliate code
+                        const uberDeepLink = `uber://?action=setPickup&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}&dropoff[nickname]=${encodeURIComponent(name)}${
+                          AFFILIATE_CONFIG.uber.enabled ? `&client_id=${AFFILIATE_CONFIG.uber.affiliateCode}` : ''
+                        }`;
+
+                        // Fallback web URL (also includes affiliate code)
+                        const uberWebUrl = `https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}${
+                          AFFILIATE_CONFIG.uber.enabled ? `&client_id=${AFFILIATE_CONFIG.uber.affiliateCode}` : ''
+                        }`;
+
+                        try {
+                          // Check if Uber app is installed
+                          const canOpen = await Linking.canOpenURL(uberDeepLink);
+
+                          if (canOpen) {
+                            // Open Uber app
+                            await Linking.openURL(uberDeepLink);
+                          } else {
+                            // Fallback to web browser
+                            await Linking.openURL(uberWebUrl);
+                          }
+                        } catch (error) {
+                          console.error('Failed to open Uber:', error);
+                          Alert.alert('Error', 'Could not open Uber. Please try again.');
+                        }
+                      }}
+                    >
+                      <Ionicons name="car-outline" size={20} color="#000000" />
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Uber
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {/* Reviews Button (NOT for events - they don't have Google reviews) */}
+                  {recommendation.activity?.googlePlaceId &&
+                   !(recommendation as any).event_metadata?.event_url &&
+                   !(recommendation as any).event_metadata?.start_time && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon }]}
                       onPress={() => {
@@ -665,6 +1028,111 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  mapPreviewContainer: {
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  mapPreview: {
+    width: '100%',
+    height: 200,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  mapOverlayText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  reviewsContainer: {
+    marginTop: 12,
+  },
+  reviewCard: {
+    width: 280,
+    borderRadius: 12,
+    padding: 16,
+    marginRight: 12,
+    borderWidth: 1,
+  },
+  reviewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  reviewerAvatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    marginRight: 10,
+  },
+  reviewerAvatarPlaceholder: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reviewerInitial: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  reviewerInfo: {
+    flex: 1,
+  },
+  reviewerName: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  reviewDate: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  reviewRating: {
+    flexDirection: 'row',
+    gap: 2,
+    marginBottom: 8,
+  },
+  reviewText: {
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  noReviewsText: {
+    fontSize: 14,
+    fontStyle: 'italic',
+    marginTop: 8,
+  },
+  topicBubblesContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  topicBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  topicText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  topicCount: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
   aiHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -730,11 +1198,6 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     gap: Spacing.sm,
   },
-  reviewText: {
-    fontSize: 14,
-    lineHeight: 20,
-    fontStyle: 'italic',
-  },
 
   // DETAILS LIST
   detailsList: {
@@ -770,6 +1233,53 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  buyTicketsButton: {
+    backgroundColor: '#FF4444',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  buyTicketsButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  // PRIMARY TICKET BUTTON (Large, prominent)
+  primaryTicketButton: {
+    backgroundColor: '#FF4444',
+    borderRadius: 16,
+    paddingVertical: 18,
+    paddingHorizontal: 24,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
+    marginTop: 16,
+    marginBottom: 20,
+    shadowColor: '#FF4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: '#FF6666',
+  },
+  primaryTicketButtonText: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+    letterSpacing: 0.5,
   },
 
   // FOOTER

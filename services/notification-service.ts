@@ -20,6 +20,8 @@ Notifications.setNotificationHandler({
     shouldShowAlert: true,
     shouldPlaySound: true,
     shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
   }),
 });
 
@@ -116,8 +118,9 @@ export async function scheduleDepartureNotifications(
           sound: 'default',
         },
         trigger: {
+          type: 'date',
           date: warningTime,
-        },
+        } as Notifications.DateTriggerInput,
       });
     }
 
@@ -141,8 +144,9 @@ export async function scheduleDepartureNotifications(
         sound: 'default',
       },
       trigger: {
+        type: 'date',
         date: departureTime,
-      },
+      } as Notifications.DateTriggerInput,
     });
 
     // Save notification IDs to database
@@ -355,27 +359,36 @@ async function openEventNavigation(eventId: string): Promise<void> {
     const chain = await getEventChain(eventId);
     const isChained = chain.length > 1;
 
+    // Helper to extract lat/lng from location (handles both formats)
+    const getCoords = (loc: { latitude?: number; longitude?: number; coordinates?: number[] }) => {
+      if (loc.coordinates) {
+        return { lat: loc.coordinates[1], lng: loc.coordinates[0] };
+      }
+      return { lat: loc.latitude || 0, lng: loc.longitude || 0 };
+    };
+
     if (isChained) {
       // Multi-stop route: Open Google Maps with waypoints
       // Format: https://www.google.com/maps/dir/?api=1&origin=...&destination=...&waypoints=...
       const waypoints = chain
         .slice(0, -1)
-        .map((e) => `${e.location.coordinates[1]},${e.location.coordinates[0]}`)
+        .map((e: { location: { latitude?: number; longitude?: number; coordinates?: number[] } }) => {
+          const c = getCoords(e.location);
+          return `${c.lat},${c.lng}`;
+        })
         .join('|');
 
       const destination = chain[chain.length - 1];
-      const destCoords = `${destination.location.coordinates[1]},${destination.location.coordinates[0]}`;
+      const destCoords = getCoords(destination.location);
 
-      const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${destCoords}&waypoints=${waypoints}&travelmode=driving`;
+      const mapsUrl = `https://www.google.com/maps/dir/?api=1&destination=${destCoords.lat},${destCoords.lng}&waypoints=${waypoints}&travelmode=driving`;
+      console.log('Opening multi-stop navigation:', mapsUrl);
 
-      // Open in browser or Google Maps app
-      await Notifications.dismissNotificationAsync(
-        response.notification.request.identifier
-      );
       // Note: In actual app, use Linking.openURL(mapsUrl)
     } else {
       // Single destination: Open navigation directly
-      const coords = `${event.location.coordinates[1]},${event.location.coordinates[0]}`;
+      const c = getCoords(event.location);
+      const coords = `${c.lat},${c.lng}`;
       const label = encodeURIComponent(event.title);
 
       const mapsUrl = Platform.select({
@@ -427,8 +440,9 @@ export async function sendTestNotification(): Promise<void> {
         data: { type: 'test' },
       },
       trigger: {
+        type: 'timeInterval',
         seconds: 2,
-      },
+      } as Notifications.TimeIntervalTriggerInput,
     });
   } catch (error) {
     console.error('Error sending test notification:', error);

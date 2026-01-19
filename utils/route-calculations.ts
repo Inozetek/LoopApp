@@ -3,7 +3,7 @@
  * Calculate distance and estimated travel time for routes
  */
 
-interface Coordinate {
+export interface Coordinate {
   latitude: number;
   longitude: number;
 }
@@ -164,4 +164,147 @@ export function suggestStartTimeFromPreviousTask(
  */
 export function isReasonableTravelTime(minutes: number): boolean {
   return minutes <= 30;
+}
+
+// ===================================
+// Loop Routing & Chaining (Day 1 Sprint)
+// ===================================
+
+/**
+ * Determine if two events should be chained
+ * Logic: Chain if round-trip home time > time gap between events
+ *
+ * @param eventA - First event (must have end_time and location)
+ * @param eventB - Second event (must have start_time and location)
+ * @param homeLocation - User's home location
+ * @returns Whether events should be chained
+ */
+export function shouldChainEvents(
+  eventA: { end_time: string; location: Coordinate },
+  eventB: { start_time: string; location: Coordinate },
+  homeLocation: Coordinate
+): boolean {
+  // Calculate travel times
+  const travelAToHome = estimateTravelTime(calculateDistance(eventA.location, homeLocation));
+  const travelHomeToB = estimateTravelTime(calculateDistance(homeLocation, eventB.location));
+  const roundTripTime = travelAToHome + travelHomeToB;
+
+  // Calculate time gap between events (in minutes)
+  const endA = new Date(eventA.end_time);
+  const startB = new Date(eventB.start_time);
+  const timeGapMinutes = (startB.getTime() - endA.getTime()) / (1000 * 60);
+
+  // Chain if not enough time to go home
+  return roundTripTime > timeGapMinutes;
+}
+
+/**
+ * Calculate recommended departure time for an event
+ *
+ * @param eventStartTime - Event start time (ISO string or Date)
+ * @param travelTimeMinutes - Estimated travel time
+ * @param parkingBuffer - Additional time for parking/walking (default: 10 min)
+ * @param isChained - Whether this is a chained event (adds 5 min buffer)
+ * @returns Recommended departure time (Date object)
+ */
+export function calculateDepartureTime(
+  eventStartTime: string | Date,
+  travelTimeMinutes: number,
+  parkingBuffer: number = 10,
+  isChained: boolean = false
+): Date {
+  const startTime = typeof eventStartTime === 'string' ? new Date(eventStartTime) : eventStartTime;
+  let bufferMinutes = parkingBuffer;
+
+  // Add extra buffer for chained events
+  if (isChained) {
+    bufferMinutes += 5;
+  }
+
+  const totalMinutes = travelTimeMinutes + bufferMinutes;
+  const departureTime = new Date(startTime.getTime() - totalMinutes * 60 * 1000);
+
+  return departureTime;
+}
+
+/**
+ * Calculate midpoint between multiple locations (for group planning)
+ * Uses Cartesian coordinate averaging for accurate results
+ *
+ * @param locations - Array of user locations
+ * @returns Midpoint location
+ */
+export function calculateMidpoint(locations: Coordinate[]): Coordinate {
+  if (locations.length === 0) {
+    throw new Error('Need at least one location to calculate midpoint');
+  }
+
+  if (locations.length === 1) {
+    return locations[0];
+  }
+
+  // Convert to Cartesian coordinates
+  let x = 0;
+  let y = 0;
+  let z = 0;
+
+  for (const loc of locations) {
+    const lat = (loc.latitude * Math.PI) / 180;
+    const lon = (loc.longitude * Math.PI) / 180;
+
+    x += Math.cos(lat) * Math.cos(lon);
+    y += Math.cos(lat) * Math.sin(lon);
+    z += Math.sin(lat);
+  }
+
+  const total = locations.length;
+  x = x / total;
+  y = y / total;
+  z = z / total;
+
+  // Convert back to latitude/longitude
+  const centralLon = Math.atan2(y, x);
+  const centralSquareRoot = Math.sqrt(x * x + y * y);
+  const centralLat = Math.atan2(z, centralSquareRoot);
+
+  return {
+    latitude: (centralLat * 180) / Math.PI,
+    longitude: (centralLon * 180) / Math.PI,
+  };
+}
+
+/**
+ * Format time for departure notifications
+ * @param date - Date object to format
+ * @returns Formatted string (e.g., "3:45 PM")
+ */
+export function formatDepartureTime(date: Date): string {
+  return date.toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+}
+
+/**
+ * Calculate total distance and time for a chained route
+ * @param waypoints - Array of locations in route order (includes home at start/end)
+ * @returns Object with total distance and time
+ */
+export function calculateChainedRouteStats(waypoints: Coordinate[]) {
+  const distance = calculateRouteDistance(waypoints);
+  const time = estimateTravelTime(distance);
+
+  // Add buffers for multiple stops
+  const numStops = waypoints.length - 2; // Exclude home (start/end)
+  const bufferPerStop = 10; // 10 min parking/walking per stop
+  const totalBuffer = numStops * bufferPerStop;
+
+  return {
+    distanceMiles: distance,
+    estimatedMinutes: time + totalBuffer,
+    distanceFormatted: formatDistance(distance),
+    timeFormatted: formatDuration(time + totalBuffer),
+    numStops,
+  };
 }

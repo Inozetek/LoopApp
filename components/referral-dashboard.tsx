@@ -100,31 +100,33 @@ export function ReferralDashboard({ userId, userName }: ReferralDashboardProps) 
         </View>
 
         {/* Progress to Next Reward */}
-        <View style={styles.progressContainer}>
-          <View style={styles.progressHeader}>
-            <Text style={[styles.progressTitle, { color: colors.text }]}>Next Milestone</Text>
-            <Text style={[styles.progressValue, { color: BrandColors.loopBlue }]}>
-              {stats.completedReferrals}/{stats.nextMilestone.count}
+        {stats.nextMilestone && (
+          <View style={styles.progressContainer}>
+            <View style={styles.progressHeader}>
+              <Text style={[styles.progressTitle, { color: colors.text }]}>Next Milestone</Text>
+              <Text style={[styles.progressValue, { color: BrandColors.loopBlue }]}>
+                {stats.completedReferrals}/{stats.nextMilestone.referralsNeeded}
+              </Text>
+            </View>
+
+            {/* Progress Bar */}
+            <View style={[styles.progressBarBg, { backgroundColor: colors.icon + '20' }]}>
+              <View
+                style={[
+                  styles.progressBarFill,
+                  {
+                    backgroundColor: BrandColors.loopGreen,
+                    width: `${Math.min((stats.completedReferrals / stats.nextMilestone.referralsNeeded) * 100, 100)}%`,
+                  },
+                ]}
+              />
+            </View>
+
+            <Text style={[styles.progressReward, { color: colors.text }]}>
+              🎯 {stats.nextMilestone.reward}
             </Text>
           </View>
-
-          {/* Progress Bar */}
-          <View style={[styles.progressBarBg, { backgroundColor: colors.icon + '20' }]}>
-            <View
-              style={[
-                styles.progressBarFill,
-                {
-                  backgroundColor: BrandColors.loopGreen,
-                  width: `${Math.min(stats.nextMilestone.progress * 100, 100)}%`,
-                },
-              ]}
-            />
-          </View>
-
-          <Text style={[styles.progressReward, { color: colors.text }]}>
-            🎯 {stats.nextMilestone.reward}
-          </Text>
-        </View>
+        )}
 
         {/* Invite Button */}
         <TouchableOpacity

@@ -1,45 +1,37 @@
-// @ts-nocheck - Phase 2 feature: Run migration 010_phase2_tables_consolidated.sql first
 /**
  * Referral Service - Viral Growth Engine
  *
- * Strategy: "Invite 3 friends → Get 1 month Loop Plus free"
- * - Both inviter and invitee get rewards
- * - Track referrals for analytics
+ * Strategy: "Invite a friend → Both get 1 month Premium free"
  * - Viral coefficient target: K-factor > 0.7
- *
- * Phase 2 feature - requires running migration 010_phase2_tables_consolidated.sql
+ * - Uses new referrals table from 20260110 migrations
+ * - Rewards granted directly to users table (subscription_tier, subscription_end_date)
  */
 
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database';
-
-type ReferralRow = Database['public']['Tables']['referrals']['Row'];
-type ReferralRewardRow = Database['public']['Tables']['referral_rewards']['Row'];
-type UserRow = Database['public']['Tables']['users']['Row'];
+import type { Referral } from '@/types/user';
 
 export interface ReferralStats {
   referralCode: string;
   totalReferrals: number;
   pendingReferrals: number;
   completedReferrals: number;
+  rewardedReferrals: number;
   rewardsEarned: number;
   totalPlusDaysEarned: number;
   nextMilestone: {
-    count: number;
+    referralsNeeded: number;
     reward: string;
-    progress: number; // 0-1
-  };
+  } | null;
 }
 
-// Export interface for UI compatibility
 export interface ReferralReward {
   id: string;
-  rewardType: string;
+  type: 'premium_days' | 'plus_days' | 'credit';
+  amount: number;
   description: string;
   plusDays: number;
-  status: 'pending' | 'granted' | 'revoked' | 'expired';
-  grantedAt?: string;
-  expiresAt?: string;
+  expiresAt: string | null;
+  grantedAt: string;
 }
 
 /**
@@ -70,45 +62,53 @@ export async function getUserReferralCode(userId: string): Promise<string | null
  */
 export async function getReferralStats(userId: string): Promise<ReferralStats | null> {
   try {
-    const { data, error } = await supabase
-      .from('referral_stats')
-      .select('*')
-      .eq('user_id', userId)
+    // Get user's referral code
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('referral_code')
+      .eq('id', userId)
       .single();
 
-    if (error || !data) {
-      console.error('Error fetching referral stats:', error);
+    if (userError || !userData) {
+      console.error('Error fetching user:', userError);
       return null;
     }
 
-    // Calculate next milestone
-    const completedCount = data.completed_referrals || 0;
-    const nextMilestoneCount = Math.ceil((completedCount + 1) / 3) * 3; // Next multiple of 3
+    // Get all referrals for this user
+    const { data: referrals, error: referralsError } = await supabase
+      .from('referrals')
+      .select('status')
+      .eq('referrer_user_id', userId);
 
+    if (referralsError) {
+      console.error('Error fetching referrals:', referralsError);
+      return null;
+    }
+
+    const rewardedCount = referrals?.filter((r: { status: string }) => r.status === 'rewarded').length || 0;
+
+    // Calculate next milestone
     const milestones = [
-      { count: 3, reward: '1 month Loop Plus free' },
-      { count: 6, reward: '1 month Loop Plus free' },
-      { count: 9, reward: '1 month Loop Plus free' },
-      { count: 10, reward: '3 months Loop Premium!' },
-      { count: 25, reward: '6 months Loop Premium!' },
-      { count: 100, reward: '1 year Loop Premium + VIP status!' },
+      { referralsNeeded: 3, reward: '1 week Premium free' },
+      { referralsNeeded: 5, reward: '1 month Premium free' },
+      { referralsNeeded: 10, reward: '3 months Premium free' },
+      { referralsNeeded: 25, reward: '1 year Premium free' },
     ];
 
-    const nextMilestone = milestones.find((m) => m.count > completedCount) || milestones[milestones.length - 1];
+    const nextMilestone = milestones.find(m => m.referralsNeeded > rewardedCount) || null;
 
-    return {
-      referralCode: data.referral_code,
-      totalReferrals: data.referral_count || 0,
-      pendingReferrals: data.pending_referrals || 0,
-      completedReferrals: completedCount,
-      rewardsEarned: data.rewards_earned || 0,
-      totalPlusDaysEarned: data.total_plus_days_earned || 0,
-      nextMilestone: {
-        count: nextMilestone.count,
-        reward: nextMilestone.reward,
-        progress: completedCount / nextMilestone.count,
-      },
+    const stats: ReferralStats = {
+      referralCode: userData.referral_code || '',
+      totalReferrals: referrals?.length || 0,
+      pendingReferrals: referrals?.filter((r: { status: string }) => r.status === 'pending').length || 0,
+      completedReferrals: referrals?.filter((r: { status: string }) => r.status === 'completed').length || 0,
+      rewardedReferrals: rewardedCount,
+      rewardsEarned: rewardedCount, // Each rewarded referral = 1 reward
+      totalPlusDaysEarned: rewardedCount * 30, // 30 days per referral
+      nextMilestone,
     };
+
+    return stats;
   } catch (error) {
     console.error('Error in getReferralStats:', error);
     return null;
@@ -116,205 +116,175 @@ export async function getReferralStats(userId: string): Promise<ReferralStats | 
 }
 
 /**
- * Get user's active rewards
+ * Create a referral invitation
+ * Called when user invites a friend via contact sync or manual invite
  */
-export async function getActiveRewards(userId: string): Promise<ReferralReward[]> {
-  try {
-    const { data, error } = await supabase
-      .from('referral_rewards')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'granted')
-      .order('granted_at', { ascending: false });
-
-    if (error) {
-      console.error('Error fetching active rewards:', error);
-      return [];
-    }
-
-    return (data || []).map((reward) => ({
-      id: reward.id,
-      rewardType: reward.reward_type,
-      description: reward.reward_description,
-      plusDays: reward.reward_plus_days || 0,
-      status: reward.status,
-      grantedAt: reward.granted_at,
-      expiresAt: reward.expires_at,
-    }));
-  } catch (error) {
-    console.error('Error in getActiveRewards:', error);
-    return [];
-  }
-}
-
-/**
- * Process referral when new user signs up with code
- */
-export async function processReferralCode(
-  userId: string,
+export async function createReferralInvitation(
+  referrerUserId: string,
   referralCode: string,
-  source: 'sms' | 'whatsapp' | 'instagram' | 'facebook' | 'link' | 'other' = 'link'
-): Promise<{ success: boolean; error?: string }> {
-  try {
-    // Call database function to process referral
-    const { data, error } = await supabase.rpc('process_referral', {
-      p_referred_user_id: userId,
-      p_referral_code: referralCode.toUpperCase(),
-      p_source: source,
-    });
-
-    if (error) {
-      console.error('Error processing referral:', error);
-      return { success: false, error: error.message };
-    }
-
-    const result = data as { success: boolean; error?: string };
-
-    if (!result.success) {
-      return { success: false, error: result.error };
-    }
-
-    return { success: true };
-  } catch (error) {
-    console.error('Error in processReferralCode:', error);
-    return { success: false, error: 'Failed to process referral code' };
+  inviteData: {
+    email?: string;
+    phone?: string;
+    method: 'sms' | 'email' | 'link' | 'contact_sync';
   }
+): Promise<Referral | null> {
+  const { data, error } = await supabase
+    .from('referrals')
+    .insert({
+      referrer_user_id: referrerUserId,
+      referral_code: referralCode,
+      referred_email: inviteData.email,
+      referred_phone: inviteData.phone,
+      invite_method: inviteData.method,
+      status: 'pending',
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error creating referral:', error);
+    return null;
+  }
+
+  return data;
 }
 
 /**
- * Complete referral when user finishes onboarding
- * Grants rewards to both inviter and invitee
+ * Complete a referral when new user signs up with code
+ * This is called during signup flow
  */
-export async function completeReferral(userId: string): Promise<{ success: boolean; rewards?: any }> {
+export async function completeReferral(
+  referralCode: string,
+  referredUserId: string
+): Promise<boolean> {
   try {
     const { data, error } = await supabase.rpc('complete_referral', {
-      p_referred_user_id: userId,
+      p_referral_code: referralCode.toUpperCase(),
+      p_referred_user_id: referredUserId,
     });
 
     if (error) {
       console.error('Error completing referral:', error);
-      return { success: false };
+      return false;
     }
 
-    const result = data as { success: boolean; invitee_reward_id?: string; inviter_reward_id?: string };
+    // If referral was completed successfully, grant rewards
+    if (data === true) {
+      // Get the referral record to pass to reward function
+      const { data: referral } = await supabase
+        .from('referrals')
+        .select('id')
+        .eq('referral_code', referralCode.toUpperCase())
+        .eq('referred_user_id', referredUserId)
+        .eq('status', 'completed')
+        .single();
 
-    if (!result.success) {
-      return { success: false };
+      if (referral) {
+        await rewardReferral(referral.id);
+      }
     }
 
-    return {
-      success: true,
-      rewards: {
-        inviteeRewardId: result.invitee_reward_id,
-        inviterRewardId: result.inviter_reward_id,
-      },
-    };
+    return data === true;
   } catch (error) {
     console.error('Error in completeReferral:', error);
-    return { success: false };
+    return false;
   }
 }
 
 /**
- * Generate referral share message
+ * Grant Premium rewards to both referrer and referred user
+ * Called automatically after completing a referral
  */
-export function getReferralShareMessage(referralCode: string, userName?: string): string {
-  const inviterName = userName || 'Your friend';
-
-  return `${inviterName} invited you to Loop! 🎉\n\nDiscover amazing activities tailored to your free time.\n\nUse code ${referralCode} to get 7 days of Loop Plus FREE!\n\nhttps://loopapp.com/join/${referralCode}`;
-}
-
-/**
- * Generate referral share link
- */
-export function getReferralShareLink(referralCode: string): string {
-  // Deep link format: loopapp://join/{referralCode}
-  // Web fallback: https://loopapp.com/join/{referralCode}
-  return `https://loopapp.com/join/${referralCode}`;
-}
-
-/**
- * Track referral source analytics
- */
-export async function trackReferralShare(
-  userId: string,
-  source: 'sms' | 'whatsapp' | 'instagram' | 'facebook' | 'link' | 'copy'
-): Promise<void> {
+export async function rewardReferral(referralId: string): Promise<boolean> {
   try {
-    // Log to analytics (can integrate Posthog/Mixpanel later)
-    console.log(`[Analytics] User ${userId} shared referral via ${source}`);
+    const { data, error } = await supabase.rpc('reward_referral', {
+      p_referral_id: referralId,
+    });
 
-    // Optional: Track in database for attribution
-    // This helps measure which channels drive the most referrals
+    if (error) {
+      console.error('Error rewarding referral:', error);
+      return false;
+    }
+
+    return data === true;
   } catch (error) {
-    console.error('Error tracking referral share:', error);
+    console.error('Error in rewardReferral:', error);
+    return false;
   }
 }
 
 /**
- * Check if user has pending referral rewards to apply
+ * Get user's referral history
  */
-export async function applyPendingRewards(userId: string): Promise<{
-  applied: boolean;
-  plusDaysAdded: number;
+export async function getReferralHistory(userId: string): Promise<Referral[]> {
+  const { data, error } = await supabase
+    .from('referrals')
+    .select('*')
+    .eq('referrer_user_id', userId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Error fetching referral history:', error);
+    return [];
+  }
+
+  return data || [];
+}
+
+/**
+ * Generate referral link for sharing
+ */
+export function generateReferralLink(referralCode: string): string {
+  // TODO: Update with actual app URL when deployed
+  const baseUrl = 'https://loop.app'; // or your custom domain
+  return `${baseUrl}/signup?ref=${referralCode}`;
+}
+
+/**
+ * Generate invite message for SMS/Email
+ */
+export function generateInviteMessage(
+  referrerName: string,
+  referralLink: string
+): string {
+  return `Hey! I'm using Loop to find things to do. Join me and we both get 1 month free Premium: ${referralLink}`;
+}
+
+/**
+ * Validate referral code format
+ */
+export function isValidReferralCode(code: string): boolean {
+  // Must be 6 alphanumeric characters
+  return /^[A-Z0-9]{6}$/.test(code);
+}
+
+/**
+ * Check if referral code exists and is valid
+ */
+export async function validateReferralCode(code: string): Promise<{
+  valid: boolean;
+  referrerName?: string;
+  error?: string;
 }> {
-  try {
-    // Get all granted rewards that haven't been applied yet
-    const { data: rewards, error } = await supabase
-      .from('referral_rewards')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('status', 'granted')
-      .gte('expires_at', new Date().toISOString());
-
-    if (error || !rewards || rewards.length === 0) {
-      return { applied: false, plusDaysAdded: 0 };
-    }
-
-    // Sum up total Plus days
-    const totalPlusDays = rewards.reduce((sum, r) => sum + (r.reward_plus_days || 0), 0);
-
-    if (totalPlusDays === 0) {
-      return { applied: false, plusDaysAdded: 0 };
-    }
-
-    // Calculate new subscription end date
-    const { data: user } = await supabase
-      .from('users')
-      .select('subscription_tier, subscription_end_date')
-      .eq('id', userId)
-      .single();
-
-    let newEndDate: Date;
-
-    if (user?.subscription_end_date && new Date(user.subscription_end_date) > new Date()) {
-      // Extend existing subscription
-      newEndDate = new Date(user.subscription_end_date);
-      newEndDate.setDate(newEndDate.getDate() + totalPlusDays);
-    } else {
-      // Start new subscription
-      newEndDate = new Date();
-      newEndDate.setDate(newEndDate.getDate() + totalPlusDays);
-    }
-
-    // Update user's subscription
-    await supabase
-      .from('users')
-      .update({
-        subscription_tier: 'plus',
-        subscription_status: 'active',
-        subscription_end_date: newEndDate.toISOString(),
-      })
-      .eq('id', userId);
-
-    return {
-      applied: true,
-      plusDaysAdded: totalPlusDays,
-    };
-  } catch (error) {
-    console.error('Error applying pending rewards:', error);
-    return { applied: false, plusDaysAdded: 0 };
+  if (!isValidReferralCode(code)) {
+    return { valid: false, error: 'Invalid referral code format' };
   }
+
+  // Check if code exists and get referrer info
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('id, name')
+    .eq('referral_code', code.toUpperCase())
+    .single();
+
+  if (error || !user) {
+    return { valid: false, error: 'Referral code not found' };
+  }
+
+  return {
+    valid: true,
+    referrerName: user.name,
+  };
 }
 
 /**
@@ -340,7 +310,7 @@ export async function getReferralLeaderboard(limit: number = 10): Promise<
       return [];
     }
 
-    return data.map((user, index) => ({
+    return data.map((user: { id: string; name: string | null; referral_count: number | null }, index: number) => ({
       userId: user.id,
       name: user.name || 'Anonymous',
       referralCount: user.referral_count || 0,
@@ -348,6 +318,76 @@ export async function getReferralLeaderboard(limit: number = 10): Promise<
     }));
   } catch (error) {
     console.error('Error in getReferralLeaderboard:', error);
+    return [];
+  }
+}
+
+/**
+ * Process referral code during signup
+ * Validates the code and completes the referral (grants rewards)
+ * @param newUserId - The ID of the new user who signed up
+ * @param code - The referral code used
+ * @param method - How the referral was received ('link', 'sms', 'email', 'contact_sync')
+ */
+export async function processReferralCode(
+  newUserId: string,
+  code: string,
+  method: 'link' | 'sms' | 'email' | 'contact_sync' = 'link'
+): Promise<{ success: boolean; error?: string; referrerName?: string }> {
+  try {
+    // Validate the code first
+    const validation = await validateReferralCode(code);
+    if (!validation.valid) {
+      return { success: false, error: validation.error };
+    }
+
+    // Complete the referral (this grants rewards to both users)
+    const completed = await completeReferral(code, newUserId);
+    if (!completed) {
+      return { success: false, error: 'Failed to process referral' };
+    }
+
+    return { success: true, referrerName: validation.referrerName };
+  } catch (error) {
+    console.error('Error in processReferralCode:', error);
+    return { success: false, error: 'An unexpected error occurred' };
+  }
+}
+
+/**
+ * Get active rewards for a user
+ * Returns list of rewards (premium days, etc.) that are currently active
+ */
+export async function getActiveRewards(userId: string): Promise<ReferralReward[]> {
+  try {
+    // Get all rewarded referrals for this user
+    const { data: referrals, error } = await supabase
+      .from('referrals')
+      .select('id, status, rewarded_at')
+      .eq('referrer_user_id', userId)
+      .eq('status', 'rewarded')
+      .order('rewarded_at', { ascending: false });
+
+    if (error || !referrals) {
+      console.error('Error fetching active rewards:', error);
+      return [];
+    }
+
+    // Convert to ReferralReward format
+    // Each rewarded referral grants 30 days of premium
+    const rewards: ReferralReward[] = referrals.map((ref: { id: string; rewarded_at: string | null }) => ({
+      id: ref.id,
+      type: 'premium_days' as const,
+      amount: 30, // 30 days per referral
+      description: '30 days Premium from referral',
+      plusDays: 30,
+      expiresAt: null, // No expiration on earned premium days
+      grantedAt: ref.rewarded_at || new Date().toISOString(),
+    }));
+
+    return rewards;
+  } catch (error) {
+    console.error('Error in getActiveRewards:', error);
     return [];
   }
 }
