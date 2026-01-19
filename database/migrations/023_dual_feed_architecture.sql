@@ -143,15 +143,19 @@ ON users(subscription_tier);
 -- Allow authenticated users to read/write their own feed history
 ALTER TABLE daily_feed_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view own feed history"
+-- Drop existing policies if they exist, then recreate
+DROP POLICY IF EXISTS "Users can view own feed history" ON daily_feed_history;
+CREATE POLICY "Users can view own feed history"
 ON daily_feed_history FOR SELECT
 USING (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS "Users can insert own feed history"
+DROP POLICY IF EXISTS "Users can insert own feed history" ON daily_feed_history;
+CREATE POLICY "Users can insert own feed history"
 ON daily_feed_history FOR INSERT
 WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY IF NOT EXISTS "Users can update own feed history"
+DROP POLICY IF EXISTS "Users can update own feed history" ON daily_feed_history;
+CREATE POLICY "Users can update own feed history"
 ON daily_feed_history FOR UPDATE
 USING (auth.uid() = user_id);
 
