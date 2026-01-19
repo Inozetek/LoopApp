@@ -6,7 +6,7 @@
  * Feeds data to ML learning system for improved recommendations.
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
@@ -26,7 +26,8 @@ import { supabase } from '@/lib/supabase';
 interface FeedbackModalProps {
   visible: boolean;
   onClose: () => void;
-  activityId: string;
+  eventId: string; // Calendar event ID - required for marking event as completed
+  activityId: string | null; // Can be null for manually created calendar events
   activityName: string;
   activityCategory: string;
   userId: string;
@@ -47,6 +48,7 @@ const FEEDBACK_TAGS = [
 export function FeedbackModal({
   visible,
   onClose,
+  eventId,
   activityId,
   activityName,
   activityCategory,
@@ -60,6 +62,15 @@ export function FeedbackModal({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+
+  // Reset submission states when modal closes
+  useEffect(() => {
+    if (!visible) {
+      setSubmitting(false);
+      setHasSubmitted(false);
+    }
+  }, [visible]);
 
   const handleRating = (newRating: 'thumbs_up' | 'thumbs_down') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -77,6 +88,12 @@ export function FeedbackModal({
   };
 
   const handleSubmit = async () => {
+    // Prevent duplicate submissions
+    if (submitting || hasSubmitted) {
+      console.warn('⚠️ Duplicate submission attempt blocked:', { submitting, hasSubmitted });
+      return;
+    }
+
     if (!rating) {
       Alert.alert('Rating Required', 'Please select thumbs up or thumbs down');
       return;
@@ -86,21 +103,73 @@ export function FeedbackModal({
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     try {
+      console.log('📝 Feedback submission flow started:', {
+        eventId,
+        activityId,
+        activityName,
+        rating,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Check for duplicate feedback (prevent accidental double-submission)
+      const completedAt = new Date().toISOString();
+      const { data: existingFeedback } = await supabase
+        .from('feedback')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('activity_id', activityId || '')
+        .eq('rating', rating)
+        .gte('completed_at', new Date(Date.now() - 60000).toISOString()) // Within last 60 seconds
+        .single();
+
+      if (existingFeedback) {
+        console.warn('⚠️ Duplicate feedback detected, skipping submission');
+        setHasSubmitted(true);
+        onClose();
+        return;
+      }
+
       // Save feedback to database
+      // Note: activity_id can be null for manually created calendar events
       const { error: feedbackError } = await supabase.from('feedback').insert({
         user_id: userId,
-        activity_id: activityId,
+        activity_id: activityId || null, // Null for manual calendar events
         recommendation_id: recommendationId || null,
         rating,
         feedback_tags: selectedTags,
         feedback_notes: notes.trim() || null,
-        completed_at: new Date().toISOString(),
+        completed_at: completedAt,
       } as any);
 
       if (feedbackError) throw feedbackError;
 
+      console.log('✅ Feedback saved to database');
+
       // Update user's AI profile based on feedback
       await updateAIProfile(userId, rating, activityCategory, selectedTags);
+
+      // Mark calendar event as completed
+      // This prevents the feedback modal from reopening after closing
+      if (eventId) {
+        console.log('📅 Marking calendar event as completed:', eventId);
+        const { error: updateError } = await supabase
+          .from('calendar_events')
+          .update({
+            status: 'completed',
+            completed_at: new Date().toISOString(),
+          })
+          .eq('id', eventId);
+
+        if (updateError) {
+          console.error('❌ Failed to update event status:', updateError);
+          // Don't throw - feedback was already saved successfully
+        } else {
+          console.log('✅ Event marked as completed:', eventId);
+        }
+      }
+
+      setHasSubmitted(true); // Prevent any future submissions
+      console.log('✅ Feedback submission complete');
 
       Alert.alert(
         'Thanks for your feedback! 🎯',
@@ -288,17 +357,17 @@ export function FeedbackModal({
           {/* Submit button */}
           <TouchableOpacity
             onPress={handleSubmit}
-            disabled={!rating || submitting}
+            disabled={!rating || submitting || hasSubmitted}
             style={[
               styles.submitButton,
               {
                 backgroundColor: rating ? colors.tint : colors.border,
-                opacity: rating && !submitting ? 1 : 0.5,
+                opacity: rating && !submitting && !hasSubmitted ? 1 : 0.5,
               },
             ]}
           >
             <Text style={styles.submitButtonText}>
-              {submitting ? 'Submitting...' : 'Submit Feedback'}
+              {submitting ? 'Submitting...' : hasSubmitted ? 'Submitted!' : 'Submit Feedback'}
             </Text>
           </TouchableOpacity>
         </View>

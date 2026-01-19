@@ -26,11 +26,13 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
+import { DiscoveryModeToggle, type DiscoveryMode } from '@/components/discovery-mode-toggle';
 
 // Category options for filtering
 const CATEGORIES = [
@@ -51,6 +53,9 @@ const CATEGORIES = [
 export interface SearchFilters {
   searchQuery: string;
   location: { latitude: number; longitude: number; address: string } | null;
+  searchType: 'area' | 'place' | null; // Smart detection: area = search FROM, place = search FOR
+  placeName?: string; // If searching for specific place
+  placeTypes?: string[]; // Google place types for filtering
   categories: string[];
   priceRange: number[]; // [min, max] where 0 = Free, 1-3 = $-$$$
   minRating: number; // 0-5 stars
@@ -60,6 +65,7 @@ export interface SearchFilters {
   openNow: boolean;
   groupOnly: boolean;
   showMap: boolean;
+  discoveryMode: DiscoveryMode; // 'curated' | 'explore'
 }
 
 interface AdvancedSearchModalProps {
@@ -80,12 +86,17 @@ export function AdvancedSearchModal({
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
+  const insets = useSafeAreaInsets();
 
   // Search state
   const [searchQuery, setSearchQuery] = useState(currentFilters.searchQuery || '');
+  const [searchText, setSearchText] = useState(currentFilters.location?.address || ''); // Text being typed
   const [searchLocation, setSearchLocation] = useState<{ latitude: number; longitude: number; address: string } | null>(
     currentFilters.location || null
   );
+  const [searchType, setSearchType] = useState<'area' | 'place' | null>(currentFilters.searchType || null);
+  const [placeName, setPlaceName] = useState<string | undefined>(currentFilters.placeName);
+  const [placeTypes, setPlaceTypes] = useState<string[] | undefined>(currentFilters.placeTypes);
 
   // Filter state
   const [selectedCategories, setSelectedCategories] = useState<string[]>(currentFilters.categories || []);
@@ -97,6 +108,7 @@ export function AdvancedSearchModal({
   const [timeOfDay, setTimeOfDay] = useState<string[]>(currentFilters.timeOfDay || []);
   const [openNow, setOpenNow] = useState(currentFilters.openNow || false);
   const [groupOnly, setGroupOnly] = useState(currentFilters.groupOnly || false);
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(currentFilters.discoveryMode || 'curated');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   const toggleCategory = (categoryId: string) => {
@@ -117,12 +129,87 @@ export function AdvancedSearchModal({
     );
   };
 
+  // Smart detection: Is this a specific place (restaurant, cafe) or a geographic area (city, neighborhood)?
+  const detectSearchType = (types?: string[]): 'area' | 'place' => {
+    if (!types || types.length === 0) return 'area';
+
+    // Establishment types = searching FOR a specific place
+    const establishmentTypes = [
+      'restaurant', 'cafe', 'bar', 'bakery', 'meal_takeaway', 'meal_delivery',
+      'food', 'store', 'clothing_store', 'shoe_store', 'shopping_mall',
+      'gym', 'spa', 'beauty_salon', 'hair_care',
+      'movie_theater', 'night_club', 'bowling_alley', 'amusement_park',
+      'park', 'museum', 'art_gallery', 'library',
+      'stadium', 'tourist_attraction', 'point_of_interest',
+      'lodging', 'hotel', 'rv_park', 'campground',
+    ];
+
+    // Geographic types = searching FROM an area
+    const geographicTypes = [
+      'locality', 'sublocality', 'neighborhood', 'administrative_area_level_1',
+      'administrative_area_level_2', 'political', 'postal_code', 'country',
+      'colloquial_area', 'premise', 'subpremise',
+    ];
+
+    // Check if any establishment type matches
+    const hasEstablishment = types.some(type => establishmentTypes.includes(type));
+    const hasGeographic = types.some(type => geographicTypes.includes(type));
+
+    // If it has establishment types, it's a specific place
+    if (hasEstablishment) return 'place';
+
+    // If it only has geographic types, it's an area
+    if (hasGeographic) return 'area';
+
+    // Default: treat as area search
+    return 'area';
+  };
+
+  const handleLocationSelect = (location: {
+    placeName: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    types?: string[];
+  }) => {
+    const detectedType = detectSearchType(location.types);
+
+    // For specific places, show NAME not address (e.g., "Starbucks" not "Starbucks, 123 Main St")
+    // For geographic areas, show address (e.g., "Deep Ellum, Dallas, TX")
+    if (detectedType === 'place') {
+      setSearchText(location.placeName); // Show place name only
+      setPlaceName(location.placeName);
+      setPlaceTypes(location.types);
+    } else {
+      setSearchText(location.address); // Show full address for areas
+      setPlaceName(undefined);
+      setPlaceTypes(undefined);
+    }
+
+    setSearchLocation({
+      latitude: location.latitude,
+      longitude: location.longitude,
+      address: location.address,
+    });
+    setSearchType(detectedType);
+
+    // Log search type for debugging
+    if (detectedType === 'place') {
+      console.log(`🎯 Searching FOR specific place: "${location.placeName}" (types: ${location.types?.join(', ')})`);
+    } else {
+      console.log(`📍 Searching FROM area: "${location.address}"`);
+    }
+  };
+
   const handleApply = () => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     const filters: SearchFilters = {
       searchQuery,
       location: searchLocation,
+      searchType,
+      placeName,
+      placeTypes,
       categories: selectedCategories,
       priceRange,
       minRating,
@@ -132,6 +219,7 @@ export function AdvancedSearchModal({
       openNow,
       groupOnly,
       showMap: false,
+      discoveryMode,
     };
 
     onApplyFilters(filters);
@@ -141,7 +229,11 @@ export function AdvancedSearchModal({
   const handleReset = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSearchQuery('');
+    setSearchText('');
     setSearchLocation(null);
+    setSearchType(null);
+    setPlaceName(undefined);
+    setPlaceTypes(undefined);
     setSelectedCategories([]);
     setPriceRange([0, 3]);
     setMinRating(0);
@@ -150,6 +242,7 @@ export function AdvancedSearchModal({
     setTimeOfDay([]);
     setOpenNow(false);
     setGroupOnly(false);
+    setDiscoveryMode('curated');
   };
 
   const getPriceLabel = (value: number) => {
@@ -160,10 +253,10 @@ export function AdvancedSearchModal({
   return (
     <Modal visible={visible} animationType="slide" transparent={false}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+        {/* Header - Flush with main feed header */}
+        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top + Spacing.sm }]}>
           <TouchableOpacity onPress={onClose} style={styles.headerButton}>
-            <Ionicons name="close" size={28} color={colors.text} />
+            <Ionicons name="chevron-back" size={28} color={colors.text} />
           </TouchableOpacity>
           <Text style={[Typography.headlineMedium, { color: colors.text }]}>
             Search & Filters
@@ -177,34 +270,53 @@ export function AdvancedSearchModal({
           {/* Search Bar */}
           <View style={styles.section}>
             <Text style={[Typography.labelLarge, styles.sectionTitle, { color: colors.text }]}>
-              Search Location
+              Search Place or Area
             </Text>
             <LocationAutocomplete
-              value={searchLocation?.address || ''}
+              value={searchText}
               onChangeText={(text) => {
-                if (!text) setSearchLocation(null);
+                setSearchText(text);
+                if (!text) {
+                  setSearchLocation(null);
+                  setSearchType(null);
+                  setPlaceName(undefined);
+                  setPlaceTypes(undefined);
+                }
               }}
-              onSelectLocation={(location) => {
-                setSearchLocation({
-                  latitude: location.latitude,
-                  longitude: location.longitude,
-                  address: location.address,
-                });
-              }}
+              onSelectLocation={handleLocationSelect}
               placeholder="Search for a place or area..."
               isDark={isDark}
               userLocation={userLocation}
             />
             {searchLocation && (
-              <TouchableOpacity
-                onPress={() => setSearchLocation(null)}
-                style={styles.clearButton}
-              >
-                <Ionicons name="close-circle" size={20} color={colors.icon} />
-                <Text style={[Typography.bodySmall, { color: colors.icon, marginLeft: 4 }]}>
-                  Clear location
-                </Text>
-              </TouchableOpacity>
+              <View>
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchText('');
+                    setSearchLocation(null);
+                    setSearchType(null);
+                    setPlaceName(undefined);
+                    setPlaceTypes(undefined);
+                  }}
+                  style={styles.clearButton}
+                >
+                  <Ionicons name="close-circle" size={20} color={colors.icon} />
+                  <Text style={[Typography.bodySmall, { color: colors.icon, marginLeft: 4 }]}>
+                    Clear search
+                  </Text>
+                </TouchableOpacity>
+                {/* Show what type of search is active */}
+                {searchType && (
+                  <View style={{ marginTop: Spacing.sm, padding: Spacing.sm, backgroundColor: isDark ? '#2a2a2a' : '#f0f0f0', borderRadius: BorderRadius.sm }}>
+                    <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                      {searchType === 'place'
+                        ? `🎯 Filtering to: ${placeName}`
+                        : `📍 Searching near: ${searchLocation.address.split(',')[0]}`
+                      }
+                    </Text>
+                  </View>
+                )}
+              </View>
             )}
           </View>
 
@@ -240,6 +352,11 @@ export function AdvancedSearchModal({
             )}
           </View>
 
+          {/* Discovery Mode Toggle */}
+          <View style={styles.section}>
+            <DiscoveryModeToggle mode={discoveryMode} onModeChange={setDiscoveryMode} />
+          </View>
+
           {/* Category Filters */}
           <View style={styles.section}>
             <Text style={[Typography.labelLarge, styles.sectionTitle, { color: colors.text }]}>
@@ -260,23 +377,25 @@ export function AdvancedSearchModal({
                     ]}
                     onPress={() => toggleCategory(category.id)}
                   >
-                    <Ionicons
-                      name={category.icon as any}
-                      size={18}
-                      color={isSelected ? '#ffffff' : colors.icon}
-                    />
-                    <Text
-                      style={[
-                        Typography.labelSmall,
-                        {
-                          color: isSelected ? '#ffffff' : colors.text,
-                          marginTop: 4,
-                        },
-                      ]}
-                      numberOfLines={1}
-                    >
-                      {category.label}
-                    </Text>
+                    <View style={styles.categoryContent}>
+                      <Ionicons
+                        name={category.icon as any}
+                        size={18}
+                        color={isSelected ? '#ffffff' : colors.icon}
+                      />
+                      <Text
+                        style={[
+                          Typography.labelSmall,
+                          {
+                            color: isSelected ? '#ffffff' : colors.text,
+                            marginTop: 4,
+                          },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {category.label}
+                      </Text>
+                    </View>
                   </TouchableOpacity>
                 );
               })}
@@ -559,6 +678,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1.5,
     padding: Spacing.xs,
+  },
+  categoryContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   toggleRow: {
     flexDirection: 'row',

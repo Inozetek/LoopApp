@@ -53,7 +53,7 @@ export async function saveRecommendationsToDB(
       place_name: rec.title,
       category: rec.category,
       status: 'pending',
-      confidence_score: (rec.score || 0) / 100, // Normalize to 0-1
+      confidence_score: Math.max(0.01, (rec.score || 1) / 100), // Normalize to 0.01-1 (constraint requires > 0)
       last_shown_at: now.toISOString(), // Track when shown
       refresh_count: 0, // Reset count for new recommendations
       viewed_at: null,
@@ -120,8 +120,7 @@ export async function loadRecommendationsFromDB(
         `and(status.eq.declined,last_shown_at.lt.${threeDaysAgo.toISOString()}),` +
         `and(status.in.(viewed,expired),last_shown_at.lt.${sevenDaysAgo.toISOString()})`
       )
-      .order('confidence_score', { descending: true })
-      .limit(10);
+      .order('confidence_score', { descending: true });
 
     if (error) {
       console.error('Error loading recommendations:', error);
@@ -133,12 +132,26 @@ export async function loadRecommendationsFromDB(
       return null;
     }
 
-    console.log(`📥 Loaded ${data.length} recommendations from database (with resurfacing logic)`);
-    console.log(`   - Excluded: not_interested, accepted, recently shown`);
+    // DEDUPLICATION: Remove duplicate place_ids (keep highest confidence score)
+    const seenPlaceIds = new Set<string>();
+    const uniqueData = data.filter((record: any) => {
+      if (seenPlaceIds.has(record.google_place_id)) {
+        console.log(`🔄 Skipping duplicate: ${record.place_name} (already seen)`);
+        return false;
+      }
+      seenPlaceIds.add(record.google_place_id);
+      return true;
+    });
+
+    // Limit to 10 after deduplication
+    const limitedData = uniqueData.slice(0, 10);
+
+    console.log(`📥 Loaded ${limitedData.length} unique recommendations from database (deduplicated from ${data.length})`);
+    console.log(`   - Excluded: not_interested, accepted, recently shown, duplicates`);
     console.log(`   - Included: pending, declined (>3 days), viewed/expired (>7 days)`);
 
     // Extract the recommendation data
-    const recommendations = data.map((record: any) => record.recommendation_data as Recommendation);
+    const recommendations = limitedData.map((record: any) => record.recommendation_data as Recommendation);
 
     // Check if cached recommendations have photos
     const withoutPhotos = recommendations.filter((r: any) => !r.imageUrl || r.imageUrl === '');

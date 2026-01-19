@@ -323,3 +323,64 @@ function mapGoogleTypesToCategory(types: string[]): string {
  * getMockActivities() - REMOVED FOR PRODUCTION
  * This function has been removed to ensure production-ready code only uses real Google Places API data.
  */
+
+/**
+ * Google Places Review interface
+ */
+export interface PlaceReview {
+  authorAttribution: {
+    displayName: string;
+    photoUri?: string;
+  };
+  rating: number;
+  text: {
+    text: string;
+    languageCode: string;
+  };
+  relativePublishTimeDescription: string; // "2 weeks ago"
+  originalText?: {
+    text: string;
+  };
+}
+
+/**
+ * Fetch reviews for a Google Place
+ * Uses the Google Places API (New) to get up to 5 most recent reviews
+ */
+export async function getPlaceReviews(placeId: string): Promise<PlaceReview[]> {
+  if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'your_key_here') {
+    console.error('❌ No Google Places API key found for reviews');
+    return [];
+  }
+
+  try {
+    console.log(`📝 Fetching reviews for place: ${placeId}`);
+
+    const response = await fetch(
+      `${PLACES_API_BASE}/${placeId}`,
+      {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': 'reviews', // Only request reviews field to minimize cost
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.error(`❌ Failed to fetch reviews: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const reviews = data.reviews || [];
+
+    console.log(`📝 Fetched ${reviews.length} reviews for ${placeId}`);
+
+    return reviews;
+  } catch (error) {
+    console.error('❌ Error fetching reviews:', error);
+    return [];
+  }
+}

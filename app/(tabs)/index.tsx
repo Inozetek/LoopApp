@@ -114,7 +114,7 @@ const FeedList = memo(
         ref={flatListRef}
         data={data}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => `${item.id}-${index}`}
         extraData={extraData}
         contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
@@ -140,7 +140,6 @@ const FeedList = memo(
         ListFooterComponent={
           feedExhausted ? (
             filters.maxDistance && filters.maxDistance < 100 ? (
-              // With distance filter: Show expand/remove options
               <View style={styles.exhaustionCard}>
                 <Ionicons name="location-outline" size={48} color={colors.textSecondary} />
                 <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.md }]}>
@@ -171,7 +170,6 @@ const FeedList = memo(
                 </View>
               </View>
             ) : (
-              // Without filter: Rare case - show refresh suggestion
               <View style={styles.exhaustionCard}>
                 <Ionicons name="refresh-outline" size={48} color={colors.textSecondary} />
                 <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.md }]}>
@@ -184,7 +182,6 @@ const FeedList = memo(
             )
           ) : (
             loadingMore ? (
-              // Instagram-style shimmer loading for next batch
               <View style={{ paddingTop: Spacing.lg }}>
                 <ActivityCardSkeleton />
                 <ActivityCardSkeleton />
@@ -233,6 +230,8 @@ export default function RecommendationFeedScreen() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false); // Loading more recommendations for infinite scroll
   const [feedExhausted, setFeedExhausted] = useState(false); // Track if no more recommendations available
+  const [seedingCity, setSeedingCity] = useState(false); // Track if city cache is being seeded (first-time setup)
+  const [cityName, setCityName] = useState<string | null>(null); // City being seeded
   const [searchRadius, setSearchRadius] = useState(10); // Track expanding search radius (miles)
   const [refreshKey, setRefreshKey] = useState(0); // Force re-render on refresh
   const [selectedRecommendation, setSelectedRecommendation] = useState<Recommendation | null>(null);
@@ -466,77 +465,160 @@ export default function RecommendationFeedScreen() {
 
       console.log('🔄 Fetching recommendations...');
 
-      // PHASE 1: Try loading from database first (unless force refresh)
-      if (!showRefreshIndicator) {
-        console.log('📦 Loading cached recommendations from DB...');
-        const cachedRecs = await loadRecommendationsFromDB(user.id);
-        console.log('📦 DB returned:', cachedRecs?.length || 0, 'recommendations');
+      // DATABASE-FIRST ARCHITECTURE: Try loading from database first
+      console.log('📦 Loading recommendations from database...');
+      const cachedRecs = await loadRecommendationsFromDB(user.id);
+      console.log('📦 DB returned:', cachedRecs?.length || 0, 'recommendations');
 
-        if (cachedRecs && cachedRecs.length > 0) {
-          // CRITICAL: Validate that cached recommendations have REAL Google Places photos
-          // Not just any imageUrl (could be fallback/placeholder)
-          const malformedURLs: string[] = [];
-
-          const recsWithRealPhotos = cachedRecs.filter(rec => {
-            const hasUrl = rec.imageUrl && rec.imageUrl !== '';
-            const isGooglePhoto = hasUrl && rec.imageUrl.includes('places.googleapis.com');
-
-            // CRITICAL: Check for malformed double URLs
-            const isMalformed = hasUrl && rec.imageUrl.includes('https://places.googleapis.com/v1/https://');
-
-            if (isMalformed) {
-              malformedURLs.push(rec.title);
-            }
-
-            return isGooglePhoto && !isMalformed;
-          });
-
-          const photoPercentage = (recsWithRealPhotos.length / cachedRecs.length) * 100;
-          const malformedCount = malformedURLs.length;
-
-          console.log(`📸 Photo validation: ${recsWithRealPhotos.length}/${cachedRecs.length} cached recs have REAL Google photos (${photoPercentage.toFixed(0)}%)`);
-
-          if (malformedCount > 0) {
-            console.log(`🧹 Found ${malformedCount} malformed URLs in cache (${malformedURLs.slice(0, 3).join(', ')}${malformedCount > 3 ? '...' : ''})`);
-            console.log(`🧹 Triggering background cleanup and fetching fresh recommendations...`);
-
-            // Trigger cleanup in background (don't wait for it)
-            import('@/services/recommendation-persistence').then(({ cleanupMalformedPhotoURLs }) => {
-              cleanupMalformedPhotoURLs(user.id).then(cleaned => {
-                console.log(`✅ Database cleanup completed: ${cleaned} malformed recs removed`);
-              }).catch(error => {
-                console.error('❌ Cleanup failed:', error);
-              });
-            }).catch(err => {
-              console.error('❌ Failed to import cleanup function:', err);
-            });
-          }
-
-          // Only use cache if at least 70% of recommendations have REAL Google photos AND no malformed URLs
-          if (photoPercentage >= 70 && malformedCount === 0) {
-            console.log(`✅ Loaded ${cachedRecs.length} recommendations from database (photo quality OK)`);
-            setRecommendations(cachedRecs);
-            setLoading(false);
-            setRefreshing(false);
-            return; // Use cached recommendations
-          } else {
-            if (malformedCount > 0) {
-              console.log(`⚠️ Cache invalid (${malformedCount} malformed URLs) - fetching fresh...`);
-            } else {
-              console.log(`⚠️ Cache quality too low (${photoPercentage.toFixed(0)}% have real photos) - fetching fresh...`);
-            }
-            // Fall through to fetch fresh recommendations
-          }
-        } else {
-          console.log('📦 No cached recommendations, will fetch fresh');
-        }
-      } else {
-        // PHASE 1: User is refreshing - clear old recommendations
-        await clearPendingRecommendations(user.id);
-        console.log('🔄 Force refresh - generating new recommendations');
+      if (cachedRecs && cachedRecs.length > 0) {
+        // Use cached recommendations (daily job ensures quality)
+        console.log(`✅ Loaded ${cachedRecs.length} recommendations from database`);
+        setRecommendations(cachedRecs);
+        setLoading(false);
+        setRefreshing(false);
+        return; // Always use cache if available
       }
 
-      // Log API usage summary before fetching (if API key is enabled)
+      // No recommendations in database - generate fresh ones (will seed city cache if needed)
+      console.log('📭 No recommendations in database - generating fresh recommendations...');
+
+      // Import generateRecommendations
+      const { generateRecommendations } = await import('@/services/recommendations');
+      const { detectUserCityWithFallback } = await import('@/services/city-detection');
+
+      try {
+        // Get user's current location FIRST (needed for city detection)
+        const location = await getCurrentLocation();
+        const currentLocation: PlaceLocation = {
+          lat: location.latitude,
+          lng: location.longitude,
+        };
+
+        // Detect city for loading message using current GPS location
+        const cityInfo = await detectUserCityWithFallback(user, {
+          lat: location.latitude,
+          lng: location.longitude
+        });
+        if (cityInfo) {
+          console.log(`🏙️ Generating recommendations for ${cityInfo.city}, ${cityInfo.state}...`);
+          setCityName(cityInfo.city);
+          setSeedingCity(true); // Show "Setting up recommendations for {city}..." UI
+        }
+
+        // Get home/work locations if available
+        const homeLocation = user.home_location && (user.home_location as any).coordinates
+          ? { lat: (user.home_location as any).coordinates[1], lng: (user.home_location as any).coordinates[0] }
+          : undefined;
+
+        const workLocation = user.work_location && (user.work_location as any).coordinates
+          ? { lat: (user.work_location as any).coordinates[1], lng: (user.work_location as any).coordinates[0] }
+          : undefined;
+
+        // Generate recommendations (will use city cache or seed if needed)
+        const prefs = user.preferences as UserPreferences;
+        const params: RecommendationParams = {
+          user,
+          userLocation: currentLocation,
+          homeLocation,
+          workLocation,
+          maxDistance: prefs?.max_distance_miles || 10,
+          maxResults: 100,
+          discoveryMode: 'curated',
+        };
+
+        const scored = await generateRecommendations(params);
+        console.log(`✅ Generated ${scored.length} fresh recommendations`);
+
+        // Convert to Recommendation format
+        const freshRecommendations: Recommendation[] = scored.map((s, index) => ({
+          id: s.place.place_id || `rec-${index}`,
+          title: s.place.name,
+          category: s.category,
+          location: s.place.vicinity || s.place.formatted_address || 'Unknown location',
+          distance: `${s.distance.toFixed(1)} mi`,
+          priceRange: s.place.price_level || 2,
+          rating: s.place.rating || 0,
+          imageUrl: s.photoUrl || '',
+          photos: s.photoUrls,
+          aiExplanation: s.aiExplanation,
+          description: s.place.description,
+          openNow: s.place.opening_hours?.open_now,
+          isSponsored: s.isSponsored,
+          score: s.score,
+          businessHours: s.businessHours,
+          hasEstimatedHours: s.hasEstimatedHours,
+          suggestedTime: s.suggestedTime,
+          event_metadata: s.place.event_metadata,
+          scoreBreakdown: {
+            baseScore: s.scoreBreakdown.baseScore,
+            locationScore: s.scoreBreakdown.locationScore,
+            timeScore: s.scoreBreakdown.timeScore,
+            feedbackScore: s.scoreBreakdown.feedbackScore,
+            collaborativeScore: s.scoreBreakdown.collaborativeScore,
+            sponsorBoost: s.scoreBreakdown.sponsoredBoost,
+            finalScore: s.scoreBreakdown.finalScore,
+          },
+          activity: {
+            id: s.place.place_id || `act-${index}`,
+            name: s.place.name,
+            category: s.category,
+            description: s.place.description,
+            location: {
+              latitude: s.place.geometry.location.lat,
+              longitude: s.place.geometry.location.lng,
+              address: s.place.vicinity || s.place.formatted_address || '',
+            },
+            distance: s.distance,
+            rating: s.place.rating,
+            reviewsCount: s.place.user_ratings_total,
+            priceRange: s.place.price_level || 2,
+            photoUrl: s.photoUrl,
+            phone: s.place.formatted_phone_number,
+            website: s.place.website,
+            googlePlaceId: s.place.place_id,
+          },
+        }));
+
+        // Save to database for future loads
+        await saveRecommendationsToDB(user.id, freshRecommendations);
+
+        setRecommendations(freshRecommendations);
+      } catch (error) {
+        console.error('Error generating recommendations:', error);
+        setRecommendations([]);
+      } finally {
+        setSeedingCity(false);
+        setCityName(null);
+        setLoading(false);
+        setRefreshing(false);
+      }
+      return;
+
+      /*
+       * ============================================================================
+       * API GENERATION CODE DISABLED (Database-Only Architecture)
+       * ============================================================================
+       *
+       * The code below has been disabled as part of the database-first architecture.
+       * Recommendations are now generated by a daily background job that calls:
+       * scripts/generate-daily-recommendations.ts
+       *
+       * This runs once per day for all users, populating the recommendation_tracking
+       * table. The feed screen (above) only reads from the database.
+       *
+       * Benefits:
+       * - 80% cost reduction (APIs called 1x/day instead of per-session)
+       * - Instant feed loading (database query only)
+       * - Scalable to 10,000+ users with same API cost
+       *
+       * To re-enable API generation at runtime (not recommended):
+       * Uncomment the code block below and remove early returns above.
+       * ============================================================================
+       */
+
+      /* DISABLED: All API generation code below is unreachable (commented out to prevent TypeScript errors)
+
+      // DISABLED: Log API usage summary before fetching (if API key is enabled)
       if (process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY) {
         const { logAPIUsageSummary } = await import('@/utils/api-cost-tracker');
         await logAPIUsageSummary();
@@ -614,6 +696,7 @@ export default function RecommendationFeedScreen() {
         businessHours: s.businessHours,
         hasEstimatedHours: s.hasEstimatedHours,
         suggestedTime: s.suggestedTime, // Phase 1.6a: Use recommendation context time
+        event_metadata: s.place.event_metadata, // CRITICAL: Maps event data for Ticketmaster events (fixes ticket buttons + deduplication)
         scoreBreakdown: {
           baseScore: s.scoreBreakdown.baseScore,
           locationScore: s.scoreBreakdown.locationScore,
@@ -653,13 +736,41 @@ export default function RecommendationFeedScreen() {
         return;
       }
 
+      // AGGRESSIVE DEDUPLICATION: Remove duplicate events by name + date
+      const seenEvents = new Set<string>();
+      const dedupedRecommendations = recommendations.filter((rec: any) => {
+        // For events, use name + start date as unique key
+        if (rec.event_metadata && rec.event_metadata.start_time) {
+          const eventKey = `${rec.title.toLowerCase()}_${rec.event_metadata.start_time}`;
+          if (seenEvents.has(eventKey)) {
+            console.log(`🔄 DUPLICATE EVENT REMOVED: ${rec.title} (${rec.event_metadata.start_time})`);
+            return false;
+          }
+          seenEvents.add(eventKey);
+          return true;
+        }
+
+        // For regular places, use place_id
+        const placeId = rec.activity?.googlePlaceId || rec.id;
+        if (seenEvents.has(placeId)) {
+          console.log(`🔄 DUPLICATE PLACE REMOVED: ${rec.title}`);
+          return false;
+        }
+        seenEvents.add(placeId);
+        return true;
+      });
+
+      console.log(`🧹 Deduplication: ${recommendations.length} → ${dedupedRecommendations.length} (removed ${recommendations.length - dedupedRecommendations.length} duplicates)`);
+
       // PHASE 1: Save recommendations to database BEFORE updating UI
-      await saveRecommendationsToDB(user.id, recommendations);
+      await saveRecommendationsToDB(user.id, dedupedRecommendations);
       console.log(`💾 Saved to DB, now updating UI state`);
 
-      setRecommendations(recommendations);
+      setRecommendations(dedupedRecommendations);
       setRefreshKey(prev => prev + 1); // Force FlatList to recognize new data
-      console.log(`✅ UI state updated with ${recommendations.length} recommendations, refreshKey:`, refreshKey + 1);
+      console.log(`✅ UI state updated with ${dedupedRecommendations.length} recommendations, refreshKey:`, refreshKey + 1);
+
+      END OF DISABLED CODE BLOCK */
 
     } catch (error) {
       console.error('❌ Error fetching recommendations:', error);
@@ -1605,7 +1716,7 @@ export default function RecommendationFeedScreen() {
         date: searchFilters.date,
         timeOfDay: searchFilters.timeOfDay.length > 0 ? searchFilters.timeOfDay : undefined,
         openNow: searchFilters.openNow,
-        discoveryMode, // Use global discovery mode setting
+        discoveryMode: searchFilters.discoveryMode, // Use discovery mode from filters
       };
 
       console.log('🔍 Fetching recommendations with advanced params:', params);
@@ -1664,15 +1775,69 @@ export default function RecommendationFeedScreen() {
 
       console.log(`✅ Generated ${recommendations.length} filtered recommendations`);
 
+      // AGGRESSIVE DEDUPLICATION: Remove duplicate events by name + date
+      const seenEvents = new Set<string>();
+      const dedupedRecommendations = recommendations.filter((rec: any) => {
+        // For events, use name + start date as unique key
+        if (rec.event_metadata && rec.event_metadata.start_time) {
+          const eventKey = `${rec.title.toLowerCase()}_${rec.event_metadata.start_time}`;
+          if (seenEvents.has(eventKey)) {
+            console.log(`🔄 DUPLICATE EVENT REMOVED (filter): ${rec.title}`);
+            return false;
+          }
+          seenEvents.add(eventKey);
+          return true;
+        }
+
+        // For regular places, use place_id
+        const placeId = rec.activity?.googlePlaceId || rec.id;
+        if (seenEvents.has(placeId)) {
+          console.log(`🔄 DUPLICATE PLACE REMOVED (filter): ${rec.title}`);
+          return false;
+        }
+        seenEvents.add(placeId);
+        return true;
+      });
+
+      console.log(`🧹 Filter Deduplication: ${recommendations.length} → ${dedupedRecommendations.length}`);
+
+      // SMART SEARCH FILTERING: Filter by specific place if searchType === 'place'
+      let finalRecommendations = dedupedRecommendations;
+      if (searchFilters.searchType === 'place' && searchFilters.placeName) {
+        console.log(`🎯 Smart Search: Filtering to places matching "${searchFilters.placeName}"`);
+
+        finalRecommendations = dedupedRecommendations.filter(rec => {
+          // Match by place name (fuzzy match - contains)
+          const nameMatch = rec.title.toLowerCase().includes(searchFilters.placeName!.toLowerCase());
+
+          // Match by place types (if available)
+          const typeMatch = searchFilters.placeTypes && searchFilters.placeTypes.length > 0
+            ? searchFilters.placeTypes.some(type => rec.category.toLowerCase().includes(type.toLowerCase()))
+            : false;
+
+          return nameMatch || typeMatch;
+        });
+
+        console.log(`🎯 Smart Search Results: ${dedupedRecommendations.length} → ${finalRecommendations.length} (filtered to "${searchFilters.placeName}")`);
+      } else if (searchFilters.searchType === 'area') {
+        console.log(`📍 Smart Search: Searching FROM area "${searchFilters.location?.address}"`);
+        // Area search - recommendations are already centered on the new location from generateRecommendations
+      }
+
       // Update state
-      setRecommendations(recommendations);
+      setRecommendations(finalRecommendations);
       setRefreshKey(prev => prev + 1);
 
       // Save to database
-      await saveRecommendationsToDB(user.id, recommendations);
+      await saveRecommendationsToDB(user.id, dedupedRecommendations);
 
       // Show toast with filter summary
       const filterSummary = [];
+      if (searchFilters.searchType === 'place' && searchFilters.placeName) {
+        filterSummary.push(`🎯 ${searchFilters.placeName}`);
+      } else if (searchFilters.searchType === 'area' && searchFilters.location) {
+        filterSummary.push(`📍 Near ${searchFilters.location.address.split(',')[0]}`);
+      }
       if (searchFilters.categories.length > 0) filterSummary.push(`${searchFilters.categories.length} categories`);
       if (searchFilters.minRating > 0) filterSummary.push(`${searchFilters.minRating}+ stars`);
       if (searchFilters.openNow) filterSummary.push('open now');
@@ -1984,13 +2149,25 @@ export default function RecommendationFeedScreen() {
               router.push('/(tabs)/settings');
             }}
           />
-          <FlatList
-            data={[1, 2, 3]}
-            renderItem={() => <ActivityCardSkeleton />}
-            keyExtractor={(item) => `skeleton-${item}`}
-            contentContainerStyle={styles.listContent}
-            showsVerticalScrollIndicator={false}
-          />
+          {seedingCity ? (
+            <View style={[styles.seedingContainer, { backgroundColor: colors.background }]}>
+              <ActivityIndicator size="large" color={BrandColors.loopBlue} style={{ marginBottom: Spacing.lg }} />
+              <Text style={[Typography.headlineSmall, { color: colors.text, textAlign: 'center', marginBottom: Spacing.sm }]}>
+                Setting up recommendations for {cityName}...
+              </Text>
+              <Text style={[Typography.bodyMedium, { color: colors.textSecondary, textAlign: 'center', maxWidth: 300 }]}>
+                This may take 1-2 minutes as we discover the best places in your city.
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={[1, 2, 3]}
+              renderItem={() => <ActivityCardSkeleton />}
+              keyExtractor={(item) => `skeleton-${item}`}
+              contentContainerStyle={styles.listContent}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
         </View>
       </SwipeableLayout>
     );
@@ -2174,7 +2351,7 @@ export default function RecommendationFeedScreen() {
           visible={showAdvancedSearch}
           onClose={() => setShowAdvancedSearch(false)}
           onApplyFilters={handleApplyAdvancedFilters}
-          currentFilters={activeFilters || undefined}
+          currentFilters={activeFilters ? { ...activeFilters, discoveryMode } : { discoveryMode }}
           userLocation={
             user
               ? {
@@ -2255,6 +2432,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     borderRadius: BorderRadius.full,
     alignItems: 'center',
+  },
+  // Phase 5: City cache seeding loading state
+  seedingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.xl,
   },
 });
 

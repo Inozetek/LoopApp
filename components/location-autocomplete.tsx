@@ -61,7 +61,6 @@ export function LocationAutocomplete({
   useEffect(() => {
     // Don't fetch if we just selected a prediction
     if (justSelected) {
-      setJustSelected(false);
       return;
     }
 
@@ -180,7 +179,20 @@ export function LocationAutocomplete({
       distance_miles: p.distance_meters ? (p.distance_meters / 1609.34).toFixed(1) : 'N/A'
     })));
 
-    setPredictions(sortedPredictions);
+    // Filter results by distance (50km max - prioritize nearby results)
+    const MAX_DISTANCE_METERS = 50000; // 50km = ~31 miles
+    const nearbyPredictions = sortedPredictions.filter(p => {
+      if (p.distance_meters !== undefined) {
+        return p.distance_meters <= MAX_DISTANCE_METERS;
+      }
+      return true; // Keep if distance unknown
+    });
+
+    if (nearbyPredictions.length < sortedPredictions.length) {
+      console.log(`📍 Filtered to ${nearbyPredictions.length} nearby results (removed ${sortedPredictions.length - nearbyPredictions.length} results >50km away)`);
+    }
+
+    setPredictions(nearbyPredictions);
     setShowPredictions(true);
   };
 
@@ -297,8 +309,9 @@ export function LocationAutocomplete({
     Keyboard.dismiss();
     inputRef.current?.blur();
 
-    // Close predictions immediately
+    // Close predictions immediately and clear them
     setShowPredictions(false);
+    setPredictions([]);
 
     // Fetch place details to get coordinates and types
     try {
@@ -357,8 +370,12 @@ export function LocationAutocomplete({
           value={value}
           onChangeText={(text) => {
             onChangeText(text);
-            // Only show predictions if we didn't just select one
-            if (!justSelected && text.length >= 3) {
+            // Reset justSelected flag when user starts typing again
+            if (justSelected) {
+              setJustSelected(false);
+            }
+            // Show predictions when typing
+            if (text.length >= 3) {
               setShowPredictions(true);
             }
           }}

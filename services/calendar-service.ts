@@ -637,6 +637,13 @@ export async function canMakeItOnTime(
     }
 
     const previousTask = data[0];
+
+    // Skip travel check if previous task has no location
+    if (!previousTask.location || !previousTask.location.coordinates) {
+      console.log('⚠️ Previous task has no location, skipping travel check');
+      return { feasible: true };
+    }
+
     const previousLocation = {
       latitude: previousTask.location.coordinates[1],
       longitude: previousTask.location.coordinates[0],
@@ -666,5 +673,89 @@ export async function canMakeItOnTime(
   } catch (error) {
     console.error('❌ Error in canMakeItOnTime:', error);
     return { feasible: true }; // Default to feasible on error
+  }
+}
+
+/**
+ * Schedule an Ticketmaster event to the calendar
+ *
+ * Key differences from regular tasks:
+ * - Arrival time pre-filled at event start - 10 minutes
+ * - Blocks full event duration (arrival → event end)
+ * - Stores event metadata for future reference
+ *
+ * @param params - Event scheduling parameters
+ * @returns Promise with created calendar event ID
+ */
+export async function scheduleEvent(params: {
+  userId: string;
+  eventName: string;
+  arrivalTime: Date;
+  eventStartTime: Date;
+  eventEndTime: Date;
+  location: { latitude: number; longitude: number; address: string };
+  eventMetadata: {
+    event_url?: string;
+    organizer?: string;
+    is_free?: boolean;
+    ticket_price?: {
+      min: number;
+      max: number;
+      currency: string;
+    };
+  };
+  activityId?: string; // Reference to activities table
+}): Promise<{ success: boolean; eventId?: string; error?: string }> {
+  try {
+    const { userId, eventName, arrivalTime, eventEndTime, location, eventMetadata, activityId } = params;
+
+    console.log(`📅 Scheduling event: ${eventName}`);
+    console.log(`🕐 Arrival: ${arrivalTime.toLocaleString()}`);
+    console.log(`🎭 Event ends: ${eventEndTime.toLocaleString()}`);
+
+    // Create calendar event with full duration block
+    const { data, error } = await supabase
+      .from('calendar_events')
+      .insert({
+        user_id: userId,
+        title: eventName,
+        start_time: arrivalTime.toISOString(), // User's arrival time (event start - 10 min by default)
+        end_time: eventEndTime.toISOString(),   // Event end time (blocks full duration)
+        location: {
+          type: 'Point',
+          coordinates: [location.longitude, location.latitude],
+        },
+        address: location.address,
+        category: 'event', // Mark as event category
+        source: 'recommendation',
+        activity_id: activityId,
+        status: 'scheduled',
+        // Store event metadata in description for now
+        // TODO: Add event_metadata column to calendar_events table in future migration
+        description: JSON.stringify({
+          is_event: true,
+          event_url: eventMetadata.event_url,
+          organizer: eventMetadata.organizer,
+          is_free: eventMetadata.is_free,
+          ticket_price: eventMetadata.ticket_price,
+        }),
+      })
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('❌ Error scheduling event:', error);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`✅ Event scheduled successfully: ${data.id}`);
+
+    return { success: true, eventId: data.id };
+  } catch (error) {
+    console.error('❌ Exception in scheduleEvent:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
   }
 }

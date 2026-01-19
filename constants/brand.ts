@@ -46,6 +46,20 @@ export const BrandColors = {
   whiteOverlay: 'rgba(255, 255, 255, 0.9)',
   blueOverlay: 'rgba(0, 102, 255, 0.1)',
   greenOverlay: 'rgba(0, 217, 163, 0.1)',
+
+  // Bottom Sheet Colors (YouTube-inspired dark theme + Loop brand accents)
+  sheetBackground: '#1C1C1E',        // Dark gray background (YouTube-inspired)
+  sheetHandle: '#3A3A3C',            // Handle indicator (subtle gray)
+  sheetText: '#FFFFFF',              // Primary text (white)
+  sheetSubtext: '#8E8E93',           // Secondary text (light gray)
+  sheetBorder: '#3A3A3C',            // Separator lines (subtle gray)
+  sheetDestructive: '#FF3B30',       // Destructive action (iOS red)
+  sheetBackdrop: 'rgba(0,0,0,0.5)',  // Semi-transparent black backdrop
+
+  // Loop Brand Accents for Bottom Sheets
+  sheetPrimaryAction: '#00BFFF',     // Loop Blue for primary actions (matches loopBlue)
+  sheetFeaturedAction: '#FF9500',    // Loop Orange for featured/urgent actions (matches loopOrange)
+  sheetPrimaryActionPressed: '#00A0E3', // Darker blue for pressed state (matches loopBlueDark)
 };
 
 export const ThemeColors = {
