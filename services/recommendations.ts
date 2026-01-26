@@ -298,10 +298,13 @@ async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_referen
   }
 
   try {
-    console.log(`📸 Enriching photos for place: ${placeId}`);
+    // The new Places API (v1) requires resource name format: places/PLACE_ID
+    // Convert plain place ID to resource name if needed
+    const resourceName = placeId.startsWith('places/') ? placeId : `places/${placeId}`;
+    console.log(`📸 Enriching photos for place: ${resourceName}`);
 
     const response = await fetch(
-      `https://places.googleapis.com/v1/${placeId}`,
+      `https://places.googleapis.com/v1/${resourceName}`,
       {
         method: 'GET',
         headers: {
@@ -313,7 +316,10 @@ async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_referen
     );
 
     if (!response.ok) {
-      console.error(`❌ Failed to fetch place details: ${response.status}`);
+      // Log more details for debugging
+      const errorText = await response.text().catch(() => 'Could not read error body');
+      console.error(`❌ Failed to fetch place details for ${resourceName}: ${response.status}`);
+      console.error(`   Error details: ${errorText.substring(0, 200)}`);
       return [];
     }
 

@@ -67,7 +67,18 @@
       "Bash(fi)",
       "Bash(done)",
       "Bash(du:*)",
-      "Bash(del:*)"
+      "Bash(del:*)",
+      "WebSearch",
+      "WebFetch(domain:developer.ticketmaster.com)",
+      "Bash(npx supabase:*)",
+      "Bash(npx ts-node:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run lint:*)",
+      "WebFetch(domain:www.eventbrite.com)",
+      "WebFetch(domain:www.predicthq.com)",
+      "WebFetch(domain:docs.predicthq.com)",
+      "WebFetch(domain:www.openwebninja.com)",
+      "Bash(npx eslint:*)"
     ],
     "deny": [],
     "ask": []
