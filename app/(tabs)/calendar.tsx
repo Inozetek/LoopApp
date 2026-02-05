@@ -47,6 +47,7 @@ import { CalendarEventSkeleton } from '@/components/skeleton-loader';
 import { LoopMapView } from '@/components/loop-map-view';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
+import { CalendarHeader } from '@/components/calendar-header';
 import { getCurrentLocation } from '@/services/location-service';
 import {
   getPendingFeedbackActivities,
@@ -706,45 +707,42 @@ export default function CalendarScreen() {
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
         {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, Typography.headlineLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-          Calendar
-        </Text>
-        <View style={styles.headerActions}>
+        <CalendarHeader
+          title="My Loop"
+          subtitle={selectedDate}
+          onAddPress={openCreateModal}
+        />
+
+        {/* Action Bar (below header) */}
+        <View style={[styles.actionBar, { backgroundColor: Colors[colorScheme ?? 'light'].background, borderBottomColor: Colors[colorScheme ?? 'light'].border }]}>
           {/* Sync Calendar Button */}
           <TouchableOpacity
-            style={styles.syncButton}
+            style={styles.actionButton}
             onPress={handleSyncCalendar}
             disabled={isSyncing}
           >
             <Ionicons
-              name={isSyncing ? 'sync' : 'calendar'}
+              name={isSyncing ? 'sync' : 'calendar-outline'}
               size={20}
-              color={isSyncing ? '#888' : BrandColors.loopBlue}
+              color={isSyncing ? '#888' : Colors[colorScheme ?? 'light'].text}
             />
-            <Text style={[styles.syncText, { color: isSyncing ? '#888' : BrandColors.loopBlue }]}>
+            <Text style={[styles.actionButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
               {isSyncing ? 'Syncing...' : 'Sync'}
             </Text>
           </TouchableOpacity>
 
           {/* List/Loop Toggle */}
-          <TouchableOpacity style={styles.toggleButton} onPress={toggleViewMode}>
+          <TouchableOpacity style={styles.actionButton} onPress={toggleViewMode}>
             <Ionicons
-              name={viewMode === 'list' ? 'map' : 'list'}
-              size={24}
-              color={BrandColors.loopBlue}
+              name={viewMode === 'list' ? 'map-outline' : 'list-outline'}
+              size={20}
+              color={Colors[colorScheme ?? 'light'].text}
             />
-            <Text style={[styles.toggleText, { color: BrandColors.loopBlue }]}>
-              {viewMode === 'list' ? 'Loop' : 'List'}
+            <Text style={[styles.actionButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
+              {viewMode === 'list' ? 'Map View' : 'List View'}
             </Text>
           </TouchableOpacity>
-
-          {/* Add Button */}
-          <TouchableOpacity style={styles.addButton} onPress={openCreateModal}>
-            <Ionicons name="add-circle" size={32} color={BrandColors.loopBlue} />
-          </TouchableOpacity>
         </View>
-      </View>
 
       {viewMode === 'list' ? (
         <>
@@ -1470,51 +1468,32 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl + 40,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    flex: 1,
-  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.md,
+    gap: Spacing.xs,
   },
-  syncButton: {
+  headerIconButton: {
+    padding: Spacing.xs,
+  },
+  actionBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.sm,
-    backgroundColor: `${BrandColors.loopBlue}1A`, // 10% opacity
-    borderRadius: BorderRadius.md,
-    marginRight: Spacing.sm,
-  },
-  syncText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  toggleButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-evenly',
     paddingVertical: Spacing.sm,
     paddingHorizontal: Spacing.md,
-    backgroundColor: `${BrandColors.loopBlue}1A`, // 10% opacity
-    borderRadius: BorderRadius.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  toggleText: {
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs,
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+  },
+  actionButtonText: {
     fontSize: 14,
-    fontWeight: '600',
-  },
-  addButton: {
-    padding: Spacing.sm,
+    fontWeight: '500',
   },
   loopViewContainer: {
     flex: 1,

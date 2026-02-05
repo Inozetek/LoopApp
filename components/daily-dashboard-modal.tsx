@@ -249,7 +249,30 @@ interface StatsViewProps {
 }
 
 function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
-  const { stats, notifications } = data;
+  const { stats, notifications, today_tasks } = data;
+
+  // Get the next upcoming task
+  const nextTask = today_tasks?.find((task) => {
+    const taskTime = new Date(task.start_time);
+    return taskTime > new Date();
+  }) || today_tasks?.[0];
+
+  // Format time until next task
+  const getTimeUntilTask = (taskTime: string) => {
+    const now = new Date();
+    const task = new Date(taskTime);
+    const diffMs = task.getTime() - now.getTime();
+
+    if (diffMs < 0) return 'Now';
+
+    const diffMins = Math.floor(diffMs / 60000);
+    if (diffMins < 60) return `in ${diffMins} min`;
+
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `in ${diffHours}h`;
+
+    return task.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+  };
 
   return (
     <ScrollView
@@ -257,69 +280,159 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
       contentContainerStyle={styles.scrollContent}
       showsVerticalScrollIndicator={false}
     >
-      {/* GREETING */}
-      <Text style={[styles.greeting, Typography.headlineLarge, { color: colors.text }]}>
-        What's happening around you today
-      </Text>
+      {/* WELCOME BACK + NEXT TASK */}
+      <View style={[styles.welcomeCard, { backgroundColor: colors.card }]}>
+        <Text style={[styles.welcomeTitle, { color: colors.text }]}>
+          Welcome back
+        </Text>
 
-      {/* STATS CARDS */}
-      <View style={styles.statsGrid}>
-        {/* Loops Planned */}
-        <StatCard
-          icon="calendar"
-          title="Loops Planned"
-          value={stats.loops_planned_count}
-          subtitle={
-            stats.loops_summary
-              ? `${stats.loops_summary.total_stops} stops today`
-              : 'No loops yet'
-          }
-          colors={colors}
-          gradient={['#00BFFF', '#0080FF']}
-        />
-
-        {/* Friends Active */}
-        <StatCard
-          icon="person.2.fill"
-          title="Friends on Loops"
-          value={stats.friends_active_count}
-          subtitle={
-            stats.friends_active_count > 0
-              ? `${stats.friends_active_count} embarking today`
-              : 'None yet'
-          }
-          colors={colors}
-          gradient={['#00FF9F', '#00CC7F']}
-        />
-
-        {/* New Recommendations */}
-        <StatCard
-          icon="sparkles"
-          title="New Recommendations"
-          value={stats.new_recommendations_count}
-          subtitle="Intelligent suggestions"
-          colors={colors}
-          gradient={['#FF6B9D', '#C44569']}
-        />
-
-        {/* Pending Invites */}
-        {stats.pending_invites_count > 0 && (
-          <StatCard
-            icon="envelope.fill"
-            title="Pending Invites"
-            value={stats.pending_invites_count}
-            subtitle="Group activities"
-            colors={colors}
-            gradient={['#FFA94D', '#FF8B13']}
-          />
+        {nextTask ? (
+          <View style={styles.nextTaskContainer}>
+            <Text style={[styles.nextTaskLabel, { color: colors.textSecondary }]}>
+              Here's your next task:
+            </Text>
+            <View style={[styles.nextTaskCard, { backgroundColor: colors.cardBackground, borderColor: BrandColors.strongMatchGlow }]}>
+              <View style={styles.nextTaskInfo}>
+                <Text style={[styles.nextTaskName, { color: colors.text }]} numberOfLines={1}>
+                  {nextTask.title}
+                </Text>
+                {nextTask.address && (
+                  <Text style={[styles.nextTaskLocation, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {nextTask.address}
+                  </Text>
+                )}
+                <Text style={[styles.nextTaskTime, { color: BrandColors.loopBlue }]}>
+                  {getTimeUntilTask(nextTask.start_time)}
+                </Text>
+              </View>
+              <IconSymbol name="chevron.right" size={20} color={colors.textSecondary} />
+            </View>
+          </View>
+        ) : (
+          <Text style={[styles.noTasksText, { color: colors.textSecondary }]}>
+            No tasks scheduled for today. Explore recommendations below!
+          </Text>
         )}
       </View>
 
-      {/* NOTIFICATIONS */}
+      {/* LOOPS PLANNED THIS WEEK */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol name="calendar" size={20} color={BrandColors.loopBlue} />
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Loops planned this week
+          </Text>
+        </View>
+        <Text style={[styles.sectionValue, { color: colors.text }]}>
+          {stats.loops_planned_count || 0}
+        </Text>
+        <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+          {stats.loops_summary?.total_stops
+            ? `${stats.loops_summary.total_stops} total stops`
+            : 'No loops planned yet'}
+        </Text>
+      </View>
+
+      {/* TASKS IN TODAY'S LOOP */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol name="list.bullet" size={20} color={BrandColors.loopBlue} />
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Tasks in today's loop
+          </Text>
+        </View>
+        {today_tasks && today_tasks.length > 0 ? (
+          <View style={styles.tasksList}>
+            {today_tasks.slice(0, 5).map((task, index) => (
+              <View key={task.id || index} style={[styles.taskItem, { borderBottomColor: colors.border }]}>
+                <View style={[styles.taskDot, { backgroundColor: BrandColors.loopBlue }]} />
+                <View style={styles.taskItemContent}>
+                  <Text style={[styles.taskItemName, { color: colors.text }]} numberOfLines={1}>
+                    {task.title}
+                  </Text>
+                  <Text style={[styles.taskItemTime, { color: colors.textSecondary }]}>
+                    {new Date(task.start_time).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true
+                    })}
+                  </Text>
+                </View>
+              </View>
+            ))}
+            {today_tasks.length > 5 && (
+              <Text style={[styles.moreTasksText, { color: colors.textSecondary }]}>
+                +{today_tasks.length - 5} more tasks
+              </Text>
+            )}
+          </View>
+        ) : (
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No tasks for today
+          </Text>
+        )}
+      </View>
+
+      {/* NEW RECOMMENDATIONS */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol name="sparkles" size={20} color={BrandColors.loopBlue} />
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            New recommendations
+          </Text>
+        </View>
+        <Text style={[styles.sectionValue, { color: colors.text }]}>
+          {stats.new_recommendations_count || 0}
+        </Text>
+        <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+          AI-curated suggestions for you
+        </Text>
+      </View>
+
+      {/* GROUP RECOMMENDATIONS / FRIEND REQUESTS */}
+      <View style={styles.sectionContainer}>
+        <View style={styles.sectionHeader}>
+          <IconSymbol name="person.2.fill" size={20} color={BrandColors.loopBlue} />
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Group recommendations
+          </Text>
+        </View>
+        {stats.pending_invites_count > 0 ? (
+          <>
+            <Text style={[styles.sectionValue, { color: colors.text }]}>
+              {stats.pending_invites_count}
+            </Text>
+            <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
+              Friend invites waiting
+            </Text>
+          </>
+        ) : stats.friends_activity && stats.friends_activity.length > 0 ? (
+          <View style={styles.friendsList}>
+            {stats.friends_activity.slice(0, 3).map((activity, index) => (
+              <View key={activity.id || index} style={styles.friendItem}>
+                <View style={[styles.friendAvatar, { backgroundColor: colors.cardBackground }]}>
+                  <Text style={styles.friendAvatarText}>
+                    {activity.friend_name?.charAt(0) || '?'}
+                  </Text>
+                </View>
+                <Text style={[styles.friendItemText, { color: colors.text }]} numberOfLines={1}>
+                  {activity.friend_name} {activity.event_title ? `at ${activity.event_title}` : 'is active'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+            No group activity yet
+          </Text>
+        )}
+      </View>
+
+      {/* NOTIFICATIONS (if any) */}
       {notifications.length > 0 && (
         <View style={styles.notificationsSection}>
-          <Text style={[styles.sectionTitle, Typography.titleLarge, { color: colors.text }]}>
-            Activity
+          <Text style={[styles.sectionTitle, Typography.titleLarge, { color: colors.text, marginBottom: Spacing.md }]}>
+            Notifications
           </Text>
 
           {notifications.map((notification) => (
@@ -328,23 +441,6 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
               notification={notification}
               colors={colors}
               onDismiss={() => onDismissNotification(notification.id)}
-            />
-          ))}
-        </View>
-      )}
-
-      {/* FRIEND ACTIVITY */}
-      {stats.friends_activity && stats.friends_activity.length > 0 && (
-        <View style={styles.friendActivitySection}>
-          <Text style={[styles.sectionTitle, Typography.titleLarge, { color: colors.text }]}>
-            What Your Friends Are Doing
-          </Text>
-
-          {stats.friends_activity.slice(0, 5).map((activity) => (
-            <FriendActivityCard
-              key={activity.id}
-              activity={activity}
-              colors={colors}
             />
           ))}
         </View>
@@ -872,5 +968,141 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.full,
     alignItems: 'center',
     marginTop: Spacing.sm,
+  },
+
+  // Welcome Card
+  welcomeCard: {
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.lg,
+  },
+  welcomeTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: Spacing.md,
+  },
+  nextTaskContainer: {
+    marginTop: Spacing.sm,
+  },
+  nextTaskLabel: {
+    fontSize: 14,
+    marginBottom: Spacing.sm,
+  },
+  nextTaskCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 2,
+  },
+  nextTaskInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  nextTaskName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  nextTaskLocation: {
+    fontSize: 13,
+  },
+  nextTaskTime: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  noTasksText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+
+  // Section Containers
+  sectionContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.02)',
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.md,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  sectionValue: {
+    fontSize: 32,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 13,
+  },
+
+  // Tasks List
+  tasksList: {
+    marginTop: Spacing.sm,
+  },
+  taskItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    borderBottomWidth: 1,
+    gap: Spacing.sm,
+  },
+  taskDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  taskItemContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  taskItemName: {
+    fontSize: 14,
+    fontWeight: '500',
+    flex: 1,
+    marginRight: Spacing.sm,
+  },
+  taskItemTime: {
+    fontSize: 13,
+  },
+  moreTasksText: {
+    fontSize: 13,
+    marginTop: Spacing.sm,
+    textAlign: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    marginTop: Spacing.sm,
+  },
+
+  // Friends List
+  friendsList: {
+    marginTop: Spacing.sm,
+    gap: Spacing.sm,
+  },
+  friendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+  },
+  friendAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  friendAvatarText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFFFFF',
+  },
+  friendItemText: {
+    fontSize: 14,
+    flex: 1,
   },
 });

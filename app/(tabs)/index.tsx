@@ -22,11 +22,13 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { SchedulePlanModal } from '@/components/schedule-plan-modal';
 import { SeeDetailsModal } from '@/components/see-details-modal';
 import { DailyDashboardModal } from '@/components/daily-dashboard-modal';
+import { NotificationsTrayModal } from '@/components/notifications-tray-modal';
 import { BlockActivityModal } from '@/components/block-activity-modal';
 import { ActivityFeedbackModal } from '@/components/activity-feedback-modal';
 import { ConflictWarningModal } from '@/components/conflict-warning-modal';
 import { FeedFiltersBar, type FeedFilters } from '@/components/feed-filters';
 import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
+import { checkDailyLimit, type DailyLimitCheck } from '@/services/subscription-service';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { Recommendation } from '@/types/activity';
 import { generateRecommendations, type RecommendationParams } from '@/services/recommendations';
@@ -246,6 +248,11 @@ export default function RecommendationFeedScreen() {
     activityName: string;
     completedAt: string;
     recommendationId?: string;
+    place?: {
+      id: string;
+      name: string;
+      address?: string;
+    };
   } | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null); // Track card being removed with animation
 
@@ -266,6 +273,9 @@ export default function RecommendationFeedScreen() {
   const [isFirstLoadToday, setIsFirstLoadToday] = useState(false);
   const [notificationCount, setNotificationCount] = useState(0);
 
+  // Notifications tray state
+  const [showNotificationsTray, setShowNotificationsTray] = useState(false);
+
   // Filters state
   const [filters, setFilters] = useState<FeedFilters>({
     timeOfDay: 'any',
@@ -279,6 +289,9 @@ export default function RecommendationFeedScreen() {
   // Discovery mode & category filter state
   const [discoveryMode, setDiscoveryMode] = useState<'curated' | 'explore'>('curated');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
+
+  // Daily limit state for subscription-based limits
+  const [dailyLimitInfo, setDailyLimitInfo] = useState<DailyLimitCheck | null>(null);
 
   // Animated value for filters height
   const filtersHeight = useSharedValue(0);
@@ -329,6 +342,25 @@ export default function RecommendationFeedScreen() {
     loadSavedRadius();
   }, [user]);
 
+  // Check daily limit for subscription-based limits (Daily tab)
+  useEffect(() => {
+    const loadDailyLimit = async () => {
+      if (!user) {
+        setDailyLimitInfo(null);
+        return;
+      }
+
+      try {
+        const limitInfo = await checkDailyLimit(user.id);
+        setDailyLimitInfo(limitInfo);
+        console.log(`📊 Daily limit: ${limitInfo.viewedToday}/${limitInfo.dailyLimit} (${limitInfo.subscriptionTier} tier)`);
+      } catch (error) {
+        console.error('❌ Error checking daily limit:', error);
+      }
+    };
+    loadDailyLimit();
+  }, [user]);
+
   // Save radius changes to user preferences (Phase 1.4: Radius Persistence)
   useEffect(() => {
     const saveRadius = async () => {
@@ -359,7 +391,7 @@ export default function RecommendationFeedScreen() {
   // Filter recommendations based on user filters
   // Memoize filtered recommendations to prevent recalculation on every render
   const filteredRecommendations = useMemo(() => {
-    const filtered = recommendations.filter((rec) => {
+    let filtered = recommendations.filter((rec) => {
       // Filter by distance
       if (filters.maxDistance < 100) {
         const distanceValue = parseFloat(rec.distance.replace(' mi', ''));
@@ -402,11 +434,23 @@ export default function RecommendationFeedScreen() {
 
     // If all cards are filtered out, show all recommendations to prevent empty feed
     if (filtered.length === 0 && recommendations.length > 0) {
-      return recommendations;
+      filtered = recommendations;
+    }
+
+    // Apply daily limit for subscription-based limits (Daily tab)
+    if (dailyLimitInfo) {
+      const maxToShow = dailyLimitInfo.remainingToday;
+      if (maxToShow <= 0) {
+        // User has reached daily limit - return empty array
+        // The UI will show an upgrade prompt
+        return [];
+      }
+      // Limit visible recommendations to remaining daily allowance
+      return filtered.slice(0, maxToShow);
     }
 
     return filtered;
-  }, [recommendations, filters]);
+  }, [recommendations, filters, dailyLimitInfo]);
 
   // Sync refs with state for synchronous access in callbacks (avoid stale closures)
   useEffect(() => {
@@ -640,12 +684,13 @@ export default function RecommendationFeedScreen() {
       console.log('🔍 Checking work_location:', user.work_location);
 
       // Get home/work locations if available
-      const homeLocation = user.home_location && (user.home_location as any).coordinates
-        ? { lat: (user.home_location as any).coordinates[1], lng: (user.home_location as any).coordinates[0] }
+      // Note: user is guaranteed non-null here due to guard at top of function
+      const homeLocation = user?.home_location && (user?.home_location as any)?.coordinates
+        ? { lat: (user?.home_location as any).coordinates[1], lng: (user?.home_location as any).coordinates[0] }
         : undefined;
 
-      const workLocation = user.work_location && (user.work_location as any).coordinates
-        ? { lat: (user.work_location as any).coordinates[1], lng: (user.work_location as any).coordinates[0] }
+      const workLocation = user?.work_location && (user?.work_location as any)?.coordinates
+        ? { lat: (user?.work_location as any).coordinates[1], lng: (user?.work_location as any).coordinates[0] }
         : undefined;
 
       console.log('✅ Location parsing complete');
@@ -1140,6 +1185,7 @@ export default function RecommendationFeedScreen() {
           activityName: result.activity.activityName,
           completedAt: result.activity.completedAt,
           recommendationId: recommendationId || undefined,
+          place: result.activity.place,
         });
         setShowFeedbackModal(true);
       }
@@ -1300,10 +1346,17 @@ export default function RecommendationFeedScreen() {
     handleSmartRefresh();
   }, [handleSmartRefresh]);
 
-  // Handle load more (infinite scroll)
+  // Handle load more (infinite scroll) - DISABLED for Daily tab
+  // Daily tab shows finite recommendations based on subscription tier
+  // Infinite scroll is only available in Explore tab
   const handleLoadMore = useCallback(async () => {
-    console.log('🎯 onEndReached fired - attempting to load more recommendations');
-    console.log(`🎯 Current state: loadingMore=${loadingMore}, feedExhausted=${feedExhausted}, searchRadius=${searchRadius}, ref=${searchRadiusRef.current}`);
+    // Daily tab does not support infinite scroll - recommendations are tier-limited
+    console.log('🎯 onEndReached fired - Daily tab does not support infinite scroll');
+    return;
+
+    // NOTE: Code below is preserved for Explore tab implementation
+    // console.log('🎯 onEndReached fired - attempting to load more recommendations');
+    // console.log(`🎯 Current state: loadingMore=${loadingMore}, feedExhausted=${feedExhausted}, searchRadius=${searchRadius}, ref=${searchRadiusRef.current}`);
 
     // CRITICAL: Multi-layer protection against rapid-fire onEndReached calls
 
@@ -1349,12 +1402,13 @@ export default function RecommendationFeedScreen() {
       };
 
       // Get home/work locations if available
-      const homeLocation = user.home_location && (user.home_location as any).coordinates
-        ? { lat: (user.home_location as any).coordinates[1], lng: (user.home_location as any).coordinates[0] }
+      // Note: user is guaranteed non-null here due to guard at top of function
+      const homeLocation = user?.home_location && (user?.home_location as any)?.coordinates
+        ? { lat: (user?.home_location as any).coordinates[1], lng: (user?.home_location as any).coordinates[0] }
         : undefined;
 
-      const workLocation = user.work_location && (user.work_location as any).coordinates
-        ? { lat: (user.work_location as any).coordinates[1], lng: (user.work_location as any).coordinates[0] }
+      const workLocation = user?.work_location && (user?.work_location as any)?.coordinates
+        ? { lat: (user?.work_location as any).coordinates[1], lng: (user?.work_location as any).coordinates[0] }
         : undefined;
 
       // Build params for recommendations
@@ -1394,7 +1448,7 @@ export default function RecommendationFeedScreen() {
         console.log(`📡 Attempt ${attempts}: Searching within ${currentRadius} miles...`);
 
         const params: RecommendationParams = {
-          user,
+          user: user!, // Non-null assertion - user is checked at function start
           userLocation,
           homeLocation,
           workLocation,
@@ -1544,11 +1598,15 @@ export default function RecommendationFeedScreen() {
         setRefreshKey(prev => prev + 1);
 
         // Save to database
-        await saveRecommendationsToDB(user.id, placesToAdd);
+        const userIdForSave = user?.id ?? '';
+        if (userIdForSave) {
+          await saveRecommendationsToDB(userIdForSave, placesToAdd);
+        }
       } else {
         // CRITICAL: Only mark as exhausted if at max radius AND user has distance filter
-        if (activeFilters && activeFilters.maxDistance && currentRadius >= activeFilters.maxDistance) {
-          console.log(`📭 Exhausted within ${activeFilters.maxDistance}mi filter`);
+        const maxDistanceFilter = activeFilters?.maxDistance ?? 0;
+        if (maxDistanceFilter > 0 && currentRadius >= maxDistanceFilter) {
+          console.log(`📭 Exhausted within ${maxDistanceFilter}mi filter`);
           setFeedExhausted(true);
           feedExhaustedRef.current = true;
         } else {
@@ -2142,12 +2200,18 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
+            showNotificationBell={true}
+            onNotificationPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowNotificationsTray(true);
+            }}
+            showAddButton={true}
+            onAddPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowAdvancedSearch(true);
+            }}
             onDashboardOpen={handleDashboardOpen}
             notificationCount={notificationCount}
-            onSettingsPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/(tabs)/settings');
-            }}
           />
           {seedingCity ? (
             <View style={[styles.seedingContainer, { backgroundColor: colors.background }]}>
@@ -2179,12 +2243,18 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
+            showNotificationBell={true}
+            onNotificationPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowNotificationsTray(true);
+            }}
+            showAddButton={true}
+            onAddPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowAdvancedSearch(true);
+            }}
             onDashboardOpen={handleDashboardOpen}
             notificationCount={notificationCount}
-            onSettingsPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/(tabs)/settings');
-            }}
           />
           <EmptyState
             icon="sparkles"
@@ -2196,27 +2266,106 @@ export default function RecommendationFeedScreen() {
     );
   }
 
+  // Render daily limit reached state (Daily tab subscription limits)
+  if (dailyLimitInfo && dailyLimitInfo.remainingToday <= 0) {
+    return (
+      <SwipeableLayout>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <LoopHeader
+            showNotificationBell={true}
+            onNotificationPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowNotificationsTray(true);
+            }}
+            showAddButton={true}
+            onAddPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowAdvancedSearch(true);
+            }}
+            onDashboardOpen={handleDashboardOpen}
+            notificationCount={notificationCount}
+          />
+
+          {/* Daily Limit Reached Message */}
+          <View style={styles.dailyLimitContainer}>
+            <View style={[styles.dailyLimitCard, { backgroundColor: colors.cardBackground }]}>
+              <Ionicons name="time-outline" size={56} color={BrandColors.loopBlue} />
+              <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.lg, textAlign: 'center' }]}>
+                You've seen all your daily picks!
+              </Text>
+              <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center', paddingHorizontal: Spacing.md }]}>
+                {dailyLimitInfo.subscriptionTier === 'free'
+                  ? `Free users get ${dailyLimitInfo.dailyLimit} curated picks per day. Upgrade for more, or tap Explore to browse unlimited activities.`
+                  : `You've viewed ${dailyLimitInfo.dailyLimit} picks today. Come back tomorrow for fresh recommendations, or tap Explore for unlimited browsing.`
+                }
+              </Text>
+
+              {/* Action Buttons */}
+              <View style={styles.dailyLimitActions}>
+                <TouchableOpacity
+                  style={[styles.dailyLimitButton, { backgroundColor: BrandColors.loopBlue }]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                    router.push('/(tabs)/explore');
+                  }}
+                >
+                  <Ionicons name="compass-outline" size={20} color="#FFFFFF" />
+                  <Text style={[Typography.labelLarge, { color: '#FFFFFF', marginLeft: Spacing.sm }]}>
+                    Go to Explore
+                  </Text>
+                </TouchableOpacity>
+
+                {dailyLimitInfo.subscriptionTier === 'free' && (
+                  <TouchableOpacity
+                    style={[styles.dailyLimitButton, {
+                      backgroundColor: 'transparent',
+                      borderWidth: 1,
+                      borderColor: BrandColors.loopBlue,
+                      marginTop: Spacing.sm
+                    }]}
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      router.push('/(tabs)/settings');
+                      // TODO: Navigate directly to subscription upgrade
+                    }}
+                  >
+                    <Ionicons name="star-outline" size={20} color={BrandColors.loopBlue} />
+                    <Text style={[Typography.labelLarge, { color: BrandColors.loopBlue, marginLeft: Spacing.sm }]}>
+                      Upgrade for More
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </SwipeableLayout>
+    );
+  }
+
   // Render recommendations list
   return (
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LoopHeader
-          showProfileButton={true}
-          onProfilePress={() => {
+          showNotificationBell={true}
+          onNotificationPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push('/(tabs)/profile');
+            // TODO: Open notification tray
+            handleDashboardOpen();
+          }}
+          showAddButton={true}
+          onAddPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowAdvancedSearch(true); // Opens search/add modal
           }}
           onDashboardOpen={handleDashboardOpen}
           notificationCount={notificationCount}
-          onSettingsPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push('/(tabs)/settings');
-          }}
           onLogoPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             setShowAdvancedSearch(true);
           }}
-          isLoading={loadingMore || (USE_SHIMMER_FOR_REFRESH && refreshing)}
+          isLoading={USE_SHIMMER_FOR_REFRESH && refreshing}
         />
 
         {/* Welcome Message */}
@@ -2361,6 +2510,13 @@ export default function RecommendationFeedScreen() {
               : undefined
           }
         />
+
+        {/* Notifications Tray Modal */}
+        <NotificationsTrayModal
+          visible={showNotificationsTray}
+          onClose={() => setShowNotificationsTray(false)}
+        />
+
       </View>
     </SwipeableLayout>
   );
@@ -2439,6 +2595,38 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.xl,
+  },
+  // Dual Feed Architecture: Daily limit reached UI
+  dailyLimitContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+  },
+  dailyLimitCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: Spacing.xl * 1.5,
+    borderRadius: BorderRadius.lg,
+    width: '100%',
+    maxWidth: 360,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  dailyLimitActions: {
+    marginTop: Spacing.xl,
+    width: '100%',
+  },
+  dailyLimitButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
   },
 });
 

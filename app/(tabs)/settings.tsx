@@ -1,6 +1,7 @@
 /**
  * Settings Screen
  * User settings including tutorial replay, profile editing, and preferences
+ * Updated to match app theme and include proper header
  */
 
 import React, { useState, useEffect } from 'react';
@@ -15,13 +16,23 @@ import {
   FlatList,
   ActivityIndicator,
 } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { LoopHeader } from '@/components/loop-header';
 import { useAuth } from '@/contexts/auth-context';
-import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ThemeColors, Spacing, BorderRadius, BrandColors, Typography } from '@/constants/brand';
 import { getBlockedActivities, unblockActivity } from '@/services/recommendation-persistence';
 
 export default function SettingsScreen() {
-  const { user } = useAuth();
+  const router = useRouter();
+  const colorScheme = useColorScheme();
+  const colors = ThemeColors[colorScheme ?? 'light'];
+  const insets = useSafeAreaInsets();
+  const { user, signOut } = useAuth();
+
   const [blockedPlaces, setBlockedPlaces] = useState<any[]>([]);
   const [showBlockedPlacesModal, setShowBlockedPlacesModal] = useState(false);
   const [loadingBlocked, setLoadingBlocked] = useState(false);
@@ -49,10 +60,34 @@ export default function SettingsScreen() {
   }, [showBlockedPlacesModal]);
 
   const handleReplayTutorial = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     Alert.alert(
       'Replay Tutorial',
       'Tutorial feature is coming soon!',
       [{ text: 'OK', style: 'cancel' }]
+    );
+  };
+
+  const handleSignOut = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await signOut();
+            } catch (error) {
+              console.error('Error signing out:', error);
+              Alert.alert('Error', 'Failed to sign out. Please try again.');
+            }
+          },
+        },
+      ]
     );
   };
 
@@ -71,6 +106,7 @@ export default function SettingsScreen() {
               await unblockActivity(user.id, googlePlaceId);
               // Refresh the list
               await loadBlockedPlaces();
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               Alert.alert('Success', `${placeName} has been unblocked.`);
             } catch (error) {
               console.error('Error unblocking place:', error);
@@ -82,215 +118,214 @@ export default function SettingsScreen() {
     );
   };
 
-  return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      {/* Profile Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Profile</Text>
+  const renderMenuItem = (
+    icon: string,
+    iconColor: string,
+    iconBgColor: string,
+    title: string,
+    description?: string,
+    onPress?: () => void
+  ) => (
+    <TouchableOpacity
+      style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={styles.menuItemLeft}>
+        <View style={[styles.menuIcon, { backgroundColor: iconBgColor }]}>
+          <Ionicons name={icon as any} size={24} color={iconColor} />
+        </View>
+        <View style={styles.menuItemTextContainer}>
+          <Text style={[styles.menuItemTitle, { color: colors.text }]}>{title}</Text>
+          {description && (
+            <Text style={[styles.menuItemDescription, { color: colors.textSecondary }]}>
+              {description}
+            </Text>
+          )}
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+    </TouchableOpacity>
+  );
 
-        <View style={styles.profileCard}>
-          <View style={styles.profileAvatar}>
+  return (
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* Header */}
+      <LoopHeader
+        showBackButton={true}
+        onBackPress={() => router.push('/(tabs)')}
+        showSettingsButton={false}
+      />
+
+      <ScrollView
+        style={styles.scrollView}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Profile Card */}
+        <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.profileAvatar, { backgroundColor: BrandColors.loopBlue }]}>
             <Ionicons name="person" size={40} color="#fff" />
           </View>
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{user?.name || 'User'}</Text>
-            <Text style={styles.profileEmail}>{user?.email || ''}</Text>
-            <Text style={styles.profileUsername}>@{user?.email?.split('@')[0] || 'username'}</Text>
+            <Text style={[styles.profileName, { color: colors.text }]}>
+              {user?.name || 'User'}
+            </Text>
+            <Text style={[styles.profileEmail, { color: colors.textSecondary }]}>
+              {user?.email || ''}
+            </Text>
+            <TouchableOpacity
+              style={[styles.editProfileButton, { backgroundColor: BrandColors.loopBlue + '20' }]}
+              onPress={() => router.push('/(tabs)/profile')}
+            >
+              <Text style={[styles.editProfileText, { color: BrandColors.loopBlue }]}>
+                Edit Profile
+              </Text>
+            </TouchableOpacity>
           </View>
         </View>
-      </View>
 
-      {/* Tutorial Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Help & Tutorial</Text>
+        {/* Help Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Help & Tutorial</Text>
 
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={handleReplayTutorial}
-        >
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#00D4FF20' }]}>
-              <Ionicons name="help-circle" size={24} color="#00D4FF" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Replay Tutorial</Text>
-              <Text style={styles.menuItemDescription}>
-                Review how to navigate and use Loop
+          {renderMenuItem(
+            'help-circle',
+            BrandColors.loopBlue,
+            BrandColors.loopBlue + '20',
+            'Replay Tutorial',
+            'Review how to navigate and use Loop',
+            handleReplayTutorial
+          )}
+        </View>
+
+        {/* Account Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
+
+          {renderMenuItem(
+            'notifications',
+            '#F59E0B',
+            '#F59E0B20',
+            'Notifications',
+            'Manage notification preferences',
+            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+          )}
+
+          {renderMenuItem(
+            'shield-checkmark',
+            '#10B981',
+            '#10B98120',
+            'Privacy',
+            'Control who can see your Loop and invite you',
+            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+          )}
+        </View>
+
+        {/* Preferences Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Preferences</Text>
+
+          {renderMenuItem(
+            'heart',
+            '#EF4444',
+            '#EF444420',
+            'Interests',
+            'Update your interests and preferences',
+            () => router.push('/(tabs)/profile')
+          )}
+
+          {renderMenuItem(
+            'location',
+            '#3B82F6',
+            '#3B82F620',
+            'Locations',
+            'Update home and work addresses',
+            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+          )}
+
+          {renderMenuItem(
+            'ban',
+            '#EF4444',
+            '#EF444420',
+            'Blocked Places',
+            'Manage places hidden from recommendations',
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowBlockedPlacesModal(true);
+            }
+          )}
+        </View>
+
+        {/* Subscription Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Subscription</Text>
+
+          <View style={[styles.subscriptionCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <View style={styles.subscriptionHeader}>
+              <Text style={[styles.subscriptionTier, { color: BrandColors.loopBlue }]}>
+                {user?.subscription_tier?.toUpperCase() || 'FREE'} TIER
               </Text>
+              <View style={[styles.subscriptionBadge, { backgroundColor: '#F59E0B20' }]}>
+                <Ionicons name="star" size={16} color="#F59E0B" />
+              </View>
             </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Account Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Account</Text>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#7C3AED20' }]}>
-              <Ionicons name="person-circle" size={24} color="#7C3AED" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Edit Profile</Text>
-              <Text style={styles.menuItemDescription}>
-                Update your name, username, and contact info
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#F59E0B20' }]}>
-              <Ionicons name="notifications" size={24} color="#F59E0B" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Notifications</Text>
-              <Text style={styles.menuItemDescription}>
-                Manage notification preferences
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#10B98120' }]}>
-              <Ionicons name="shield-checkmark" size={24} color="#10B981" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Privacy</Text>
-              <Text style={styles.menuItemDescription}>
-                Control who can see your Loop and invite you
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Preferences Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Preferences</Text>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#EF444420' }]}>
-              <Ionicons name="heart" size={24} color="#EF4444" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Interests</Text>
-              <Text style={styles.menuItemDescription}>
-                Update your interests and preferences
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#3B82F620' }]}>
-              <Ionicons name="location" size={24} color="#3B82F6" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Locations</Text>
-              <Text style={styles.menuItemDescription}>
-                Update home and work addresses
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.menuItem}
-          onPress={() => setShowBlockedPlacesModal(true)}
-        >
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#EF444420' }]}>
-              <Ionicons name="ban" size={24} color="#EF4444" />
-            </View>
-            <View>
-              <Text style={styles.menuItemTitle}>Blocked Places</Text>
-              <Text style={styles.menuItemDescription}>
-                Manage places you've hidden from recommendations
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
-
-      {/* Subscription Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Subscription</Text>
-
-        <View style={styles.subscriptionCard}>
-          <View style={styles.subscriptionHeader}>
-            <Text style={styles.subscriptionTier}>
-              {user?.subscription_tier?.toUpperCase() || 'FREE'} TIER
+            <Text style={[styles.subscriptionDescription, { color: colors.textSecondary }]}>
+              {user?.subscription_tier === 'free'
+                ? 'Upgrade to Loop Plus for unlimited recommendations and group planning'
+                : 'Thanks for supporting Loop!'}
             </Text>
-            <View style={styles.subscriptionBadge}>
-              <Ionicons name="star" size={16} color="#F59E0B" />
-            </View>
+            <TouchableOpacity
+              style={[styles.upgradeButton, { backgroundColor: BrandColors.loopBlue }]}
+              onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+            >
+              <Text style={styles.upgradeButtonText}>
+                {user?.subscription_tier === 'free' ? 'Upgrade to Plus' : 'Manage Subscription'}
+              </Text>
+            </TouchableOpacity>
           </View>
-          <Text style={styles.subscriptionDescription}>
-            {user?.subscription_tier === 'free'
-              ? 'Upgrade to Loop Plus for unlimited recommendations and group planning'
-              : 'Thanks for supporting Loop!'}
+        </View>
+
+        {/* About Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
+
+          {renderMenuItem(
+            'information-circle',
+            '#6366F1',
+            '#6366F120',
+            'About Loop',
+            undefined,
+            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+          )}
+
+          {renderMenuItem(
+            'document-text',
+            '#8B5CF6',
+            '#8B5CF620',
+            'Terms & Privacy',
+            undefined,
+            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+          )}
+
+          {renderMenuItem(
+            'log-out',
+            '#EC4899',
+            '#EC489920',
+            'Sign Out',
+            undefined,
+            handleSignOut
+          )}
+        </View>
+
+        {/* Footer */}
+        <View style={[styles.footer, { borderTopColor: colors.border }]}>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>Loop v1.0.0</Text>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>
+            Made with ❤️ for better days
           </Text>
-          <TouchableOpacity style={styles.upgradeButton}>
-            <Text style={styles.upgradeButtonText}>
-              {user?.subscription_tier === 'free' ? 'Upgrade to Plus' : 'Manage Subscription'}
-            </Text>
-          </TouchableOpacity>
         </View>
-      </View>
-
-      {/* About Section */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>About</Text>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#6366F120' }]}>
-              <Ionicons name="information-circle" size={24} color="#6366F1" />
-            </View>
-            <Text style={styles.menuItemTitle}>About Loop</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#8B5CF620' }]}>
-              <Ionicons name="document-text" size={24} color="#8B5CF6" />
-            </View>
-            <Text style={styles.menuItemTitle}>Terms & Privacy</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-
-        <TouchableOpacity style={styles.menuItem}>
-          <View style={styles.menuItemLeft}>
-            <View style={[styles.menuIcon, { backgroundColor: '#EC489920' }]}>
-              <Ionicons name="log-out" size={24} color="#EC4899" />
-            </View>
-            <Text style={styles.menuItemTitle}>Sign Out</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#666" />
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.footer}>
-        <Text style={styles.footerText}>Loop v1.0.0</Text>
-        <Text style={styles.footerText}>Made with ❤️ for better days</Text>
-      </View>
+      </ScrollView>
 
       {/* Blocked Places Modal */}
       <Modal
@@ -299,29 +334,32 @@ export default function SettingsScreen() {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowBlockedPlacesModal(false)}
       >
-        <View style={styles.modalContainer}>
+        <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           {/* Modal Header */}
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Blocked Places</Text>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border, paddingTop: insets.top + Spacing.md }]}>
             <TouchableOpacity
               onPress={() => setShowBlockedPlacesModal(false)}
-              style={styles.closeButton}
+              style={styles.modalBackButton}
             >
-              <Ionicons name="close" size={28} color="#fff" />
+              <Ionicons name="chevron-back" size={28} color={colors.text} />
             </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>Blocked Places</Text>
+            <View style={{ width: 40 }} />
           </View>
 
           {/* Blocked Places List */}
           {loadingBlocked ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color="#00D4FF" />
-              <Text style={styles.loadingText}>Loading blocked places...</Text>
+              <ActivityIndicator size="large" color={BrandColors.loopBlue} />
+              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                Loading blocked places...
+              </Text>
             </View>
           ) : blockedPlaces.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="checkmark-circle" size={64} color="#10B981" />
-              <Text style={styles.emptyStateTitle}>No Blocked Places</Text>
-              <Text style={styles.emptyStateDescription}>
+              <Text style={[styles.emptyStateTitle, { color: colors.text }]}>No Blocked Places</Text>
+              <Text style={[styles.emptyStateDescription, { color: colors.textSecondary }]}>
                 You haven't blocked any places from recommendations yet.
               </Text>
             </View>
@@ -331,18 +369,22 @@ export default function SettingsScreen() {
               keyExtractor={(item) => item.id}
               contentContainerStyle={styles.blockedList}
               renderItem={({ item }) => (
-                <View style={styles.blockedItem}>
+                <View style={[styles.blockedItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.blockedItemLeft}>
-                    <Ionicons name="ban" size={24} color="#EF4444" />
+                    <View style={[styles.blockedIconContainer, { backgroundColor: '#EF444420' }]}>
+                      <Ionicons name="ban" size={20} color="#EF4444" />
+                    </View>
                     <View style={styles.blockedItemInfo}>
-                      <Text style={styles.blockedItemName}>{item.place_name}</Text>
-                      <Text style={styles.blockedItemDate}>
+                      <Text style={[styles.blockedItemName, { color: colors.text }]}>
+                        {item.place_name}
+                      </Text>
+                      <Text style={[styles.blockedItemDate, { color: colors.textSecondary }]}>
                         Blocked {new Date(item.blocked_at).toLocaleDateString()}
                       </Text>
                     </View>
                   </View>
                   <TouchableOpacity
-                    style={styles.unblockButton}
+                    style={[styles.unblockButton, { backgroundColor: '#10B981' }]}
                     onPress={() => handleUnblock(item.google_place_id, item.place_name)}
                   >
                     <Text style={styles.unblockButtonText}>Unblock</Text>
@@ -353,47 +395,36 @@ export default function SettingsScreen() {
           )}
         </View>
       </Modal>
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
   },
-  contentContainer: {
-    padding: 20,
-    paddingBottom: 40,
+  scrollView: {
+    flex: 1,
   },
-  section: {
-    marginBottom: 32,
-  },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#666',
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 12,
+  scrollContent: {
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xl * 2,
   },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#1a1a1a',
-    padding: 20,
-    borderRadius: 16,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: '#333',
+    marginBottom: Spacing.xl,
   },
   profileAvatar: {
     width: 70,
     height: 70,
     borderRadius: 35,
-    backgroundColor: '#00D4FF',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: Spacing.lg,
   },
   profileInfo: {
     flex: 1,
@@ -401,29 +432,40 @@ const styles = StyleSheet.create({
   profileName: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
     marginBottom: 4,
   },
   profileEmail: {
     fontSize: 14,
-    color: '#888',
-    marginBottom: 4,
+    marginBottom: Spacing.sm,
   },
-  profileUsername: {
+  editProfileButton: {
+    paddingVertical: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.full,
+    alignSelf: 'flex-start',
+  },
+  editProfileText: {
     fontSize: 14,
-    color: '#00D4FF',
     fontWeight: '600',
+  },
+  section: {
+    marginBottom: Spacing.xl,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: Spacing.md,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1a1a1a',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 8,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
     borderWidth: 1,
-    borderColor: '#333',
   },
   menuItemLeft: {
     flexDirection: 'row',
@@ -431,177 +473,163 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   menuIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: Spacing.md,
+  },
+  menuItemTextContainer: {
+    flex: 1,
   },
   menuItemTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
     marginBottom: 2,
   },
   menuItemDescription: {
     fontSize: 13,
-    color: '#888',
     lineHeight: 18,
-    maxWidth: 220,
   },
   subscriptionCard: {
-    backgroundColor: '#1a1a1a',
-    padding: 20,
-    borderRadius: 16,
+    padding: Spacing.lg,
+    borderRadius: BorderRadius.lg,
     borderWidth: 1,
-    borderColor: '#333',
   },
   subscriptionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: Spacing.sm,
   },
   subscriptionTier: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#00D4FF',
     letterSpacing: 1,
   },
   subscriptionBadge: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#F59E0B20',
     alignItems: 'center',
     justifyContent: 'center',
   },
   subscriptionDescription: {
     fontSize: 14,
-    color: '#888',
     lineHeight: 20,
-    marginBottom: 16,
+    marginBottom: Spacing.md,
   },
   upgradeButton: {
-    backgroundColor: '#00D4FF',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
     alignItems: 'center',
   },
   upgradeButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#000',
+    color: '#fff',
   },
   footer: {
     alignItems: 'center',
-    marginTop: 20,
-    paddingTop: 20,
+    marginTop: Spacing.lg,
+    paddingTop: Spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#333',
   },
   footerText: {
     fontSize: 12,
-    color: '#666',
     marginBottom: 4,
   },
-  // Blocked Places Modal
+  // Modal Styles
   modalContainer: {
     flex: 1,
-    backgroundColor: '#000',
   },
   modalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: 20,
-    paddingTop: 60,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
   },
-  modalTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  closeButton: {
+  modalBackButton: {
     width: 40,
     height: 40,
-    borderRadius: 20,
-    backgroundColor: '#1a1a1a',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: Spacing.xl,
   },
   loadingText: {
     fontSize: 16,
-    color: '#888',
-    marginTop: 16,
+    marginTop: Spacing.md,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: Spacing.xl,
   },
   emptyStateTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#fff',
-    marginTop: 20,
-    marginBottom: 8,
+    marginTop: Spacing.lg,
+    marginBottom: Spacing.sm,
   },
   emptyStateDescription: {
     fontSize: 15,
-    color: '#888',
     textAlign: 'center',
     lineHeight: 22,
   },
   blockedList: {
-    padding: 20,
+    padding: Spacing.lg,
   },
   blockedItem: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: '#1a1a1a',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 12,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
     borderWidth: 1,
-    borderColor: '#333',
   },
   blockedItemLeft: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
   },
+  blockedIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
   blockedItemInfo: {
-    marginLeft: 12,
     flex: 1,
   },
   blockedItemName: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
-    marginBottom: 4,
+    marginBottom: 2,
   },
   blockedItemDate: {
     fontSize: 13,
-    color: '#888',
   },
   unblockButton: {
-    backgroundColor: '#10B981',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.sm,
   },
   unblockButtonText: {
     fontSize: 14,

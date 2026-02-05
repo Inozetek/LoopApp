@@ -369,10 +369,11 @@ function ActivityCardIntelligentComponent({
     : require('@/assets/images/empty-wallet-fallback.jpg'); // Empty wallet meme for missing images
 
   // Determine border color based on score (visual hierarchy)
+  // Strong matches get a blue LED glow (deep ocean blue) for visual emphasis
   const finalScore = score.finalScore || recommendation.score || 0;
   const getBorderColor = () => {
     if (finalScore >= 60) {
-      return BrandColors.loopGreen; // Top Match - green border
+      return BrandColors.strongMatchGlow; // Top Match - blue LED glow (deep ocean blue)
     } else {
       return colors.border; // All other recommendations - subtle gray
     }

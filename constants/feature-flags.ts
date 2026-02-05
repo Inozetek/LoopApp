@@ -65,7 +65,7 @@ export const FEATURE_FLAGS = {
 
   /**
    * Enable Eventbrite integration for community events, workshops, classes
-   * STATUS: DISABLED - Search API deprecated since Feb 2020
+   * STATUS: PERMANENTLY DISABLED - Search API deprecated since Feb 2020
    * The /events/search endpoint returns 404. Only org/venue-based queries work.
    * Alternatives evaluated:
    *   - PredictHQ: No free API access after 14-day trial
@@ -74,7 +74,7 @@ export const FEATURE_FLAGS = {
    * Decision: Rely on Ticketmaster for events until revenue justifies paid APIs
    * Re-evaluate when Groupon is approved (fills deals/experiences gap)
    */
-  ENABLE_EVENTBRITE: process.env.EXPO_PUBLIC_ENABLE_EVENTBRITE === 'true',
+  ENABLE_EVENTBRITE: false, // Hardcoded off - API endpoint no longer exists
 
   /**
    * Enable mixed feed blending multiple sources (Google + Ticketmaster + Yelp + Groupon + Songkick)

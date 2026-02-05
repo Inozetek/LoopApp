@@ -680,8 +680,10 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   categoryContent: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
   },
   toggleRow: {
     flexDirection: 'row',

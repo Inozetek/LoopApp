@@ -6,6 +6,52 @@
 
 ---
 
+## ⚠️ DUAL-FEED ARCHITECTURE STATUS
+
+**You asked about the two-tier search/filter ability:**
+
+### What You Expected:
+1. **Browse/Explore Mode** - General suggestions of things happening around you
+2. **Daily Curated Feed** - Personalized recommendations, limited by subscription tier (5/15/30)
+
+### Current Status: Implemented via Tab Navigation
+
+| Component | Status | Location |
+|-----------|--------|----------|
+| Database schema | ✅ Ready | `daily_feed_history` table created |
+| Subscription service | ✅ Ready | `services/subscription-service.ts` |
+| **Daily tab (index)** | ✅ Ready | `app/(tabs)/index.tsx` |
+| **Explore tab** | ✅ Ready | `app/(tabs)/explore.tsx` |
+| Daily limit tracking | ✅ Ready | `checkDailyLimit()`, `incrementDailyViews()` |
+
+### Architecture:
+The dual-feed is now handled by **separate tabs** instead of a toggle component:
+- **Daily tab** (home): AI-curated, subscription-tier limited picks
+- **Explore tab**: Unlimited browsing, discovery-focused
+
+### Subscription Tier Limits (Already Implemented in Backend):
+- **Free**: 10 recommendations per day
+- **Plus** ($4.99/mo): 25 recommendations per day
+- **Premium** ($9.99/mo): Unlimited
+
+### To Test What EXISTS Now:
+```javascript
+// In Supabase SQL editor or app console:
+
+// Check your subscription tier
+SELECT subscription_tier FROM users WHERE id = 'YOUR_USER_ID';
+
+// Check daily feed history (if any entries exist)
+SELECT * FROM daily_feed_history WHERE user_id = 'YOUR_USER_ID' ORDER BY date DESC;
+
+// Check daily limit for a tier
+// getDailyLimit('free') returns 10
+// getDailyLimit('plus') returns 25
+// getDailyLimit('premium') returns Infinity
+```
+
+---
+
 ## ⚡ QUICK START: Testing Recent Updates
 
 **Just updated these features? Test them first:**

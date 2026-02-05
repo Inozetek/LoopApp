@@ -78,7 +78,8 @@
       "WebFetch(domain:www.predicthq.com)",
       "WebFetch(domain:docs.predicthq.com)",
       "WebFetch(domain:www.openwebninja.com)",
-      "Bash(npx eslint:*)"
+      "Bash(npx eslint:*)",
+      "Bash(npx expo:*)"
     ],
     "deny": [],
     "ask": []

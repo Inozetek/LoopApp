@@ -19,6 +19,12 @@ export async function searchNearbyActivities(
   type?: string,
   keyword?: string
 ): Promise<Activity[]> {
+  // COST CONTROL: Block API calls if disabled (use cache only)
+  if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    console.warn('🚫 Google Places API disabled (cost control) - returning empty results. Use cache instead.');
+    return [];
+  }
+
   // Require valid API key - throw error if not configured
   if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'your_key_here') {
     throw new Error('Google Places API key is required. Please add EXPO_PUBLIC_GOOGLE_PLACES_API_KEY to your .env file');

@@ -268,7 +268,7 @@ async function fetchFeaturedItems(userId: string): Promise<FeaturedItem[]> {
 /**
  * Fetch dashboard notifications
  */
-async function fetchDashboardNotifications(userId: string): Promise<DashboardNotification[]> {
+export async function fetchDashboardNotifications(userId: string): Promise<DashboardNotification[]> {
   try {
     const { data, error } = await supabase
       .from('dashboard_notifications')
@@ -493,6 +493,32 @@ export async function markNotificationActioned(notificationId: string): Promise<
     console.log('✅ Notification marked as actioned');
   } catch (error) {
     console.error('❌ Error marking notification actioned:', error);
+    throw error;
+  }
+}
+
+/**
+ * Mark all notifications as read
+ */
+export async function markAllNotificationsRead(userId: string): Promise<void> {
+  try {
+    const { error } = await supabase
+      .from('dashboard_notifications')
+      .update({ is_read: true })
+      .eq('user_id', userId)
+      .eq('is_read', false);
+
+    if (error) {
+      if (error.code === 'PGRST204' || error.code === 'PGRST205') {
+        console.warn('⚠️ Dashboard notifications table not found - skipping');
+        return;
+      }
+      throw error;
+    }
+
+    console.log('✅ All notifications marked as read');
+  } catch (error) {
+    console.error('❌ Error marking notifications read:', error);
     throw error;
   }
 }

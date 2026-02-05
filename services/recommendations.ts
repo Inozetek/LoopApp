@@ -19,11 +19,12 @@ import type { Activity, UnifiedActivity, SearchParams as MultiSourceSearchParams
 // Multi-source integration
 import { activitySources, isMixedFeedEnabled } from './activity-source';
 import './google-places-service'; // Import to ensure Google Places service is registered
-import './ticketmaster-service'; // Import to ensure Ticketmaster service is registered
-import './yelp-service'; // Import to ensure Yelp service is registered (postponed - no free tier)
-import './groupon-service'; // Import to ensure Groupon service is registered
-import './songkick-service'; // Import to ensure Songkick service is registered (postponed - $500/mo)
-import './eventbrite-service'; // Import to ensure Eventbrite service is registered
+// TEMPORARILY DISABLED (Fix: Reduce initialization complexity during testing)
+// import './ticketmaster-service'; // Import to ensure Ticketmaster service is registered
+// import './yelp-service'; // Import to ensure Yelp service is registered (postponed - no free tier)
+// import './groupon-service'; // Import to ensure Groupon service is registered
+// import './songkick-service'; // Import to ensure Songkick service is registered (postponed - $500/mo)
+// import './eventbrite-service'; // Import to ensure Eventbrite service is registered
 
 // City-based caching (Phase 4)
 import { detectUserCity, detectUserCityWithFallback } from './city-detection';
@@ -290,6 +291,12 @@ function getPlacePhotoUrl(photoReference: string): string {
  * Used for places with <2 photos to enable photo carousel
  */
 async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_reference: string }>> {
+  // ⭐ CRITICAL: Check kill switch first
+  if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    console.warn('🚫 Google Places API disabled - skipping photo enrichment');
+    return [];
+  }
+
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
   if (!API_KEY) {
@@ -650,6 +657,10 @@ export interface ScoredRecommendation {
     budgetBoost?: number; // +15/-10 points for price match/mismatch
     loopVisitHistoryBoost?: number; // +15-40 points for Loop app visit history
     loopFeedbackBoost?: number; // +20/-20 points for Loop app ratings
+    // NEW: Friend visit/moment boosts (Loop Moments)
+    friendVisitBoost?: number; // +25 if friend visited in last 7 days
+    friendPhotoBoost?: number; // +15 if place has friend moments
+    trendingFriendsBoost?: number; // +20 if 2+ friends visited this week
     finalScore: number;
   };
   distance: number; // miles
@@ -1025,14 +1036,19 @@ export async function generateRecommendations(
   // CRITICAL FIX: Define isInfiniteScrollMode BEFORE using it
   // Infinite scroll mode = excludePlaceIds provided (user scrolling for more content)
   const isInfiniteScrollMode = excludePlaceIds && excludePlaceIds.length > 0;
-  console.log(`🔄 Mode: ${isInfiniteScrollMode ? 'Infinite Scroll' : 'Fresh Load'}`);
+  const isExploreMode = params.discoveryMode === 'explore';
+  console.log(`🔄 Mode: ${isInfiniteScrollMode ? 'Infinite Scroll' : 'Fresh Load'} | ${isExploreMode ? 'Explore' : 'Curated'}`);
 
   // Query 3-5 different category groups in parallel to get variety
   // Prioritize user interests, but also include some variety
   // OPTIMIZATION: For infinite scroll, query fewer categories (5 instead of 12) for faster loading
-  // Still fetch more results per category (50 vs 20) to get enough variety
-  const groupsToQuery = isInfiniteScrollMode ? categoryGroups.slice(0, 5) : categoryGroups.slice(0, 3);
-  const fetchLimit = isInfiniteScrollMode ? 50 : 20; // Fetch more during infinite scroll
+  // Explore mode: Always query more categories (8) for maximum variety
+  const groupsToQuery = isExploreMode
+    ? categoryGroups.slice(0, 8) // Explore mode: 8 category groups for variety
+    : isInfiniteScrollMode
+      ? categoryGroups.slice(0, 5)
+      : categoryGroups.slice(0, 3);
+  const fetchLimit = isExploreMode ? 40 : isInfiniteScrollMode ? 50 : 20; // Explore mode: 40 per category
 
   console.log(`🔍 Querying ${groupsToQuery.length} category groups in parallel (${fetchLimit} results each)`);
 
@@ -1104,14 +1120,21 @@ export async function generateRecommendations(
 
       // Step 4: Query cached places from database
       console.log('📥 Loading places from cache...');
+      const cacheMultiplier = isExploreMode ? 10 : 5; // Explore mode: fetch 10x more for variety
       const cachedActivities = await getCachedPlaces(
         cityInfo.city,
         cityInfo.state,
         categories ? categories[0] : undefined, // Category filter if specified
-        maxResults * 5 // Over-fetch for filtering and diversity
+        maxResults * cacheMultiplier // Over-fetch for filtering and diversity
       );
 
       console.log(`✅ Loaded ${cachedActivities.length} cached places`);
+
+      // ⭐ CRITICAL: Handle empty cache gracefully
+      if (cachedActivities.length === 0) {
+        console.warn('⚠️ No cached activities found - returning empty recommendations');
+        return [];
+      }
 
       // Step 5: Convert Activity objects to PlaceResult format for scoring
       nearbyPlaces = cachedActivities.map(activity => activityToPlaceResult(activity));
@@ -1441,28 +1464,33 @@ export async function generateRecommendations(
             console.log(`📸 Carousel URLs:`, photoUrls.map(url => url.substring(0, 80) + '...'));
           } else if (allPhotos.length === 1 && place.place_id) {
             // Try to enrich with additional photos from Place Details API
-            console.log(`📸 Enriching ${place.name} - currently has only ${allPhotos.length} photo`);
-
-            const additionalPhotos = await enrichPlacePhotos(place.place_id);
-
-            if (additionalPhotos.length > 0) {
-              // Combine original photo with additional photos
-              const enrichedPhotos = [
-                ...allPhotos,
-                ...additionalPhotos.slice(1, 5).map(photo => {
-                  const photoRef = photo.photo_reference;
-                  return getPlacePhotoUrl(photoRef);
-                }).filter(Boolean)
-              ];
-
-              console.log(`📸 Enrichment successful: ${place.name} now has ${enrichedPhotos.length} photos`);
-
-              if (enrichedPhotos.length >= 2) {
-                photoUrls = enrichedPhotos;
-                console.log(`✅ CAROUSEL ENABLED (after enrichment): ${place.name}`);
-              }
+            // Only enrich Google Places - skip Ticketmaster and other sources (their IDs aren't valid Google Place IDs)
+            if (place.source && place.source !== 'google_places') {
+              console.log(`📸 Skipping photo enrichment for ${place.name} (source: ${place.source})`);
             } else {
-              console.log(`⚠️ No additional photos found for ${place.name}`);
+              console.log(`📸 Enriching ${place.name} - currently has only ${allPhotos.length} photo`);
+
+              const additionalPhotos = await enrichPlacePhotos(place.place_id);
+
+              if (additionalPhotos.length > 0) {
+                // Combine original photo with additional photos
+                const enrichedPhotos = [
+                  ...allPhotos,
+                  ...additionalPhotos.slice(1, 5).map(photo => {
+                    const photoRef = photo.photo_reference;
+                    return getPlacePhotoUrl(photoRef);
+                  }).filter(Boolean)
+                ];
+
+                console.log(`📸 Enrichment successful: ${place.name} now has ${enrichedPhotos.length} photos`);
+
+                if (enrichedPhotos.length >= 2) {
+                  photoUrls = enrichedPhotos;
+                  console.log(`✅ CAROUSEL ENABLED (after enrichment): ${place.name}`);
+                }
+              } else {
+                console.log(`⚠️ No additional photos found for ${place.name}`);
+              }
             }
           } else {
             console.log(`⚠️ Not enough photos for carousel: ${place.name} has ${allPhotos.length} photos (need 2+)`);
@@ -1627,6 +1655,14 @@ function calculateActivityScore(params: {
   visitHistoryByAddress?: Map<string, number>; // NEW: Loop app visit counts by address
   visitHistoryByPlaceId?: Map<string, number>; // NEW: Loop app visit counts by place ID
   feedbackByPlaceId?: Map<string, { thumbsUp: number; thumbsDown: number; tags: string[] }>; // NEW: Loop app feedback
+  // NEW: Friend social context from Loop Moments
+  friendSocialContext?: Map<string, { // placeId -> context
+    friendVisits: { userId: string; userName: string; visitedAt: string; hasMoment: boolean }[];
+    totalFriendVisits: number;
+    recentFriendVisits: number;
+    hasFriendMoments: boolean;
+    friendMomentsCount: number;
+  }>;
 }): ScoredRecommendation['scoreBreakdown'] {
   const {
     place,
@@ -1640,7 +1676,8 @@ function calculateActivityScore(params: {
     upcomingCalendarEvents,
     visitHistoryByAddress,
     visitHistoryByPlaceId,
-    feedbackByPlaceId
+    feedbackByPlaceId,
+    friendSocialContext
   } = params;
 
   let baseScore = 0;
@@ -1660,6 +1697,11 @@ function calculateActivityScore(params: {
   let budgetBoost = 0;
   let loopVisitHistoryBoost = 0; // NEW: Visits in Loop app
   let loopFeedbackBoost = 0; // NEW: User ratings in Loop app
+
+  // NEW: Friend social context boosts (Loop Moments)
+  let friendVisitBoost = 0; // +25 if friend visited in last 7 days
+  let friendPhotoBoost = 0; // +15 if place has friend moments
+  let trendingFriendsBoost = 0; // +20 if 2+ friends visited this week
 
   // === BASE SCORE (50 → 55 points max for events) ===
   // Interest match guides scoring but doesn't filter - allow discovery
@@ -1970,6 +2012,30 @@ function calculateActivityScore(params: {
   // Keep this neutral base score for backwards compatibility
   feedbackScore = 5;
 
+  // === FRIEND SOCIAL CONTEXT BOOSTS (Loop Moments) ===
+  // Boost places where friends have visited or shared moments
+  if (friendSocialContext && place.place_id && friendSocialContext.has(place.place_id)) {
+    const socialContext = friendSocialContext.get(place.place_id)!;
+
+    // Friend visit boost: +25 if any friend visited in last 7 days
+    if (socialContext.recentFriendVisits > 0) {
+      friendVisitBoost = 25;
+      console.log(`\ud83d\udc65 FRIEND VISITED: ${place.name} (${socialContext.recentFriendVisits} recent visits, +25 points)`);
+    }
+
+    // Friend photo boost: +15 if place has friend moments
+    if (socialContext.hasFriendMoments) {
+      friendPhotoBoost = 15;
+      console.log(`\ud83d\udcf8 FRIEND MOMENT: ${place.name} (${socialContext.friendMomentsCount} moments, +15 points)`);
+    }
+
+    // Trending with friends: +20 if 2+ friends visited this week
+    if (socialContext.recentFriendVisits >= 2) {
+      trendingFriendsBoost = 20;
+      console.log(`\ud83d\udd25 TRENDING WITH FRIENDS: ${place.name} (${socialContext.recentFriendVisits} friends, +20 points)`);
+    }
+  }
+
   // === COLLABORATIVE FILTERING (10 points max) ===
   // TODO: Implement once we have multiple users
   collaborativeScore = 0;
@@ -2064,7 +2130,11 @@ function calculateActivityScore(params: {
     calendarPatternBoost +
     budgetBoost +
     loopVisitHistoryBoost + // NEW: Loop app visit history (+15 to +40)
-    loopFeedbackBoost // NEW: Loop app feedback ratings (+20 to -20)
+    loopFeedbackBoost + // NEW: Loop app feedback ratings (+20 to -20)
+    // NEW: Friend social context boosts (Loop Moments)
+    friendVisitBoost +
+    friendPhotoBoost +
+    trendingFriendsBoost
   );
 
   return {
@@ -2085,6 +2155,10 @@ function calculateActivityScore(params: {
     budgetBoost,
     loopVisitHistoryBoost, // NEW: Loop app visit history (+15 to +40)
     loopFeedbackBoost, // NEW: Loop app feedback ratings (+20 to -20)
+    // NEW: Friend social context boosts (Loop Moments)
+    friendVisitBoost, // +25 if friend visited in last 7 days
+    friendPhotoBoost, // +15 if place has friend moments
+    trendingFriendsBoost, // +20 if 2+ friends visited this week
     finalScore: Math.max(0, Math.min(finalScore, 150)), // Raised cap from 100 to 150 to accommodate new boosts
   };
 }

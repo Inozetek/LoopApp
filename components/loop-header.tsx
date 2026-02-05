@@ -40,6 +40,12 @@ interface LoopHeaderProps {
   onProfilePress?: () => void;
   showSettingsButton?: boolean;
   onSettingsPress?: () => void;
+  // New: Notification bell (left side)
+  showNotificationBell?: boolean;
+  onNotificationPress?: () => void;
+  // New: Plus/Add button (right side)
+  showAddButton?: boolean;
+  onAddPress?: () => void;
   rightAction?: React.ReactNode;
   onDashboardOpen?: () => void;
   onLogoPress?: () => void; // Open advanced search/filters
@@ -52,8 +58,12 @@ export function LoopHeader({
   onBackPress,
   showProfileButton = false,
   onProfilePress,
-  showSettingsButton = true,
+  showSettingsButton = false, // Changed default to false
   onSettingsPress,
+  showNotificationBell = false,
+  onNotificationPress,
+  showAddButton = false,
+  onAddPress,
   rightAction,
   onDashboardOpen,
   onLogoPress,
@@ -255,6 +265,25 @@ export function LoopHeader({
           >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
+        ) : showNotificationBell ? (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onNotificationPress?.();
+            }}
+            style={styles.iconButton}
+          >
+            <View>
+              <Ionicons name="notifications-outline" size={24} color={colors.text} />
+              {notificationCount > 0 && (
+                <View style={styles.bellBadge}>
+                  <Text style={styles.bellBadgeText}>
+                    {notificationCount > 9 ? '9+' : notificationCount}
+                  </Text>
+                </View>
+              )}
+            </View>
+          </TouchableOpacity>
         ) : showProfileButton ? (
           <TouchableOpacity
             onPress={() => {
@@ -305,6 +334,16 @@ export function LoopHeader({
       <View style={styles.rightSection}>
         {rightAction ? (
           rightAction
+        ) : showAddButton ? (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onAddPress?.();
+            }}
+            style={styles.iconButton}
+          >
+            <Ionicons name="add-circle-outline" size={26} color={colors.text} />
+          </TouchableOpacity>
         ) : showSettingsButton ? (
           <TouchableOpacity
             onPress={handleSettingsPress}
@@ -377,7 +416,7 @@ const styles = StyleSheet.create({
   iconButton: {
     padding: Spacing.sm,
   },
-  // Notification Badge
+  // Notification Badge (on logo)
   notificationBadge: {
     position: 'absolute',
     top: -4,
@@ -395,6 +434,25 @@ const styles = StyleSheet.create({
   notificationBadgeText: {
     color: '#FFFFFF',
     fontSize: 11,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  // Bell icon badge (smaller, for bell icon)
+  bellBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: '#FF3B30',
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  bellBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 10,
     fontWeight: '700',
     includeFontPadding: false,
   },

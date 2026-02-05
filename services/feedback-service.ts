@@ -14,6 +14,12 @@ export interface CompletedActivity {
   activityCategory: string;
   completedAt: string;
   recommendationId: string | null;
+  // Place info for moment capture after feedback
+  place?: {
+    id: string;
+    name: string;
+    address?: string;
+  };
 }
 
 // DEMO MODE: Skip database queries for demo user
@@ -44,7 +50,7 @@ export async function getPendingFeedbackActivities(
     // Find completed calendar events from the last 3 hours (but not within last 30 min)
     const { data: completedEvents, error: eventsError } = await supabase
       .from('calendar_events')
-      .select('id, title, category, activity_id, end_time, source')
+      .select('id, title, category, activity_id, end_time, source, address, google_place_id')
       .eq('user_id', userId)
       .eq('status', 'scheduled')
       .gte('end_time', threeHoursAgo.toISOString())
@@ -88,6 +94,12 @@ export async function getPendingFeedbackActivities(
         activityCategory: event.category || 'other',
         completedAt: event.end_time,
         recommendationId: null, // Could fetch from recommendations table if needed
+        // Include place info for moment capture
+        place: event.google_place_id || event.activity_id ? {
+          id: event.google_place_id || event.activity_id || event.id,
+          name: event.title,
+          address: event.address || undefined,
+        } : undefined,
       }));
 
     return pendingActivities;

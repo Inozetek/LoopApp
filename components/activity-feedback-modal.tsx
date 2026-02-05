@@ -30,6 +30,15 @@ interface ActivityFeedbackModalProps {
     tags?: string[];
     notes?: string;
   }) => void;
+  // Optional: Enable capture moment prompt after thumbs up
+  enableMomentCapture?: boolean;
+  onCapturePress?: () => void;
+  place?: {
+    id: string;
+    name: string;
+    location?: { latitude: number; longitude: number };
+    address?: string;
+  };
 }
 
 const NEGATIVE_TAGS = [
@@ -47,6 +56,9 @@ export function ActivityFeedbackModal({
   activityId,
   onClose,
   onSubmit,
+  enableMomentCapture = false,
+  onCapturePress,
+  place,
 }: ActivityFeedbackModalProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -55,6 +67,7 @@ export function ActivityFeedbackModal({
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [notes, setNotes] = useState('');
   const [showFollowUp, setShowFollowUp] = useState(false);
+  const [showCapturePrompt, setShowCapturePrompt] = useState(false);
 
   const handleRating = (selectedRating: 'thumbs_up' | 'thumbs_down') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -63,9 +76,27 @@ export function ActivityFeedbackModal({
     if (selectedRating === 'thumbs_down') {
       setShowFollowUp(true);
     } else {
-      // For thumbs up, submit immediately
-      handleSubmit(selectedRating, [], '');
+      // For thumbs up, show capture prompt if enabled, otherwise submit immediately
+      if (enableMomentCapture) {
+        setShowCapturePrompt(true);
+        handleSubmit(selectedRating, [], ''); // Submit the feedback
+      } else {
+        handleSubmit(selectedRating, [], '');
+      }
     }
+  };
+
+  const handleCapturePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowCapturePrompt(false);
+    handleClose();
+    onCapturePress?.();
+  };
+
+  const handleSkipCapture = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowCapturePrompt(false);
+    handleClose();
   };
 
   const toggleTag = (tagId: string) => {
@@ -95,6 +126,7 @@ export function ActivityFeedbackModal({
     setSelectedTags([]);
     setNotes('');
     setShowFollowUp(false);
+    setShowCapturePrompt(false);
     onClose();
   };
 
@@ -118,7 +150,7 @@ export function ActivityFeedbackModal({
             {/* Header */}
             <View style={styles.header}>
               <Text style={[styles.title, { color: colors.text }]}>
-                {showFollowUp ? "What didn't work?" : 'How was it?'}
+                {showCapturePrompt ? 'Share the moment!' : showFollowUp ? "What didn't work?" : 'How was it?'}
               </Text>
               <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
                 <Ionicons name="close" size={24} color={colors.icon} />
@@ -138,7 +170,32 @@ export function ActivityFeedbackModal({
                 </Text>
               </View>
 
-              {!showFollowUp ? (
+              {showCapturePrompt ? (
+                // Capture Moment Prompt (after thumbs up)
+                <>
+                  <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+                    Want to share a photo of your experience?
+                  </Text>
+
+                  <View style={styles.capturePromptContainer}>
+                    <TouchableOpacity
+                      style={[styles.captureButton, { backgroundColor: BrandColors.loopBlue }]}
+                      onPress={handleCapturePress}
+                    >
+                      <Ionicons name="camera" size={28} color="#fff" />
+                      <Text style={styles.captureButtonText}>Capture Moment</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity onPress={handleSkipCapture} style={styles.skipButton}>
+                      <Text style={styles.skipButtonText}>Maybe later</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={[styles.captureHint, { color: colors.textSecondary }]}>
+                    Your photo will appear in {place?.name || activityName}'s story!
+                  </Text>
+                </>
+              ) : !showFollowUp ? (
                 // Initial Rating
                 <>
                   <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
@@ -430,5 +487,31 @@ const styles = StyleSheet.create({
   skipButtonText: {
     fontSize: 14,
     color: '#888',
+  },
+  // Capture prompt styles
+  capturePromptContainer: {
+    alignItems: 'center',
+    marginBottom: Spacing.lg,
+  },
+  captureButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.xl,
+    borderRadius: BorderRadius.lg,
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+    minWidth: 200,
+  },
+  captureButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#fff',
+  },
+  captureHint: {
+    fontSize: 12,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });

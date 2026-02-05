@@ -10,6 +10,9 @@ export const BrandColors = {
   loopBlueLight: '#33CFFF',  // Lighter cyan for highlights
   loopBlueDark: '#00A0E3',   // Darker cyan for pressed states
 
+  // Strong Match Highlight (Blue LED glow - deep ocean blue)
+  strongMatchGlow: '#0099FF', // Deep ocean blue LED - for strong match borders
+
   loopGreen: '#00FF9F',     // Neon Mint Green - success/secondary
   loopGreenLight: '#33FFB2', // Lighter mint for highlights
   loopGreenDark: '#00E38C',  // Darker mint for pressed states

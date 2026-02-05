@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,6 @@ import {
   Modal,
   TextInput,
   Alert,
-  FlatList,
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,6 +23,12 @@ import { GroupPlanningModal } from '@/components/group-planning-modal';
 import { FriendCardSkeleton } from '@/components/skeleton-loader';
 import { SuccessAnimation } from '@/components/success-animation';
 import SwipeableLayout from '@/components/swipeable-layout';
+import { FriendsHeader } from '@/components/friends-header';
+import { StoriesGridSection } from '@/components/stories-grid-section';
+import { MomentViewer } from '@/components/moment-viewer';
+import { MomentCaptureModal } from '@/components/moment-capture-modal';
+import { FriendWithMoments } from '@/types/moment';
+import { getFriendMoments, getMockFriendMoments } from '@/services/moments-service';
 
 interface Friend {
   id: string;
@@ -62,9 +67,16 @@ export default function FriendsScreen() {
   const [searching, setSearching] = useState(false);
   const [showSuccessAnimation, setShowSuccessAnimation] = useState(false);
 
+  // Stories/Moments state
+  const [friendsWithMoments, setFriendsWithMoments] = useState<FriendWithMoments[]>([]);
+  const [showMomentCapture, setShowMomentCapture] = useState(false);
+  const [viewingStoryFriendId, setViewingStoryFriendId] = useState<string | null>(null);
+  const [momentsLoading, setMomentsLoading] = useState(false);
+
   useEffect(() => {
     loadFriends();
     loadFriendRequests();
+    loadFriendMoments();
   }, []);
 
   const loadFriends = async () => {
@@ -201,6 +213,58 @@ export default function FriendsScreen() {
       console.error('Error loading friend requests:', error);
     }
   };
+
+  const loadFriendMoments = useCallback(async () => {
+    if (!user) return;
+
+    setMomentsLoading(true);
+    try {
+      // DEMO MODE: Use mock moments for demo user
+      if (user.id === 'demo-user-123') {
+        const mockResult = getMockFriendMoments();
+        setFriendsWithMoments(mockResult.friends);
+        return;
+      }
+
+      const result = await getFriendMoments(user.id);
+      setFriendsWithMoments(result.friends);
+    } catch (error) {
+      console.error('Error loading friend moments:', error);
+      // Use mock data as fallback
+      const mockResult = getMockFriendMoments();
+      setFriendsWithMoments(mockResult.friends);
+    } finally {
+      setMomentsLoading(false);
+    }
+  }, [user]);
+
+  // Story interaction handlers
+  const handleAddStory = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowMomentCapture(true);
+  }, []);
+
+  const handleViewStory = useCallback((friendId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setViewingStoryFriendId(friendId);
+  }, []);
+
+  const handleCloseStory = useCallback(() => {
+    setViewingStoryFriendId(null);
+    // Reload moments to update viewed status
+    loadFriendMoments();
+  }, [loadFriendMoments]);
+
+  const handleMomentCaptureClose = useCallback(() => {
+    setShowMomentCapture(false);
+    // Reload moments to show newly created moment
+    loadFriendMoments();
+  }, [loadFriendMoments]);
+
+  // Get the index of the friend being viewed for the MomentViewer
+  const viewingFriendIndex = viewingStoryFriendId
+    ? friendsWithMoments.findIndex((f) => f.userId === viewingStoryFriendId)
+    : -1;
 
   const searchForUser = async () => {
     if (!user || !searchEmail.trim()) {
@@ -470,24 +534,24 @@ export default function FriendsScreen() {
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
         {/* Header */}
-      <View style={styles.header}>
-        <Text style={[styles.headerTitle, Typography.headlineLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-          Friends
-        </Text>
-        <View style={styles.headerButtons}>
-          <TouchableOpacity style={styles.headerButton} onPress={() => {
+        <FriendsHeader
+          onSettingsPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setShowProfileSettings(true);
-          }}>
-            <Ionicons name="settings-outline" size={26} color={Colors[colorScheme ?? 'light'].icon} />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.headerButton} onPress={openAddFriendModal}>
-            <Ionicons name="person-add" size={28} color={BrandColors.loopBlue} />
-          </TouchableOpacity>
-        </View>
-      </View>
+          }}
+          onAddPress={openAddFriendModal}
+          notificationCount={friendRequests.length}
+        />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Stories Grid Section */}
+        <StoriesGridSection
+          friends={friendsWithMoments}
+          onAddStory={handleAddStory}
+          onViewStory={handleViewStory}
+          currentUserProfilePicture={user?.profile_picture_url || undefined}
+        />
+
         {/* Friend Requests Section */}
         {friendRequests.length > 0 && (
           <View style={styles.section}>
@@ -686,6 +750,42 @@ export default function FriendsScreen() {
         icon="checkmark-circle"
         color={BrandColors.loopGreen}
       />
+
+      {/* Moment Viewer */}
+      {viewingFriendIndex >= 0 && friendsWithMoments.length > 0 && (
+        <MomentViewer
+          visible={!!viewingStoryFriendId}
+          friends={friendsWithMoments}
+          initialFriendIndex={viewingFriendIndex}
+          currentUserId={user?.id || ''}
+          onClose={handleCloseStory}
+        />
+      )}
+
+      {/* Moment Capture Modal */}
+      {user && (
+        <MomentCaptureModal
+          visible={showMomentCapture}
+          onClose={handleMomentCaptureClose}
+          currentUserId={user.id}
+          friends={friends.map((f) => ({
+            id: f.id,
+            name: f.name,
+            email: f.email,
+            profilePictureUrl: f.profile_picture_url || undefined,
+            loopScore: f.loop_score,
+            streakDays: 0,
+            isOnline: false,
+            lastActiveAt: new Date(),
+            friendsSince: new Date(f.created_at),
+            mutualFriends: 0,
+            sharedInterests: [],
+            canViewLoop: f.can_view_loop,
+            canInviteToActivities: true,
+          }))}
+          onSuccess={loadFriendMoments}
+        />
+      )}
       </View>
     </SwipeableLayout>
   );
@@ -694,28 +794,6 @@ export default function FriendsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: Spacing.lg,
-    paddingTop: Spacing.xl + 40,
-    paddingBottom: Spacing.md,
-  },
-  headerTitle: {
-    flex: 1,
-  },
-  headerButtons: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  headerButton: {
-    padding: Spacing.sm,
-  },
-  addButton: {
-    padding: Spacing.sm,
   },
   content: {
     flex: 1,

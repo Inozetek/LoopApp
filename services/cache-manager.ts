@@ -259,7 +259,7 @@ export async function getCachedPlaces(
   city: string,
   state: string,
   category?: string,
-  limit: number = 100
+  limit: number = 500  // Support explore mode (maxResults 30 × multiplier 10 = 300)
 ): Promise<Activity[]> {
   console.log(`📥 Loading cached places for ${city}, ${state}...`);
   if (category) {

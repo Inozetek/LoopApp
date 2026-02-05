@@ -16,6 +16,7 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: colors.tint,
         tabBarInactiveTintColor: colors.icon,
+        tabBarShowLabel: false, // Icons only - no text labels
         tabBarStyle: {
           backgroundColor: colors.background,
           borderTopColor: colors.icon + '20',
@@ -23,43 +24,46 @@ export default function TabLayout() {
         headerShown: false,
         tabBarButton: HapticTab,
       }}>
+      {/* Tab 1: Calendar - Schedule, Loop route view */}
       <Tabs.Screen
         name="calendar"
         options={{
-          title: 'Calendar',
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="calendar" color={color} />,
         }}
       />
-      <Tabs.Screen
-        name="index"
-        options={{
-          title: 'For You',
-          tabBarIcon: ({ focused }) => <GradientIcon name="sparkles" size={28} focused={focused} />,
-        }}
-      />
-      <Tabs.Screen
-        name="friends"
-        options={{
-          title: 'Friends',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.2.fill" color={color} />,
-        }}
-      />
+      {/* Tab 2: Explore - Search, browse, discover */}
       <Tabs.Screen
         name="explore"
         options={{
-          href: null, // Hide from tab bar (keeping for future use)
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="safari" color={color} />,
         }}
       />
+      {/* Tab 3: Daily - AI-curated recommendations (center position) */}
       <Tabs.Screen
-        name="settings"
+        name="index"
         options={{
-          href: null, // Hide from tab bar
+          tabBarIcon: ({ focused }) => <GradientIcon name="sparkles" size={28} focused={focused} />,
         }}
       />
+      {/* Tab 4: Friends - Friends' Loops, coordinate, group planning */}
+      <Tabs.Screen
+        name="friends"
+        options={{
+          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.2.fill" color={color} />,
+        }}
+      />
+      {/* Tab 5: Profile - Settings, preferences, subscription */}
       <Tabs.Screen
         name="profile"
         options={{
-          href: null, // Hide from tab bar
+          tabBarIcon: ({ color }) => <IconSymbol size={24} name="person.fill" color={color} />,
+        }}
+      />
+      {/* Hidden screens (accessible from navigation) */}
+      <Tabs.Screen
+        name="settings"
+        options={{
+          href: null, // Hide from tab bar - accessed from Profile
         }}
       />
     </Tabs>

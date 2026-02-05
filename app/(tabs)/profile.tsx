@@ -24,9 +24,10 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
-import { LoopHeader } from '@/components/loop-header';
+import { ProfileHeader } from '@/components/profile-header';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
+import SwipeableLayout from '@/components/swipeable-layout';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
@@ -164,14 +165,17 @@ export default function ProfileScreen() {
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <LoopHeader
-        showBackButton={true}
-        onBackPress={() => router.push('/(tabs)')} // Navigate to feed, not back
-        showSettingsButton={false}
-      />
+    <SwipeableLayout>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ProfileHeader
+          username={user?.name || 'Profile'}
+          onSettingsPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/(tabs)/settings');
+          }}
+        />
 
-      <ScrollView
+        <ScrollView
         style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -314,7 +318,8 @@ export default function ProfileScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+      </View>
+    </SwipeableLayout>
   );
 }
 
