@@ -9,6 +9,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { ContextBadgeColors } from '@/constants/brand';
 import type {
   RecommendationContext,
   TripContext,
@@ -35,18 +36,8 @@ const MIN_GAP_DURATION = 60;
 // Maximum lookahead for trip detection (in days)
 const DEFAULT_LOOKAHEAD_DAYS = 14;
 
-// Badge colors
-const BADGE_COLORS: Record<ContextBadgeType, string> = {
-  free: '#10b981',          // Green
-  available: '#3b82f6',     // Blue
-  on_route: '#8b5cf6',      // Purple
-  friend_loves: '#ec4899',  // Pink
-  group_friendly: '#f59e0b', // Amber
-  before_event: '#6366f1',  // Indigo
-  after_event: '#6366f1',   // Indigo
-  walking_distance: '#14b8a6', // Teal
-  time_limited: '#ef4444',  // Red
-};
+// Badge colors (from brand constants)
+const BADGE_COLORS: Record<ContextBadgeType, string> = ContextBadgeColors as Record<ContextBadgeType, string>;
 
 // ============================================================================
 // MAIN DETECTION FUNCTION

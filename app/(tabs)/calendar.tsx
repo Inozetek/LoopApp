@@ -39,7 +39,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable';
 
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
-import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
+import { BrandColors, CategoryColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { FeedbackModal } from '@/components/feedback-modal';
@@ -77,14 +77,14 @@ interface CalendarEvent {
 }
 
 const CATEGORIES = [
-  { id: 'dining', label: 'Dining', icon: 'restaurant', color: '#FF6B6B' },
-  { id: 'entertainment', label: 'Entertainment', icon: 'musical-notes', color: '#4ECDC4' },
-  { id: 'fitness', label: 'Fitness', icon: 'fitness', color: '#95E1D3' },
-  { id: 'social', label: 'Social', icon: 'people', color: '#F38181' },
-  { id: 'work', label: 'Work', icon: 'briefcase', color: '#AA96DA' },
-  { id: 'personal', label: 'Personal', icon: 'person', color: '#FCBAD3' },
-  { id: 'travel', label: 'Travel', icon: 'airplane', color: '#A8D8EA' },
-  { id: 'other', label: 'Other', icon: 'ellipsis-horizontal', color: '#C7CEEA' },
+  { id: 'dining', label: 'Dining', icon: 'restaurant', color: CategoryColors.dining },
+  { id: 'entertainment', label: 'Entertainment', icon: 'musical-notes', color: CategoryColors.entertainment },
+  { id: 'fitness', label: 'Fitness', icon: 'fitness', color: CategoryColors.fitness },
+  { id: 'social', label: 'Social', icon: 'people', color: CategoryColors.social },
+  { id: 'work', label: 'Work', icon: 'briefcase', color: CategoryColors.work },
+  { id: 'personal', label: 'Personal', icon: 'person', color: CategoryColors.personal },
+  { id: 'travel', label: 'Travel', icon: 'airplane', color: CategoryColors.travel },
+  { id: 'other', label: 'Other', icon: 'ellipsis-horizontal', color: CategoryColors.other },
 ];
 
 // Map Google place types to calendar categories
@@ -752,14 +752,14 @@ export default function CalendarScreen() {
             onDayPress={onDayPress}
             markedDates={markedDates}
             theme={{
-              calendarBackground: isDark ? '#1f2123' : '#ffffff',
-              textSectionTitleColor: isDark ? '#999' : '#666',
+              calendarBackground: isDark ? BrandColors.darkGray : BrandColors.white,
+              textSectionTitleColor: isDark ? BrandColors.veryLightGray : BrandColors.lightGray,
               selectedDayBackgroundColor: BrandColors.loopBlue,
-              selectedDayTextColor: '#ffffff',
+              selectedDayTextColor: BrandColors.white,
               todayTextColor: BrandColors.loopBlue,
-              dayTextColor: isDark ? '#ddd' : '#333',
-              textDisabledColor: isDark ? '#444' : '#d9e1e8',
-              monthTextColor: isDark ? '#fff' : '#000',
+              dayTextColor: isDark ? BrandColors.offWhite : BrandColors.almostBlack,
+              textDisabledColor: isDark ? BrandColors.lightGray : '#d9e1e8',
+              monthTextColor: isDark ? BrandColors.white : BrandColors.black,
               textMonthFontSize: 18,
               textMonthFontWeight: '600',
             }}
@@ -812,7 +812,7 @@ export default function CalendarScreen() {
                   style={[
                     styles.eventCard,
                     {
-                      backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                      backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
                       borderLeftColor: getCategoryColor(event.category),
                     },
                   ]}
@@ -873,9 +873,9 @@ export default function CalendarScreen() {
 
               {/* Status badge for completed events */}
               {event.status === 'completed' && (
-                <View style={[styles.statusBadge, { backgroundColor: '#10b981' }]}>
-                  <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
-                  <Text style={[Typography.labelSmall, { color: '#ffffff', marginLeft: 4 }]}>
+                <View style={[styles.statusBadge, { backgroundColor: BrandColors.success }]}>
+                  <Ionicons name="checkmark-circle" size={16} color={BrandColors.white} />
+                  <Text style={[Typography.labelSmall, { color: BrandColors.white, marginLeft: 4 }]}>
                     Completed
                   </Text>
                 </View>
@@ -947,7 +947,7 @@ export default function CalendarScreen() {
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               style={{ flex: 1, justifyContent: 'flex-end' }}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+              <View style={[styles.modalContent, { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
                     Create Task
@@ -967,7 +967,7 @@ export default function CalendarScreen() {
                   styles.input,
                   Typography.bodyLarge,
                   {
-                    backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                    backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground,
                     color: Colors[colorScheme ?? 'light'].text,
                   },
                 ]}
@@ -987,7 +987,7 @@ export default function CalendarScreen() {
                   styles.textArea,
                   Typography.bodyLarge,
                   {
-                    backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                    backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground,
                     color: Colors[colorScheme ?? 'light'].text,
                   },
                 ]}
@@ -1006,7 +1006,7 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 style={[
                   styles.dateTimeButton,
-                  { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' },
+                  { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground },
                 ]}
                 onPress={() => setShowDatePicker(true)}
               >
@@ -1035,7 +1035,7 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 style={[
                   styles.dateTimeButton,
-                  { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' },
+                  { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground },
                 ]}
                 onPress={() => setShowTimePicker(true)}
               >
@@ -1062,7 +1062,7 @@ export default function CalendarScreen() {
                 End Time
               </Text>
               <TouchableOpacity
-                style={[styles.dateTimeButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}
+                style={[styles.dateTimeButton, { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground }]}
                 onPress={() => setShowEndTimePicker(true)}
               >
                 <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
@@ -1201,7 +1201,7 @@ export default function CalendarScreen() {
                     style={[
                       styles.categoryButton,
                       {
-                        backgroundColor: newTaskCategory === cat.id ? cat.color : (isDark ? '#2f3133' : '#f5f5f5'),
+                        backgroundColor: newTaskCategory === cat.id ? cat.color : (isDark ? BrandColors.mediumGray : BrandColors.lightBackground),
                         borderColor: newTaskCategory === cat.id ? cat.color : 'transparent',
                       },
                     ]}
@@ -1259,7 +1259,7 @@ export default function CalendarScreen() {
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               style={{ flex: 1, justifyContent: 'flex-end' }}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+              <View style={[styles.modalContent, { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
                     Edit Task
@@ -1284,7 +1284,7 @@ export default function CalendarScreen() {
                         styles.input,
                         Typography.bodyLarge,
                         {
-                          backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                          backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground,
                           color: Colors[colorScheme ?? 'light'].text,
                         },
                       ]}
@@ -1304,7 +1304,7 @@ export default function CalendarScreen() {
                         styles.textArea,
                         Typography.bodyLarge,
                         {
-                          backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                          backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground,
                           color: Colors[colorScheme ?? 'light'].text,
                         },
                       ]}
@@ -1327,7 +1327,7 @@ export default function CalendarScreen() {
                           style={[
                             styles.categoryButton,
                             {
-                              backgroundColor: editingEvent.category === cat.id ? cat.color : (isDark ? '#2f3133' : '#f5f5f5'),
+                              backgroundColor: editingEvent.category === cat.id ? cat.color : (isDark ? BrandColors.mediumGray : BrandColors.lightBackground),
                             },
                           ]}
                           onPress={() => {
@@ -1359,7 +1359,7 @@ export default function CalendarScreen() {
                     <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
                       Time
                     </Text>
-                    <View style={[styles.readOnlyField, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}>
+                    <View style={[styles.readOnlyField, { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground }]}>
                       <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
                       <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text, marginLeft: Spacing.sm }]}>
                         {new Date(editingEvent.start_time).toLocaleString('en-US', {
@@ -1420,10 +1420,10 @@ export default function CalendarScreen() {
                     {/* Action Buttons */}
                     <View style={styles.modalActions}>
                       <TouchableOpacity
-                        style={[styles.deleteButton, { borderColor: '#ef4444' }]}
+                        style={[styles.deleteButton, { borderColor: BrandColors.error }]}
                         onPress={handleDeleteEvent}
                       >
-                        <Ionicons name="trash-outline" size={20} color="#ef4444" />
+                        <Ionicons name="trash-outline" size={20} color={BrandColors.error} />
                         <Text style={[Typography.labelLarge, { color: '#ef4444', marginLeft: 8 }]}>
                           Delete
                         </Text>
@@ -1773,7 +1773,7 @@ const styles = StyleSheet.create({
     ...Shadows.md,
   },
   deleteSwipeAction: {
-    backgroundColor: '#ef4444',
+    backgroundColor: BrandColors.error,
     justifyContent: 'center',
     alignItems: 'flex-end',
     paddingRight: Spacing.lg,

@@ -219,7 +219,7 @@ export function ProfileSettingsModal({
               style={[
                 styles.card,
                 {
-                  backgroundColor: isDark ? '#1f2123' : '#f8f9fa',
+                  backgroundColor: isDark ? BrandColors.darkGray : BrandColors.lightBackground,
                   borderColor: colors.border,
                 },
               ]}
@@ -268,7 +268,7 @@ export function ProfileSettingsModal({
                 style={[
                   styles.card,
                   {
-                    backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                    backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
                     borderColor: colors.border,
                   },
                 ]}
@@ -278,7 +278,7 @@ export function ProfileSettingsModal({
                 </Text>
                 <View style={styles.statsRow}>
                   <View style={styles.statItem}>
-                    <Text style={[Typography.headlineMedium, { color: '#10b981' }]}>
+                    <Text style={[Typography.headlineMedium, { color: BrandColors.success }]}>
                       {feedbackStats.thumbsUpCount}
                     </Text>
                     <Text style={[Typography.bodySmall, { color: colors.icon }]}>
@@ -286,7 +286,7 @@ export function ProfileSettingsModal({
                     </Text>
                   </View>
                   <View style={styles.statItem}>
-                    <Text style={[Typography.headlineMedium, { color: '#ef4444' }]}>
+                    <Text style={[Typography.headlineMedium, { color: BrandColors.error }]}>
                       {feedbackStats.thumbsDownCount}
                     </Text>
                     <Text style={[Typography.bodySmall, { color: colors.icon }]}>
@@ -337,7 +337,7 @@ export function ProfileSettingsModal({
               style={[
                 styles.card,
                 {
-                  backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                  backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
                   borderColor: colors.border,
                 },
               ]}
@@ -349,7 +349,7 @@ export function ProfileSettingsModal({
                 style={[
                   styles.input,
                   {
-                    backgroundColor: isDark ? '#2f3133' : '#f5f5f5',
+                    backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground,
                     borderColor: colors.border,
                     color: colors.text,
                   },
@@ -367,7 +367,7 @@ export function ProfileSettingsModal({
               style={[
                 styles.card,
                 {
-                  backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                  backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
                   borderColor: colors.border,
                 },
               ]}
@@ -391,7 +391,7 @@ export function ProfileSettingsModal({
                         {
                           backgroundColor: interests.includes(interest)
                             ? BrandColors.loopBlue
-                            : (isDark ? '#2f3133' : '#f5f5f5'),
+                            : (isDark ? BrandColors.mediumGray : BrandColors.lightBackground),
                           borderColor: interests.includes(interest)
                             ? BrandColors.loopBlue
                             : colors.border,
@@ -419,7 +419,7 @@ export function ProfileSettingsModal({
               style={[
                 styles.card,
                 {
-                  backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                  backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
                   borderColor: colors.border,
                 },
               ]}
@@ -448,10 +448,10 @@ export function ProfileSettingsModal({
                       {
                         backgroundColor:
                           locationPermission === 'granted'
-                            ? '#10b981'
+                            ? BrandColors.success
                             : locationPermission === 'denied'
-                            ? '#ef4444'
-                            : '#f59e0b',
+                            ? BrandColors.error
+                            : BrandColors.loopOrange,
                       },
                     ]}
                   />
@@ -482,8 +482,8 @@ export function ProfileSettingsModal({
 
                 {locationPermission === 'granted' && (
                   <View style={styles.locationEnabledInfo}>
-                    <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-                    <Text style={[Typography.bodySmall, { color: '#10b981', marginLeft: 6 }]}>
+                    <Ionicons name="checkmark-circle" size={18} color={BrandColors.success} />
+                    <Text style={[Typography.bodySmall, { color: BrandColors.success, marginLeft: 6 }]}>
                       Getting personalized recommendations
                     </Text>
                   </View>
@@ -496,7 +496,7 @@ export function ProfileSettingsModal({
               style={[
                 styles.card,
                 {
-                  backgroundColor: isDark ? '#1f2123' : '#ffffff',
+                  backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
                   borderColor: colors.border,
                 },
               ]}
@@ -547,7 +547,7 @@ export function ProfileSettingsModal({
               style={[
                 styles.card,
                 {
-                  backgroundColor: isDark ? '#1f2123' : '#f8f9fa',
+                  backgroundColor: isDark ? BrandColors.darkGray : BrandColors.lightBackground,
                   borderColor: colors.border,
                 },
               ]}

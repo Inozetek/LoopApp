@@ -25,7 +25,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Recommendation } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, ScoreBarColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getStaticMapUrl } from '@/utils/maps';
 import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
@@ -59,11 +59,11 @@ interface DetailedScoreGraphProps {
 
 function DetailedScoreGraph({ scoreBreakdown }: DetailedScoreGraphProps) {
   const bars = [
-    { label: 'Interest Match', value: scoreBreakdown.baseScore, max: 40, color: '#3b82f6' },
-    { label: 'Location', value: scoreBreakdown.locationScore, max: 20, color: '#10b981' },
-    { label: 'Timing', value: scoreBreakdown.timeScore, max: 15, color: '#f59e0b' },
-    { label: 'Past Feedback', value: scoreBreakdown.feedbackScore, max: 15, color: '#8b5cf6' },
-    { label: 'Similar Users', value: scoreBreakdown.collaborativeScore, max: 10, color: '#ec4899' },
+    { label: 'Interest Match', value: scoreBreakdown.baseScore, max: 40, color: ScoreBarColors.interest },
+    { label: 'Location', value: scoreBreakdown.locationScore, max: 20, color: ScoreBarColors.location },
+    { label: 'Timing', value: scoreBreakdown.timeScore, max: 15, color: ScoreBarColors.time },
+    { label: 'Past Feedback', value: scoreBreakdown.feedbackScore, max: 15, color: ScoreBarColors.feedback },
+    { label: 'Similar Users', value: scoreBreakdown.collaborativeScore, max: 10, color: ScoreBarColors.social },
   ];
 
   const totalScore = scoreBreakdown.baseScore +
@@ -438,24 +438,24 @@ export function SeeDetailsModal({
                                 styles.topicBubble,
                                 {
                                   backgroundColor: topic.sentiment === 'positive'
-                                    ? 'rgba(16, 185, 129, 0.15)'  // Green tint
-                                    : 'rgba(239, 68, 68, 0.15)',  // Red tint
+                                    ? BrandColors.success + '26'
+                                    : BrandColors.error + '26',
                                   borderColor: topic.sentiment === 'positive'
-                                    ? '#10b981'
-                                    : '#ef4444',
+                                    ? BrandColors.success
+                                    : BrandColors.error,
                                 },
                               ]}
                             >
                               <IconSymbol
                                 name={topic.sentiment === 'positive' ? 'hand.thumbsup.fill' : 'hand.thumbsdown.fill'}
                                 size={12}
-                                color={topic.sentiment === 'positive' ? '#10b981' : '#ef4444'}
+                                color={topic.sentiment === 'positive' ? BrandColors.success : BrandColors.error}
                               />
                               <Text
                                 style={[
                                   styles.topicText,
                                   {
-                                    color: topic.sentiment === 'positive' ? '#10b981' : '#ef4444',
+                                    color: topic.sentiment === 'positive' ? BrandColors.success : BrandColors.error,
                                   },
                                 ]}
                               >
@@ -1012,7 +1012,7 @@ const styles = StyleSheet.create({
     width: 3,
     height: 3,
     borderRadius: 1.5,
-    backgroundColor: '#999',
+    backgroundColor: BrandColors.veryLightGray,
   },
 
   // SECTIONS
@@ -1160,7 +1160,7 @@ const styles = StyleSheet.create({
   graphTotal: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#3b82f6',
+    color: BrandColors.loopBlue,
   },
   detailedBarContainer: {
     marginBottom: Spacing.sm,

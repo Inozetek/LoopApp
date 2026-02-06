@@ -8,6 +8,7 @@ import { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { getAPIUsageStats } from '@/utils/api-cost-tracker';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { BrandColors } from '@/constants/brand';
 
 export function APIUsageBanner() {
   const [stats, setStats] = useState<{
@@ -42,9 +43,9 @@ export function APIUsageBanner() {
 
   // Determine status color
   const getStatusColor = () => {
-    if (stats.percentUsed >= 80) return '#EF4444'; // Red
-    if (stats.percentUsed >= 50) return '#F59E0B'; // Orange
-    return '#10B981'; // Green
+    if (stats.percentUsed >= 80) return BrandColors.error;
+    if (stats.percentUsed >= 50) return BrandColors.loopOrange;
+    return BrandColors.success;
   };
 
   const getStatusIcon = () => {

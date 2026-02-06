@@ -18,6 +18,7 @@ import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { BrandColors } from '@/constants/brand';
 import { processReferralCode } from '@/services/referral-service';
 import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
@@ -554,7 +555,7 @@ export default function OnboardingScreen() {
                 styles.calendarButton,
                 {
                   backgroundColor: calendarSynced ? colors.tint + '20' : colors.tint + '15',
-                  borderColor: calendarSynced ? '#10b981' : colors.tint,
+                  borderColor: calendarSynced ? BrandColors.success : colors.tint,
                 },
               ]}
               onPress={handleConnectCalendar}
@@ -563,7 +564,7 @@ export default function OnboardingScreen() {
               {isSyncingCalendar ? (
                 <ActivityIndicator size="small" color={colors.tint} />
               ) : calendarSynced ? (
-                <Text style={[styles.calendarButtonText, { color: '#10b981' }]}>
+                <Text style={[styles.calendarButtonText, { color: BrandColors.success }]}>
                   ✓ Calendar Connected
                 </Text>
               ) : (
@@ -598,16 +599,16 @@ export default function OnboardingScreen() {
               styles.notificationButton,
               {
                 backgroundColor: notificationsEnabled ? colors.tint + '20' : colors.tint,
-                borderColor: notificationsEnabled ? '#10b981' : colors.tint,
+                borderColor: notificationsEnabled ? BrandColors.success : colors.tint,
               },
             ]}
             onPress={handleEnableNotifications}
             disabled={isLoading || isRequestingNotifications || notificationsEnabled}
           >
             {isRequestingNotifications ? (
-              <ActivityIndicator size="small" color={notificationsEnabled ? '#10b981' : '#fff'} />
+              <ActivityIndicator size="small" color={notificationsEnabled ? BrandColors.success : '#fff'} />
             ) : notificationsEnabled ? (
-              <Text style={[styles.notificationButtonText, { color: '#10b981' }]}>
+              <Text style={[styles.notificationButtonText, { color: BrandColors.success }]}>
                 ✓ Notifications Enabled
               </Text>
             ) : (

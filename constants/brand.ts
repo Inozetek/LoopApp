@@ -63,6 +63,55 @@ export const BrandColors = {
   sheetPrimaryAction: '#00BFFF',     // Loop Blue for primary actions (matches loopBlue)
   sheetFeaturedAction: '#FF9500',    // Loop Orange for featured/urgent actions (matches loopOrange)
   sheetPrimaryActionPressed: '#00A0E3', // Darker blue for pressed state (matches loopBlueDark)
+
+  // Extended Palette (for badges, context detection, score bars)
+  loopPurple: '#8B5CF6',    // Purple for feedback/past data
+  loopPink: '#EC4899',      // Pink for social/collaborative
+  loopIndigo: '#6366F1',    // Indigo for events/about
+  loopTeal: '#14B8A6',      // Teal for walking distance
+};
+
+// Category colors for calendar events and activity cards
+export const CategoryColors: Record<string, string> = {
+  dining: '#FF6B6B',
+  entertainment: BrandColors.loopBlue,
+  fitness: BrandColors.loopGreen,
+  social: BrandColors.like,
+  work: BrandColors.info,
+  personal: BrandColors.loopOrange,
+  travel: BrandColors.loopBlueLight,
+  other: BrandColors.veryLightGray,
+};
+
+// Score bar segment colors (stacked bar in activity cards)
+export const ScoreBarColors = {
+  interest: BrandColors.loopBlue,
+  location: BrandColors.loopGreen,
+  time: BrandColors.loopOrange,
+  feedback: BrandColors.loopPurple,
+  social: BrandColors.loopPink,
+};
+
+// Match score tile colors (5-tier)
+export const MatchScoreColors = {
+  excellent: { color: BrandColors.success, bg: 'rgba(0, 217, 163, 0.12)' },     // 85+
+  good:      { color: BrandColors.loopBlue, bg: 'rgba(0, 191, 255, 0.12)' },    // 75-84
+  fair:      { color: BrandColors.info, bg: 'rgba(0, 102, 255, 0.12)' },        // 60-74
+  average:   { color: BrandColors.loopOrange, bg: 'rgba(255, 149, 0, 0.12)' },  // 35-59
+  low:       { color: BrandColors.error, bg: 'rgba(255, 59, 48, 0.12)' },       // <35
+};
+
+// Context badge colors (for context-detection service)
+export const ContextBadgeColors: Record<string, string> = {
+  free: BrandColors.loopGreen,
+  available: BrandColors.loopBlue,
+  on_route: BrandColors.loopPurple,
+  friend_loves: BrandColors.loopPink,
+  group_friendly: BrandColors.loopOrange,
+  before_event: BrandColors.loopIndigo,
+  after_event: BrandColors.loopIndigo,
+  walking_distance: BrandColors.loopTeal,
+  time_limited: BrandColors.error,
 };
 
 export const ThemeColors = {

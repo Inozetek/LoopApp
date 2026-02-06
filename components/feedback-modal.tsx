@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/theme';
+import { BrandColors } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { supabase } from '@/lib/supabase';
@@ -239,20 +240,20 @@ export function FeedbackModal({
                   styles.ratingButton,
                   rating === 'thumbs_up' && styles.ratingButtonActive,
                   {
-                    backgroundColor: rating === 'thumbs_up' ? '#10b981' : colors.card,
-                    borderColor: rating === 'thumbs_up' ? '#10b981' : colors.border,
+                    backgroundColor: rating === 'thumbs_up' ? BrandColors.success : colors.card,
+                    borderColor: rating === 'thumbs_up' ? BrandColors.success : colors.border,
                   },
                 ]}
               >
                 <IconSymbol
                   name="hand.thumbsup.fill"
                   size={32}
-                  color={rating === 'thumbs_up' ? '#ffffff' : colors.icon}
+                  color={rating === 'thumbs_up' ? BrandColors.white : colors.icon}
                 />
                 <Text
                   style={[
                     styles.ratingText,
-                    { color: rating === 'thumbs_up' ? '#ffffff' : colors.text },
+                    { color: rating === 'thumbs_up' ? BrandColors.white : colors.text },
                   ]}
                 >
                   Loved it
@@ -265,20 +266,20 @@ export function FeedbackModal({
                   styles.ratingButton,
                   rating === 'thumbs_down' && styles.ratingButtonActive,
                   {
-                    backgroundColor: rating === 'thumbs_down' ? '#ef4444' : colors.card,
-                    borderColor: rating === 'thumbs_down' ? '#ef4444' : colors.border,
+                    backgroundColor: rating === 'thumbs_down' ? BrandColors.error : colors.card,
+                    borderColor: rating === 'thumbs_down' ? BrandColors.error : colors.border,
                   },
                 ]}
               >
                 <IconSymbol
                   name="hand.thumbsdown.fill"
                   size={32}
-                  color={rating === 'thumbs_down' ? '#ffffff' : colors.icon}
+                  color={rating === 'thumbs_down' ? BrandColors.white : colors.icon}
                 />
                 <Text
                   style={[
                     styles.ratingText,
-                    { color: rating === 'thumbs_down' ? '#ffffff' : colors.text },
+                    { color: rating === 'thumbs_down' ? BrandColors.white : colors.text },
                   ]}
                 >
                   Not great
@@ -313,13 +314,13 @@ export function FeedbackModal({
                       <IconSymbol
                         name={tag.icon as any}
                         size={16}
-                        color={selectedTags.includes(tag.id) ? '#ffffff' : colors.icon}
+                        color={selectedTags.includes(tag.id) ? BrandColors.white : colors.icon}
                       />
                       <Text
                         style={[
                           styles.tagText,
                           {
-                            color: selectedTags.includes(tag.id) ? '#ffffff' : colors.text,
+                            color: selectedTags.includes(tag.id) ? BrandColors.white : colors.text,
                           },
                         ]}
                       >

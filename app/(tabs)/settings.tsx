@@ -205,8 +205,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'notifications',
-            '#F59E0B',
-            '#F59E0B20',
+            BrandColors.loopOrange,
+            BrandColors.loopOrange + '20',
             'Notifications',
             'Manage notification preferences',
             () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -214,8 +214,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'shield-checkmark',
-            '#10B981',
-            '#10B98120',
+            BrandColors.success,
+            BrandColors.success + '20',
             'Privacy',
             'Control who can see your Loop and invite you',
             () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -228,8 +228,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'heart',
-            '#EF4444',
-            '#EF444420',
+            BrandColors.like,
+            BrandColors.like + '20',
             'Interests',
             'Update your interests and preferences',
             () => router.push('/(tabs)/profile')
@@ -237,8 +237,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'location',
-            '#3B82F6',
-            '#3B82F620',
+            BrandColors.loopBlue,
+            BrandColors.loopBlue + '20',
             'Locations',
             'Update home and work addresses',
             () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -246,8 +246,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'ban',
-            '#EF4444',
-            '#EF444420',
+            BrandColors.error,
+            BrandColors.error + '20',
             'Blocked Places',
             'Manage places hidden from recommendations',
             () => {
@@ -266,8 +266,8 @@ export default function SettingsScreen() {
               <Text style={[styles.subscriptionTier, { color: BrandColors.loopBlue }]}>
                 {user?.subscription_tier?.toUpperCase() || 'FREE'} TIER
               </Text>
-              <View style={[styles.subscriptionBadge, { backgroundColor: '#F59E0B20' }]}>
-                <Ionicons name="star" size={16} color="#F59E0B" />
+              <View style={[styles.subscriptionBadge, { backgroundColor: BrandColors.loopOrange + '20' }]}>
+                <Ionicons name="star" size={16} color={BrandColors.loopOrange} />
               </View>
             </View>
             <Text style={[styles.subscriptionDescription, { color: colors.textSecondary }]}>
@@ -292,8 +292,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'information-circle',
-            '#6366F1',
-            '#6366F120',
+            BrandColors.loopIndigo,
+            BrandColors.loopIndigo + '20',
             'About Loop',
             undefined,
             () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -301,8 +301,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'document-text',
-            '#8B5CF6',
-            '#8B5CF620',
+            BrandColors.loopPurple,
+            BrandColors.loopPurple + '20',
             'Terms & Privacy',
             undefined,
             () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
@@ -310,8 +310,8 @@ export default function SettingsScreen() {
 
           {renderMenuItem(
             'log-out',
-            '#EC4899',
-            '#EC489920',
+            BrandColors.loopPink,
+            BrandColors.loopPink + '20',
             'Sign Out',
             undefined,
             handleSignOut
@@ -357,7 +357,7 @@ export default function SettingsScreen() {
             </View>
           ) : blockedPlaces.length === 0 ? (
             <View style={styles.emptyState}>
-              <Ionicons name="checkmark-circle" size={64} color="#10B981" />
+              <Ionicons name="checkmark-circle" size={64} color={BrandColors.success} />
               <Text style={[styles.emptyStateTitle, { color: colors.text }]}>No Blocked Places</Text>
               <Text style={[styles.emptyStateDescription, { color: colors.textSecondary }]}>
                 You haven't blocked any places from recommendations yet.
@@ -371,8 +371,8 @@ export default function SettingsScreen() {
               renderItem={({ item }) => (
                 <View style={[styles.blockedItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={styles.blockedItemLeft}>
-                    <View style={[styles.blockedIconContainer, { backgroundColor: '#EF444420' }]}>
-                      <Ionicons name="ban" size={20} color="#EF4444" />
+                    <View style={[styles.blockedIconContainer, { backgroundColor: BrandColors.error + '20' }]}>
+                      <Ionicons name="ban" size={20} color={BrandColors.error} />
                     </View>
                     <View style={styles.blockedItemInfo}>
                       <Text style={[styles.blockedItemName, { color: colors.text }]}>
@@ -384,7 +384,7 @@ export default function SettingsScreen() {
                     </View>
                   </View>
                   <TouchableOpacity
-                    style={[styles.unblockButton, { backgroundColor: '#10B981' }]}
+                    style={[styles.unblockButton, { backgroundColor: BrandColors.success }]}
                     onPress={() => handleUnblock(item.google_place_id, item.place_name)}
                   >
                     <Text style={styles.unblockButtonText}>Unblock</Text>

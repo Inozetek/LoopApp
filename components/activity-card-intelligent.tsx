@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Activity, Recommendation, UnifiedActivity, EventMetadata } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, ScoreBarColors, MatchScoreColors } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -129,66 +129,66 @@ function StackedScoreBar({ scoreBreakdown }: StackedScoreBarProps) {
     <View style={styles.stackedBar}>
       {/* Single bar with colored segments */}
       <View style={styles.stackedBarContainer}>
-        {/* Interest/Base segment (blue) - 40 points max */}
+        {/* Interest/Base segment - 40 points max */}
         {basePercent > 0 && (
           <View
             style={[
               styles.stackedBarSegment,
               {
                 width: `${basePercent}%`,
-                backgroundColor: '#3b82f6', // Blue
+                backgroundColor: ScoreBarColors.interest,
               }
             ]}
           />
         )}
 
-        {/* Location segment (green) - 20 points max */}
+        {/* Location segment - 20 points max */}
         {locationPercent > 0 && (
           <View
             style={[
               styles.stackedBarSegment,
               {
                 width: `${locationPercent}%`,
-                backgroundColor: '#10b981', // Green
+                backgroundColor: ScoreBarColors.location,
               }
             ]}
           />
         )}
 
-        {/* Timing segment (orange) - 15 points max */}
+        {/* Timing segment - 15 points max */}
         {timePercent > 0 && (
           <View
             style={[
               styles.stackedBarSegment,
               {
                 width: `${timePercent}%`,
-                backgroundColor: '#f59e0b', // Orange
+                backgroundColor: ScoreBarColors.time,
               }
             ]}
           />
         )}
 
-        {/* Feedback segment (purple) - 15 points max */}
+        {/* Feedback segment - 15 points max */}
         {feedbackPercent > 0 && (
           <View
             style={[
               styles.stackedBarSegment,
               {
                 width: `${feedbackPercent}%`,
-                backgroundColor: '#a78bfa', // Purple
+                backgroundColor: ScoreBarColors.feedback,
               }
             ]}
           />
         )}
 
-        {/* Collaborative segment (pink) - 10 points max */}
+        {/* Collaborative segment - 10 points max */}
         {collaborativePercent > 0 && (
           <View
             style={[
               styles.stackedBarSegment,
               {
                 width: `${collaborativePercent}%`,
-                backgroundColor: '#ec4899', // Pink
+                backgroundColor: ScoreBarColors.social,
               }
             ]}
           />
@@ -199,32 +199,32 @@ function StackedScoreBar({ scoreBreakdown }: StackedScoreBarProps) {
       <View style={styles.stackedBarLegend}>
         {basePercent > 0 && (
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
-            <Text style={styles.legendText}>Interest</Text>
+            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.interest }]} />
+            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Interest</Text>
           </View>
         )}
         {locationPercent > 0 && (
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
-            <Text style={styles.legendText}>Location</Text>
+            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.location }]} />
+            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Location</Text>
           </View>
         )}
         {timePercent > 0 && (
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#f59e0b' }]} />
-            <Text style={styles.legendText}>Time</Text>
+            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.time }]} />
+            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Time</Text>
           </View>
         )}
         {feedbackPercent > 0 && (
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#a78bfa' }]} />
-            <Text style={styles.legendText}>Feedback</Text>
+            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.feedback }]} />
+            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Feedback</Text>
           </View>
         )}
         {collaborativePercent > 0 && (
           <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: '#ec4899' }]} />
-            <Text style={styles.legendText}>Social</Text>
+            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.social }]} />
+            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Social</Text>
           </View>
         )}
       </View>
@@ -518,7 +518,7 @@ function ActivityCardIntelligentComponent({
                       key={i}
                       name={i < Math.floor(recommendation.rating) ? 'star.fill' : 'star'}
                       size={12}
-                      color="#FFA500"
+                      color={BrandColors.star}
                     />
                   ))}
                 </View>
@@ -565,42 +565,20 @@ function ActivityCardIntelligentComponent({
         {(() => {
           const score = recommendation.score ?? 0;
           if (score <= 0) return null;
+          const tier = score >= 85 ? MatchScoreColors.excellent
+            : score >= 75 ? MatchScoreColors.good
+            : score >= 60 ? MatchScoreColors.fair
+            : score >= 35 ? MatchScoreColors.average
+            : MatchScoreColors.low;
           return (
             <View style={[
               styles.matchScoreTile,
-              {
-                backgroundColor:
-                  score >= 85 ? 'rgba(52, 211, 153, 0.12)' : // Mint tint (85-100%)
-                  score >= 75 ? 'rgba(96, 165, 250, 0.12)' : // Sky tint (75-85%)
-                  score >= 60 ? 'rgba(167, 139, 250, 0.12)' : // Lavender tint (60-75%)
-                  score >= 35 ? 'rgba(251, 191, 36, 0.12)' : // Golden tint (35-60%)
-                  'rgba(251, 113, 133, 0.12)' // Rose tint (20-35%)
-              }
+              { backgroundColor: tier.bg }
             ]}>
-              <Text style={[
-                styles.matchScoreNumber,
-                {
-                  color:
-                    score >= 85 ? '#34d399' : // Mint
-                    score >= 75 ? '#60a5fa' : // Sky
-                    score >= 60 ? '#a78bfa' : // Lavender
-                    score >= 35 ? '#fbbf24' : // Golden
-                    '#fb7185' // Rose
-                }
-              ]}>
+              <Text style={[styles.matchScoreNumber, { color: tier.color }]}>
                 {Math.round(score)}
               </Text>
-              <Text style={[
-                styles.matchScoreLabel,
-                {
-                  color:
-                    score >= 85 ? '#34d399' : // Mint
-                    score >= 75 ? '#60a5fa' : // Sky
-                    score >= 60 ? '#a78bfa' : // Lavender
-                    score >= 35 ? '#fbbf24' : // Golden
-                    '#fb7185' // Rose
-                }
-              ]}>
+              <Text style={[styles.matchScoreLabel, { color: tier.color }]}>
                 MATCH
               </Text>
             </View>
@@ -695,7 +673,7 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
   },
   topMatchBadge: {
-    backgroundColor: 'rgba(16, 185, 129, 0.95)', // Green background for top matches
+    backgroundColor: BrandColors.success,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
@@ -728,7 +706,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   sponsoredBadge: {
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
@@ -814,7 +792,7 @@ const styles = StyleSheet.create({
     width: 2,
     height: 2,
     borderRadius: 1,
-    backgroundColor: '#999',
+    backgroundColor: BrandColors.veryLightGray,
   },
   aiExplanation: {
     flexDirection: 'row',
@@ -973,8 +951,7 @@ const styles = StyleSheet.create({
     borderRadius: 3, // Reduced from 4
   },
   legendText: {
-    fontSize: 10, // Reduced from 11
+    fontSize: 10,
     fontWeight: '600',
-    color: '#6B7280',
   },
 });

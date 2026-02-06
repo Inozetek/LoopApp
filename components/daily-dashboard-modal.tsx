@@ -662,8 +662,8 @@ interface NotificationCardProps {
 
 function NotificationCard({ notification, colors, onDismiss }: NotificationCardProps) {
   const priorityColor =
-    notification.priority === 'urgent' ? '#FF6B9D' :
-    notification.priority === 'attention' ? '#FFA94D' :
+    notification.priority === 'urgent' ? BrandColors.like :
+    notification.priority === 'attention' ? BrandColors.loopOrange :
     BrandColors.loopBlue;
 
   return (

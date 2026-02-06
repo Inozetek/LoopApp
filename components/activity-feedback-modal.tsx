@@ -214,7 +214,7 @@ export function ActivityFeedbackModal({
                       <Ionicons
                         name={rating === 'thumbs_up' ? 'thumbs-up' : 'thumbs-up-outline'}
                         size={40}
-                        color={rating === 'thumbs_up' ? '#fff' : '#10B981'}
+                        color={rating === 'thumbs_up' ? BrandColors.white : BrandColors.success}
                       />
                       <Text
                         style={[
@@ -237,7 +237,7 @@ export function ActivityFeedbackModal({
                       <Ionicons
                         name={rating === 'thumbs_down' ? 'thumbs-down' : 'thumbs-down-outline'}
                         size={40}
-                        color={rating === 'thumbs_down' ? '#fff' : '#EF4444'}
+                        color={rating === 'thumbs_down' ? BrandColors.white : BrandColors.error}
                       />
                       <Text
                         style={[
@@ -347,10 +347,10 @@ const styles = StyleSheet.create({
     width: '90%',
     maxWidth: 400,
     maxHeight: '80%',
-    backgroundColor: '#000',
+    backgroundColor: BrandColors.darkGray,
     borderRadius: BorderRadius.xl,
     borderWidth: 1,
-    borderColor: '#333',
+    borderColor: BrandColors.mediumGray,
     overflow: 'hidden',
   },
   header: {
@@ -359,7 +359,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: Spacing.lg,
     borderBottomWidth: 1,
-    borderBottomColor: '#333',
+    borderBottomColor: BrandColors.mediumGray,
   },
   title: {
     fontSize: 22,
@@ -414,12 +414,12 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   thumbsUpButton: {
-    backgroundColor: '#10B98110',
-    borderColor: '#10B981',
+    backgroundColor: BrandColors.success + '10',
+    borderColor: BrandColors.success,
   },
   thumbsDownButton: {
-    backgroundColor: '#EF444410',
-    borderColor: '#EF4444',
+    backgroundColor: BrandColors.error + '10',
+    borderColor: BrandColors.error,
   },
   ratingButtonSelected: {
     backgroundColor: BrandColors.loopBlue,
