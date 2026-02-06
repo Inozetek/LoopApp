@@ -21,6 +21,7 @@ import {
   RefreshControl,
   Image,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -29,6 +30,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BrandColors, BorderRadius, Typography, Shadows } from '@/constants/brand';
 import { ACTIVITY_CATEGORIES, type ActivityCategory } from '@/constants/activity-categories';
 import { useAuth } from '@/contexts/auth-context';
+import { supabase } from '@/lib/supabase';
 import { getCurrentLocation } from '@/services/location-service';
 import { generateRecommendations, type RecommendationParams, type ScoredRecommendation } from '@/services/recommendations';
 import { SeeDetailsModal } from '@/components/see-details-modal';
@@ -549,8 +551,38 @@ export default function ExploreScreen() {
               setShowDetailsModal(false);
               setSelectedRecommendation(null);
             }}
-            onAddToCalendar={() => {
-              // TODO: Implement add to calendar
+            onAddToCalendar={async () => {
+              if (!user || !selectedRecommendation) return;
+              try {
+                const rec = convertToRecommendation(selectedRecommendation);
+                const place = selectedRecommendation.place;
+                const lat = place?.geometry?.location?.lat || 0;
+                const lng = place?.geometry?.location?.lng || 0;
+                const startTime = new Date();
+                startTime.setHours(startTime.getHours() + 1, 0, 0, 0);
+                const endTime = new Date(startTime);
+                endTime.setHours(endTime.getHours() + 1);
+
+                const { error } = await supabase.from('calendar_events').insert({
+                  user_id: user.id,
+                  title: rec.title,
+                  category: rec.category || 'other',
+                  location: `POINT(${lng} ${lat})`,
+                  address: place?.formatted_address || place?.vicinity || '',
+                  start_time: startTime.toISOString(),
+                  end_time: endTime.toISOString(),
+                  status: 'scheduled',
+                  source: 'recommendation',
+                  activity_id: null,
+                } as any);
+
+                if (error) throw error;
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                Alert.alert('Added!', `${rec.title} added to your calendar.`);
+              } catch (err) {
+                console.error('Error adding to calendar:', err);
+                Alert.alert('Error', 'Failed to add to calendar.');
+              }
               setShowDetailsModal(false);
               setSelectedRecommendation(null);
             }}

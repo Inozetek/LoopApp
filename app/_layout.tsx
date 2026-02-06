@@ -66,16 +66,6 @@ function RootLayoutNav() {
       currentPath: segments.join('/')
     });
 
-    // DEMO MODE: Skip auth for quick mentor demo
-    // TODO: Remove this after demo - re-enable auth
-    const DEMO_MODE = false; // ✅ Disabled - using real auth now
-    if (DEMO_MODE) {
-      if (inAuthGroup) {
-        router.replace('/(tabs)');
-      }
-      return;
-    }
-
     if (!session) {
       // User is not signed in, redirect to login
       console.log('→ No session, redirecting to login');

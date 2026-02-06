@@ -15,9 +15,11 @@ import {
   ScrollView,
   ActivityIndicator,
   RefreshControl,
+  Linking,
 } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, Shadows } from '@/constants/brand';
 import { useAuth } from '@/contexts/auth-context';
@@ -36,6 +38,7 @@ interface NotificationsTrayModalProps {
 
 export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayModalProps) {
   const { user } = useAuth();
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
 
@@ -87,8 +90,16 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
 
       // Handle deep link if present
       if (notification.action_deep_link) {
-        // TODO: Navigate to deep link
-        console.log('Navigate to:', notification.action_deep_link);
+        const link = notification.action_deep_link;
+        if (link.startsWith('/') || link.startsWith('(')) {
+          // Internal route - use expo-router
+          onClose();
+          router.push(link as any);
+        } else if (link.startsWith('http://') || link.startsWith('https://')) {
+          // External URL
+          onClose();
+          Linking.openURL(link);
+        }
       }
 
       // Remove from list

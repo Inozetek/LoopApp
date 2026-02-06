@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: Spacing.lg,
     borderRadius: BorderRadius.lg,
-    borderWidth: 2,
+    borderWidth: 1,
     gap: Spacing.sm,
   },
   thumbsUpButton: {

@@ -20,7 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Activity, Recommendation, UnifiedActivity, EventMetadata } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, ScoreBarColors, MatchScoreColors } from '@/constants/brand';
+import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, ScoreBarColors, MatchScoreColors, Shadows } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -398,7 +398,7 @@ function ActivityCardIntelligentComponent({
         styles.card,
         {
           backgroundColor: colors.card,
-          borderWidth: 2,
+          borderWidth: 1,
           borderColor: getBorderColor(),
         }
       ]}>
@@ -621,11 +621,7 @@ const styles = StyleSheet.create({
   card: {
     borderRadius: BorderRadius.lg,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
+    ...Shadows.md,
   },
 
   // IMAGE SECTION (60%)
@@ -771,7 +767,7 @@ const styles = StyleSheet.create({
     padding: Spacing.md,
     paddingTop: Spacing.sm, // Less top padding since tile takes space
     paddingBottom: Spacing.lg, // Extra space for circular button
-    paddingRight: 84, // Prevent text from overlapping tile (60px + 16px + 8px buffer)
+    paddingRight: 68, // Prevent text from overlapping tile
     minHeight: 90, // Ensure minimum height to prevent crowding with tile
   },
   title: {
@@ -821,7 +817,7 @@ const styles = StyleSheet.create({
     right: Spacing.md,
     width: 60,
     height: 60,
-    borderRadius: 16,
+    borderRadius: BorderRadius.lg,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 4,
@@ -883,7 +879,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     shadowColor: BrandColors.loopBlue,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 6,
   },
@@ -912,10 +908,10 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: BrandColors.white,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.3,
+    shadowOpacity: 0.15,
     shadowRadius: 2,
     elevation: 2,
   },
