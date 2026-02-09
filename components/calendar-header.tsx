@@ -3,9 +3,14 @@
  *
  * Section title header for Calendar tab.
  * Features:
- * - Bold section title "My Loop"
+ * - "L [logo] P" spelling LOOP with Venn diagram logo
  * - Add event button on right
  * - Optional subtitle (e.g., "Today, Dec 15")
+ *
+ * Logo Design (v3.0):
+ * - Two overlapping circles (Venn diagram)
+ * - Left: Cyan, Right: Green
+ * - Thin strokes with transparent fills
  */
 
 import React from 'react';
@@ -16,19 +21,24 @@ import * as Haptics from 'expo-haptics';
 import { BrandColors, Spacing, Typography } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { LoopLogoVariant } from '@/components/loop-logo-variant';
 
 interface CalendarHeaderProps {
   title?: string;
   subtitle?: string;
   onAddPress?: () => void;
   onMenuPress?: () => void;
+  onTitlePress?: () => void;
+  showLoopIcon?: boolean;
 }
 
 export function CalendarHeader({
-  title = 'My Loop',
+  title = 'Loop',
   subtitle,
   onAddPress,
   onMenuPress,
+  onTitlePress,
+  showLoopIcon = true,
 }: CalendarHeaderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -44,9 +54,14 @@ export function CalendarHeader({
     onMenuPress?.();
   };
 
+  const handleTitlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onTitlePress?.();
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
-      {/* Left Side */}
+      {/* Left Side - Menu Button */}
       <View style={styles.leftSection}>
         {onMenuPress && (
           <TouchableOpacity
@@ -59,13 +74,31 @@ export function CalendarHeader({
         )}
       </View>
 
-      {/* Center - Title */}
-      <View style={styles.titleContainer}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+      {/* Center - "L [logo] P" spelling LOOP (tappable to toggle map) */}
+      <TouchableOpacity
+        style={styles.titleContainer}
+        onPress={handleTitlePress}
+        activeOpacity={onTitlePress ? 0.7 : 1}
+        disabled={!onTitlePress}
+      >
+        {showLoopIcon ? (
+          <View style={styles.loopBrandContainer}>
+            {/* L + OO (logo) + P = LOOP */}
+            <View style={styles.letterBorderBlue}>
+              <Text style={[styles.loopLetter, { color: colors.text }]}>L</Text>
+            </View>
+            <LoopLogoVariant size={22} style={styles.loopLogo} />
+            <View style={styles.letterBorderGreen}>
+              <Text style={[styles.loopLetter, { color: colors.text }]}>P</Text>
+            </View>
+          </View>
+        ) : (
+          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        )}
         {subtitle && (
           <Text style={[styles.subtitle, { color: colors.icon }]}>{subtitle}</Text>
         )}
-      </View>
+      </TouchableOpacity>
 
       {/* Right Side - Add Button */}
       <View style={styles.rightSection}>
@@ -99,7 +132,36 @@ const styles = StyleSheet.create({
   },
   titleContainer: {
     flex: 1,
+    flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loopBrandContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loopLetter: {
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: -0.5,
+  },
+  loopLogo: {
+    marginHorizontal: 2, // Tight spacing for "L OO P" effect
+  },
+  letterBorderBlue: {
+    borderWidth: 1.5,
+    borderColor: BrandColors.loopBlueLight, // #2ECEFF
+    borderRadius: 4,
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+  },
+  letterBorderGreen: {
+    borderWidth: 1.5,
+    borderColor: BrandColors.loopGreen, // #09DB98
+    borderRadius: 4,
+    paddingHorizontal: 2,
+    paddingVertical: 1,
   },
   title: {
     ...Typography.titleLarge,

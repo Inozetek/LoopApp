@@ -7,7 +7,7 @@
  */
 
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -30,6 +30,7 @@ import { BrandColors, Spacing, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
+import { LoopLogoVariant } from '@/components/loop-logo-variant';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -305,11 +306,7 @@ export function LoopHeader({
             activeOpacity={0.7}
             style={styles.logoTouchable}
           >
-            <Image
-              source={require('@/assets/images/loop-logo6.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
+            <LoopLogoVariant size={28} />
 
             {/* Notification Badge */}
             {notificationCount > 0 && (
@@ -400,10 +397,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logo: {
-    height: 32,
-    width: 80,
-  },
   logoText: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -419,8 +412,8 @@ const styles = StyleSheet.create({
   // Notification Badge (on logo)
   notificationBadge: {
     position: 'absolute',
-    top: -4,
-    right: -8,
+    top: -6,
+    right: -12,
     backgroundColor: BrandColors.like,
     borderRadius: 10,
     minWidth: 20,
