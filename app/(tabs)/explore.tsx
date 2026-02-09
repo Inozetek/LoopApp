@@ -378,34 +378,10 @@ export default function ExploreScreen() {
             </View>
           )}
 
-          {/* Rating badge (top right) - places only */}
-          {item.type === 'place' && item.rating && item.rating >= 4.0 && (
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={10} color="#FFD700" />
-              <Text style={styles.ratingText}>{item.rating.toFixed(1)}</Text>
-            </View>
-          )}
-
           {/* Moment indicator (top left) */}
           {item.type === 'moment' && (
             <View style={styles.momentBadge}>
               <Ionicons name="camera" size={12} color="#FFFFFF" />
-            </View>
-          )}
-
-          {/* Category badge (large tiles only) */}
-          {isLarge && item.subtitle && (
-            <View style={styles.categoryBadge}>
-              <Text style={styles.categoryBadgeText}>{item.subtitle}</Text>
-            </View>
-          )}
-
-          {/* Name overlay (large tiles only) */}
-          {isLarge && (
-            <View style={styles.nameOverlay}>
-              <Text style={styles.nameText} numberOfLines={1}>
-                {item.title}
-              </Text>
             </View>
           )}
         </View>
@@ -452,7 +428,6 @@ export default function ExploreScreen() {
   // Render search result grid item (flat 3-column grid for search)
   const renderSearchGridItem = useCallback(({ item }: { item: ScoredRecommendation }) => {
     const photoUrl = getPhotoUrl(item.place, 300);
-    const rating = item.place?.rating;
 
     return (
       <TouchableOpacity
@@ -466,12 +441,6 @@ export default function ExploreScreen() {
           ) : (
             <View style={styles.tilePlaceholder}>
               <Ionicons name="image-outline" size={24} color={colors.textSecondary} />
-            </View>
-          )}
-          {rating && rating >= 4.0 && (
-            <View style={styles.ratingBadge}>
-              <Ionicons name="star" size={10} color="#FFD700" />
-              <Text style={styles.ratingText}>{rating.toFixed(1)}</Text>
             </View>
           )}
         </View>
@@ -494,20 +463,10 @@ export default function ExploreScreen() {
     return <View style={{ height: 100 }} />;
   }, [loadingMore, colors, distanceTierIndex]);
 
-  // List header
+  // List header - minimal spacing only
   const ListHeader = useCallback(() => (
-    <View style={styles.sectionHeader}>
-      <Text style={[styles.sectionTitle, { color: colors.text }]}>
-        {searchQuery.length >= 2 ? `Results for "${searchQuery}"` : 'Trending Near You'}
-      </Text>
-      {allItems.length > 0 && !searchQuery && (
-        <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-          {allItems.filter((i) => i.type === 'place').length} places
-          {moments.length > 0 ? ` + ${moments.length} moments` : ''}
-        </Text>
-      )}
-    </View>
-  ), [colors, searchQuery, allItems.length, moments.length]);
+    <View style={{ height: Spacing.xs }} />
+  ), []);
 
   // Decide what to show: search results or explore rows
   const isSearchActive = searchQuery.length >= 2;
@@ -641,19 +600,6 @@ const styles = StyleSheet.create({
   gridContent: {
     paddingBottom: Spacing.xl,
   },
-  sectionHeader: {
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-
   // Row layouts
   rowThreeSmall: {
     flexDirection: 'row',
@@ -691,23 +637,6 @@ const styles = StyleSheet.create({
   },
 
   // Badges
-  ratingBadge: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    borderRadius: 4,
-    gap: 2,
-  },
-  ratingText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '600',
-  },
   momentBadge: {
     position: 'absolute',
     top: 4,
@@ -716,36 +645,6 @@ const styles = StyleSheet.create({
     padding: 4,
     borderRadius: 4,
   },
-  categoryBadge: {
-    position: 'absolute',
-    bottom: 32,
-    left: 8,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  categoryBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  nameOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-  },
-  nameText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-
   // Search grid (flat 3-column)
   searchGridItem: {
     width: SMALL_TILE_SIZE,

@@ -84,13 +84,9 @@ export function CalendarHeader({
         {showLoopIcon ? (
           <View style={styles.loopBrandContainer}>
             {/* L + OO (logo) + P = LOOP */}
-            <View style={styles.letterBorderBlue}>
-              <Text style={[styles.loopLetter, { color: colors.text }]}>L</Text>
-            </View>
+            <Text style={[styles.loopLetter, { color: BrandColors.loopBlueLight }]}>L</Text>
             <LoopLogoVariant size={22} style={styles.loopLogo} />
-            <View style={styles.letterBorderGreen}>
-              <Text style={[styles.loopLetter, { color: colors.text }]}>P</Text>
-            </View>
+            <Text style={[styles.loopLetter, { color: BrandColors.loopGreen }]}>P</Text>
           </View>
         ) : (
           <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
@@ -143,25 +139,12 @@ const styles = StyleSheet.create({
   },
   loopLetter: {
     fontSize: 24,
-    fontWeight: '700',
+    fontFamily: 'Avenir Next',
+    fontWeight: '500',
     letterSpacing: -0.5,
   },
   loopLogo: {
     marginHorizontal: 2, // Tight spacing for "L OO P" effect
-  },
-  letterBorderBlue: {
-    borderWidth: 1.5,
-    borderColor: BrandColors.loopBlueLight, // #2ECEFF
-    borderRadius: 4,
-    paddingHorizontal: 2,
-    paddingVertical: 1,
-  },
-  letterBorderGreen: {
-    borderWidth: 1.5,
-    borderColor: BrandColors.loopGreen, // #09DB98
-    borderRadius: 4,
-    paddingHorizontal: 2,
-    paddingVertical: 1,
   },
   title: {
     ...Typography.titleLarge,

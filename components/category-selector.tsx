@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -63,11 +63,7 @@ export function CategorySelector({
         Categories
       </Text>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
+      <View style={styles.gridContent}>
         {CATEGORIES.map(category => {
           const isSelected = category.id === 'all'
             ? isAllSelected
@@ -98,7 +94,7 @@ export function CategorySelector({
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
+      </View>
 
       {mode === 'multi' && selectedCategories.length > 0 && (
         <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: Spacing.sm }]}>
@@ -113,9 +109,10 @@ const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.xl,
   },
-  scrollContent: {
+  gridContent: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.sm,
-    paddingRight: Spacing.lg,
   },
   categoryChip: {
     flexDirection: 'row',

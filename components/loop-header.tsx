@@ -306,7 +306,7 @@ export function LoopHeader({
             activeOpacity={0.7}
             style={styles.logoTouchable}
           >
-            <LoopLogoVariant size={28} />
+            <LoopLogoVariant size={22} />
 
             {/* Notification Badge */}
             {notificationCount > 0 && (
