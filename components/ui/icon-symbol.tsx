@@ -21,9 +21,14 @@ const MAPPING = {
   // Tab bar icons
   'calendar': 'calendar-today',
   'safari': 'explore',
+  'magnifyingglass': 'search',
   'sparkles': 'auto-awesome',
   'person.2.fill': 'people',
   'person.fill': 'person',
+  // Business tab icons
+  'pencil': 'edit',
+  'chart.bar.fill': 'bar-chart',
+  'gearshape.fill': 'settings',
 } as IconMapping;
 
 /**

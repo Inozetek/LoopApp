@@ -2,12 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Session, User as SupabaseUser, AuthChangeEvent } from '@supabase/supabase-js';
 import * as Facebook from 'expo-facebook';
 import { supabase } from '@/lib/supabase';
-import { User, UserInsert, UserUpdate } from '@/types/database';
+import { User, UserInsert, UserUpdate, BusinessProfile } from '@/types/database';
 import { extractInterestsFromFacebook } from '@/services/facebook';
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
+  businessProfile: BusinessProfile | null;
   loading: boolean;
   signUp: (email: string, password: string) => Promise<{ error: Error | null; user: SupabaseUser | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -15,6 +16,7 @@ interface AuthContextType {
   signInWithFacebook: () => Promise<{ error: Error | null; facebookToken?: string }>;
   signOut: () => Promise<{ error: Error | null }>;
   updateUserProfile: (userData: UserUpdate) => Promise<{ error: Error | null }>;
+  updateBusinessProfile: (data: Partial<BusinessProfile>) => Promise<{ error: Error | null }>;
   resetPassword: (email: string) => Promise<{ error: Error | null }>;
 }
 
@@ -70,12 +72,14 @@ const MOCK_USER: User = {
     share_loop_with: 'friends',
     discoverable: true,
     share_location: true
-  }
+  },
+  account_type: 'personal' as const,
 };
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(DEMO_MODE ? MOCK_USER : null);
+  const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(DEMO_MODE ? false : true);
 
   useEffect(() => {
@@ -174,8 +178,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         console.error('Error fetching user profile:', error);
         setUser(null);
+        setBusinessProfile(null);
       } else if (data) {
         setUser(data);
+        // Fetch business profile if account_type is 'business'
+        if (data.account_type === 'business') {
+          try {
+            const { data: bpData } = await supabase
+              .from('business_profiles')
+              .select('*')
+              .eq('user_id', data.id)
+              .maybeSingle();
+            setBusinessProfile(bpData || null);
+          } catch (bpErr) {
+            console.error('Error fetching business profile:', bpErr);
+            setBusinessProfile(null);
+          }
+        } else {
+          setBusinessProfile(null);
+        }
       } else {
         // User profile doesn't exist yet (new signup, needs onboarding)
         console.log('User profile not found, user needs to complete onboarding');
@@ -391,9 +412,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function updateBusinessProfile(data: Partial<BusinessProfile>) {
+    if (!session?.user || !user) {
+      return { error: new Error('No authenticated user') };
+    }
+
+    try {
+      const { error } = await supabase
+        .from('business_profiles')
+        .upsert({
+          user_id: session.user.id,
+          ...data,
+        }, {
+          onConflict: 'user_id',
+        });
+
+      if (error) throw error;
+
+      // Refresh business profile
+      const { data: bpData } = await supabase
+        .from('business_profiles')
+        .select('*')
+        .eq('user_id', session.user.id)
+        .maybeSingle();
+      setBusinessProfile(bpData || null);
+
+      return { error: null };
+    } catch (error) {
+      console.error('Update business profile error:', error);
+      return {
+        error: error instanceof Error ? error : new Error('Failed to update business profile'),
+      };
+    }
+  }
+
   const value = {
     session,
     user,
+    businessProfile,
     loading,
     signUp,
     signIn,
@@ -401,6 +457,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signInWithFacebook,
     signOut,
     updateUserProfile,
+    updateBusinessProfile,
     resetPassword,
   };
 

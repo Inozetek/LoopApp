@@ -14,17 +14,20 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/auth-context';
 import { ThemedView } from '@/components/themed-view';
 import { ThemedText } from '@/components/themed-text';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { BrandColors } from '@/constants/brand';
 
 export default function SignupScreen() {
   const { signUp, signInWithGoogle, signInWithFacebook, loading } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
+  const [accountType, setAccountType] = useState<'personal' | 'business'>('personal');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -53,9 +56,10 @@ export default function SignupScreen() {
 
     if (error) {
       Alert.alert('Sign Up Failed', error.message);
+    } else {
+      // Navigate to onboarding with accountType
+      router.replace({ pathname: '/auth/onboarding', params: { accountType } });
     }
-    // Navigation to onboarding is handled automatically by _layout.tsx
-    // based on auth state (session exists but no user profile)
   }
 
   async function handleGoogleSignUp() {
@@ -114,6 +118,52 @@ export default function SignupScreen() {
               <ThemedText style={styles.subtitle}>
                 Join Loop and never miss out on great experiences
               </ThemedText>
+            </View>
+
+            {/* Account Type Selection */}
+            <View style={styles.accountTypeContainer}>
+              <ThemedText style={styles.accountTypeTitle}>How will you use Loop?</ThemedText>
+              <View style={styles.accountTypeRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.accountTypeCard,
+                    {
+                      borderColor: accountType === 'personal' ? BrandColors.loopBlue : colors.icon,
+                      backgroundColor: accountType === 'personal' ? BrandColors.loopBlue + '10' : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setAccountType('personal')}
+                  disabled={isLoading}
+                >
+                  <Ionicons name="person" size={28} color={accountType === 'personal' ? BrandColors.loopBlue : colors.icon} />
+                  <Text style={[styles.accountTypeLabel, { color: accountType === 'personal' ? BrandColors.loopBlue : colors.text }]}>
+                    Personal
+                  </Text>
+                  <Text style={[styles.accountTypeDesc, { color: colors.icon }]}>
+                    Discover activities
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.accountTypeCard,
+                    {
+                      borderColor: accountType === 'business' ? BrandColors.loopGreen : colors.icon,
+                      backgroundColor: accountType === 'business' ? BrandColors.loopGreen + '10' : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setAccountType('business')}
+                  disabled={isLoading}
+                >
+                  <Ionicons name="storefront" size={28} color={accountType === 'business' ? BrandColors.loopGreen : colors.icon} />
+                  <Text style={[styles.accountTypeLabel, { color: accountType === 'business' ? BrandColors.loopGreen : colors.text }]}>
+                    Business
+                  </Text>
+                  <Text style={[styles.accountTypeDesc, { color: colors.icon }]}>
+                    Promote your venue
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
 
             <View style={styles.form}>
@@ -324,5 +374,34 @@ const styles = StyleSheet.create({
   footerLink: {
     fontSize: 14,
     fontWeight: '600',
+  },
+  accountTypeContainer: {
+    marginBottom: 16,
+  },
+  accountTypeTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  accountTypeRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  accountTypeCard: {
+    flex: 1,
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    gap: 4,
+  },
+  accountTypeLabel: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  accountTypeDesc: {
+    fontSize: 11,
+    textAlign: 'center',
   },
 });

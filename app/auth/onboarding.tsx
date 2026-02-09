@@ -27,10 +27,12 @@ import { requestNotificationPermissions } from '@/services/notification-service'
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 
 export default function OnboardingScreen() {
-  const { session, user, updateUserProfile } = useAuth();
+  const { session, user, updateUserProfile, updateBusinessProfile } = useAuth();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  const params = useLocalSearchParams<{ referralCode?: string }>();
+  const params = useLocalSearchParams<{ referralCode?: string; accountType?: string }>();
+  const accountType = (params.accountType === 'business' ? 'business' : 'personal') as 'personal' | 'business';
+  const isBusiness = accountType === 'business';
 
   const [step, setStep] = useState(0); // Start at welcome screen
   const [isLoading, setIsLoading] = useState(false);
@@ -50,6 +52,11 @@ export default function OnboardingScreen() {
   // Step 3: Locations
   const [homeAddress, setHomeAddress] = useState('');
   const [workAddress, setWorkAddress] = useState('');
+
+  // Business-specific fields
+  const [businessName, setBusinessName] = useState('');
+  const [businessCategory, setBusinessCategory] = useState('');
+  const [businessDescription, setBusinessDescription] = useState('');
 
   function toggleInterest(interest: string) {
     if (selectedInterests.includes(interest)) {
@@ -163,24 +170,38 @@ export default function OnboardingScreen() {
 
   async function handleNext() {
     if (step === 0) {
-      // Welcome screen - just proceed to next step
       setStep(1);
     } else if (step === 1) {
-      if (!firstName.trim() || !lastName.trim()) {
-        Alert.alert('Error', 'Please enter your first and last name');
-        return;
+      if (isBusiness) {
+        // Business: step 1 = business name + contact name
+        if (!firstName.trim() || !businessName.trim()) {
+          Alert.alert('Error', 'Please enter your name and business name');
+          return;
+        }
+      } else {
+        if (!firstName.trim() || !lastName.trim()) {
+          Alert.alert('Error', 'Please enter your first and last name');
+          return;
+        }
       }
       setStep(2);
     } else if (step === 2) {
-      if (selectedInterests.length === 0) {
-        Alert.alert('Error', 'Please select at least one interest');
-        return;
+      if (isBusiness) {
+        // Business: step 2 = business category + description
+        if (!businessCategory.trim()) {
+          Alert.alert('Error', 'Please select a business category');
+          return;
+        }
+      } else {
+        if (selectedInterests.length === 0) {
+          Alert.alert('Error', 'Please select at least one interest');
+          return;
+        }
       }
       setStep(3);
     } else if (step === 3) {
-      // Validate home address before moving to notifications step
       if (!homeAddress.trim()) {
-        Alert.alert('Error', 'Please enter your home address');
+        Alert.alert('Error', isBusiness ? 'Please enter your business address' : 'Please enter your home address');
         return;
       }
       setStep(4);
@@ -261,13 +282,18 @@ export default function OnboardingScreen() {
         console.log(`📍 Work: ${workResult.formattedAddress} (${workResult.latitude}, ${workResult.longitude})`);
       }
 
+      const userName = isBusiness
+        ? firstName.trim()
+        : `${firstName.trim()} ${lastName.trim()}`;
+
       const { error } = await updateUserProfile({
-        name: `${firstName.trim()} ${lastName.trim()}`,
-        interests: selectedInterests,
+        name: userName,
+        interests: isBusiness ? [businessCategory.toLowerCase()] : selectedInterests,
         home_address: homeResult.formattedAddress,
-        home_location: homeLocation as any, // PostGIS geography type
+        home_location: homeLocation as any,
         work_address: workResult?.formattedAddress || null,
-        work_location: workLocation as any, // PostGIS geography type
+        work_location: workLocation as any,
+        account_type: accountType,
         preferences: {
           budget: 50,
           max_distance_miles: 10,
@@ -290,6 +316,21 @@ export default function OnboardingScreen() {
           },
         },
       });
+
+      // Create business profile if business account
+      if (!error && isBusiness) {
+        const { error: bpError } = await updateBusinessProfile({
+          business_name: businessName.trim(),
+          business_category: businessCategory,
+          business_description: businessDescription.trim() || null,
+          address: homeResult.formattedAddress,
+          location: homeLocation as any,
+        } as any);
+
+        if (bpError) {
+          console.error('Error creating business profile:', bpError);
+        }
+      }
 
       setIsLoading(false);
 
@@ -369,12 +410,12 @@ export default function OnboardingScreen() {
   }
 
   function renderProgressBar() {
-    // Don't show progress bar on welcome screen
     if (step === 0) return null;
+    const totalSteps = 4;
 
     return (
       <View style={styles.progressContainer}>
-        {[1, 2, 3, 4].map((s) => (
+        {Array.from({ length: totalSteps }, (_, i) => i + 1).map((s) => (
           <View
             key={s}
             style={[
@@ -393,19 +434,54 @@ export default function OnboardingScreen() {
     return (
       <View style={[styles.stepContainer, { justifyContent: 'center', alignItems: 'center' }]}>
         <ThemedText style={[styles.title, { fontSize: 40, marginBottom: 16 }]}>
-          Welcome to Loop! 🎉
+          {isBusiness ? 'Grow with Loop!' : 'Welcome to Loop!'}
         </ThemedText>
         <ThemedText style={[styles.subtitle, { textAlign: 'center', fontSize: 16, opacity: 0.8, lineHeight: 24 }]}>
-          Discover activities tailored to your free time, interests, and location
+          {isBusiness
+            ? 'Reach thousands of users actively searching for things to do near them'
+            : 'Discover activities tailored to your free time, interests, and location'}
         </ThemedText>
         <ThemedText style={[styles.subtitle, { textAlign: 'center', fontSize: 14, opacity: 0.6, marginTop: 24, lineHeight: 20 }]}>
-          Let's set up your profile so we can personalize your experience
+          {isBusiness
+            ? "Let's set up your business listing so customers can find you"
+            : "Let's set up your profile so we can personalize your experience"}
         </ThemedText>
       </View>
     );
   }
 
   function renderStep1() {
+    if (isBusiness) {
+      return (
+        <View style={styles.stepContainer}>
+          <ThemedText style={styles.title}>Tell us about your business</ThemedText>
+          <ThemedText style={styles.subtitle}>
+            We'll use this to create your listing
+          </ThemedText>
+
+          <TextInput
+            style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
+            placeholder="Business Name"
+            placeholderTextColor={colors.icon}
+            value={businessName}
+            onChangeText={setBusinessName}
+            autoCapitalize="words"
+            editable={!isLoading}
+          />
+
+          <TextInput
+            style={[styles.input, { borderColor: colors.icon, color: colors.text, marginTop: 16 }]}
+            placeholder="Your Name (Contact)"
+            placeholderTextColor={colors.icon}
+            value={firstName}
+            onChangeText={setFirstName}
+            autoCapitalize="words"
+            editable={!isLoading}
+          />
+        </View>
+      );
+    }
+
     return (
       <View style={styles.stepContainer}>
         <ThemedText style={styles.title}>What's your name?</ThemedText>
@@ -436,7 +512,62 @@ export default function OnboardingScreen() {
     );
   }
 
+  const BUSINESS_CATEGORIES = [
+    'Restaurant', 'Cafe', 'Bar', 'Brewery', 'Gym', 'Yoga Studio',
+    'Spa', 'Salon', 'Retail', 'Entertainment', 'Gallery', 'Museum',
+    'Park', 'Outdoor Recreation', 'Event Venue', 'Other',
+  ];
+
   function renderStep2() {
+    if (isBusiness) {
+      return (
+        <View style={styles.stepContainer}>
+          <ThemedText style={styles.title}>Business Details</ThemedText>
+          <ThemedText style={styles.subtitle}>
+            Select your category and add a description
+          </ThemedText>
+
+          <ScrollView
+            style={styles.interestsScrollContainer}
+            contentContainerStyle={styles.interestsContainer}
+            showsVerticalScrollIndicator={false}
+          >
+            {BUSINESS_CATEGORIES.map((cat) => {
+              const isSelected = businessCategory === cat;
+              return (
+                <TouchableOpacity
+                  key={cat}
+                  style={[
+                    styles.interestChip,
+                    {
+                      backgroundColor: isSelected ? colors.tint : 'transparent',
+                      borderColor: isSelected ? colors.tint : colors.icon,
+                    },
+                  ]}
+                  onPress={() => setBusinessCategory(cat)}
+                  disabled={isLoading}
+                >
+                  <Text style={[styles.interestText, { color: isSelected ? '#fff' : colors.text }]}>
+                    {cat}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          <TextInput
+            style={[styles.input, { borderColor: colors.icon, color: colors.text, height: 80, textAlignVertical: 'top', paddingTop: 12 }]}
+            placeholder="Describe your business (optional)"
+            placeholderTextColor={colors.icon}
+            value={businessDescription}
+            onChangeText={setBusinessDescription}
+            multiline
+            editable={!isLoading}
+          />
+        </View>
+      );
+    }
+
     return (
       <View style={styles.stepContainer}>
         <ThemedText style={styles.title}>What are you interested in?</ThemedText>
@@ -488,9 +619,13 @@ export default function OnboardingScreen() {
   function renderStep3() {
     return (
       <View style={styles.stepContainer}>
-        <ThemedText style={styles.title}>Where are you based?</ThemedText>
+        <ThemedText style={styles.title}>
+          {isBusiness ? 'Business Location' : 'Where are you based?'}
+        </ThemedText>
         <ThemedText style={styles.subtitle}>
-          We'll use this to find activities near you
+          {isBusiness
+            ? "Enter your business address so customers can find you"
+            : "We'll use this to find activities near you"}
         </ThemedText>
 
         <View style={styles.form}>

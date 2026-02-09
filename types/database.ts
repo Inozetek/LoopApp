@@ -46,6 +46,8 @@ export interface Database {
           referral_credits_cents: number
           // Phase 2: Refresh tracking
           last_refresh_at: string | null
+          // Phase 3: Business accounts
+          account_type: 'personal' | 'business'
         }
         Insert: {
           id?: string
@@ -78,6 +80,7 @@ export interface Database {
           referral_count?: number
           referral_credits_cents?: number
           last_refresh_at?: string | null
+          account_type?: 'personal' | 'business'
         }
         Update: {
           id?: string
@@ -110,6 +113,7 @@ export interface Database {
           referral_count?: number
           referral_credits_cents?: number
           last_refresh_at?: string | null
+          account_type?: 'personal' | 'business'
         }
       }
       calendar_events: {
@@ -299,6 +303,47 @@ export interface UserPreferences {
 
 // User interests type
 export type UserInterests = string[]
+
+// Business profile type
+export interface BusinessProfile {
+  id: string
+  user_id: string
+  business_name: string
+  business_category: string
+  business_description: string | null
+  location: unknown | null
+  address: string | null
+  city: string | null
+  state: string | null
+  zip_code: string | null
+  phone: string | null
+  website: string | null
+  hours: Record<string, string>
+  photos: string[]
+  logo_url: string | null
+  price_range: number | null
+  google_place_id: string | null
+  claimed: boolean
+  business_tier: 'organic' | 'boosted' | 'premium'
+  business_subscription_status: 'active' | 'cancelled' | 'past_due' | 'trialing' | 'inactive'
+  trial_ends_at: string | null
+  stripe_subscription_id: string | null
+  total_impressions: number
+  total_clicks: number
+  total_calendar_adds: number
+  created_at: string
+  updated_at: string
+}
+
+export interface BusinessDailyAnalytics {
+  id: string
+  business_profile_id: string
+  date: string
+  impressions: number
+  clicks: number
+  calendar_adds: number
+  created_at: string
+}
 
 // Privacy settings type
 export interface PrivacySettings {
