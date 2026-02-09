@@ -34,6 +34,7 @@ import {
 import { Calendar, DateData } from 'react-native-calendars';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 
@@ -48,6 +49,7 @@ import { LoopMapView } from '@/components/loop-map-view';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
 import { CalendarHeader } from '@/components/calendar-header';
+import { TaskDetailsModal } from '@/components/task-details-modal';
 import { getCurrentLocation } from '@/services/location-service';
 import {
   getPendingFeedbackActivities,
@@ -59,7 +61,50 @@ import {
   syncCalendarToDatabase,
   getUpcomingFreeTime,
   checkCalendarPermissions,
+  fetchCalendarEventsForPreview,
+  syncSelectedEventsToDatabase,
+  CalendarEventPreview,
 } from '@/services/calendar-service';
+
+// Parse IEEE 754 double from hex string
+function hexToFloat64(hex: string, littleEndian: boolean): number {
+  const bytes = hex.match(/../g)!.map(b => parseInt(b, 16));
+  const buffer = new ArrayBuffer(8);
+  const uint8 = new Uint8Array(buffer);
+  bytes.forEach((b, i) => (uint8[i] = b));
+  const view = new DataView(buffer);
+  return view.getFloat64(0, littleEndian);
+}
+
+// Parse PostGIS EWKB/WKB hex-encoded POINT to lat/lng
+function parseWKBHexPoint(hex: string): { latitude: number; longitude: number } | null {
+  if (typeof hex !== 'string' || !/^[0-9a-fA-F]+$/.test(hex) || hex.length < 42) return null;
+
+  const isLittleEndian = hex.substring(0, 2) === '01';
+
+  // Read geometry type (4 bytes at offset 1 byte)
+  const typeHex = hex.substring(2, 10);
+  const typeBytes = typeHex.match(/../g)!.map(b => parseInt(b, 16));
+  const typeNum = isLittleEndian
+    ? typeBytes[0] | (typeBytes[1] << 8) | (typeBytes[2] << 16) | (typeBytes[3] << 24)
+    : (typeBytes[0] << 24) | (typeBytes[1] << 16) | (typeBytes[2] << 8) | typeBytes[3];
+
+  const hasSRID = (typeNum & 0x20000000) !== 0;
+  const geomType = typeNum & 0xff;
+
+  if (geomType !== 1) return null; // Not a POINT
+
+  let offset = 10; // After byte order (2) + type (8)
+  if (hasSRID) offset += 8; // Skip SRID (4 bytes = 8 hex chars)
+
+  if (hex.length < offset + 32) return null; // Need 32 more hex chars for two doubles
+
+  const lng = hexToFloat64(hex.substring(offset, offset + 16), isLittleEndian);
+  const lat = hexToFloat64(hex.substring(offset + 16, offset + 32), isLittleEndian);
+
+  if (isNaN(lng) || isNaN(lat)) return null;
+  return { latitude: lat, longitude: lng };
+}
 
 interface CalendarEvent {
   id: string;
@@ -74,6 +119,17 @@ interface CalendarEvent {
   start_time: string;
   end_time: string;
   status: 'scheduled' | 'completed' | 'cancelled';
+  activity_id?: string; // Present if task came from a recommendation
+}
+
+// Venue details for tasks that originated from recommendations
+interface VenueDetails {
+  rating?: number;
+  reviewsCount?: number;
+  website?: string;
+  phone?: string;
+  openNow?: boolean;
+  photos?: string[];
 }
 
 const CATEGORIES = [
@@ -153,6 +209,7 @@ function getCategoryFromPlaceTypes(types: string[]): string {
 export default function CalendarScreen() {
   const { user } = useAuth();
   const colorScheme = useColorScheme();
+  const router = useRouter();
   const isDark = colorScheme === 'dark';
 
   const [selectedDate, setSelectedDate] = useState<string>(
@@ -189,6 +246,14 @@ export default function CalendarScreen() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
+  // Menu drawer state
+  const [showMenuDrawer, setShowMenuDrawer] = useState(false);
+
+  // Task details modal state (opened from loop map "View Details")
+  const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
+  const [selectedTaskForDetails, setSelectedTaskForDetails] = useState<CalendarEvent | null>(null);
+  const [selectedTaskVenueDetails, setSelectedTaskVenueDetails] = useState<VenueDetails | null>(null);
+
   // User's current location for autocomplete biasing
   const [currentUserLocation, setCurrentUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
@@ -201,12 +266,23 @@ export default function CalendarScreen() {
   }>>([]);
   const [showFreeTime, setShowFreeTime] = useState(false);
 
+  // Sync preview modal state
+  const [showSyncPreview, setShowSyncPreview] = useState(false);
+  const [syncPreviewEvents, setSyncPreviewEvents] = useState<CalendarEventPreview[]>([]);
+  const [isLoadingPreview, setIsLoadingPreview] = useState(false);
+
   // Animation for events list
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     loadEvents();
-    checkForPendingFeedback();
+    // NOTE: We intentionally do NOT auto-check for pending feedback on date change.
+    // Feedback prompts should only appear when:
+    // 1. User explicitly marks a task as "Rate Activity" (completed)
+    // 2. In the future: when geofencing detects they visited the location
+    //
+    // Auto-prompting based on time alone is problematic because we can't verify
+    // the user actually went to the location.
   }, [selectedDate]);
 
   // Smart default end time based on category
@@ -267,32 +343,31 @@ export default function CalendarScreen() {
     }
   }, [events, loading]);
 
+  /**
+   * Check for pending feedback activities.
+   *
+   * NOTE: This is now only called AFTER a user explicitly marks a task as complete.
+   * We do NOT auto-prompt on app load or date change because:
+   * 1. We can't verify the user actually visited the location
+   * 2. Auto-prompts for unattended events are annoying and inaccurate
+   *
+   * Future: Use geofencing to detect when user actually arrives at a task location,
+   * then prompt for feedback after they leave.
+   */
   const checkForPendingFeedback = async () => {
-    if (!user) return;
-
-    // DEMO MODE: Skip feedback check for demo user
-    if (user.id === 'demo-user-123') {
-      return;
-    }
-
-    const { shouldPrompt, activity } = await shouldPromptForFeedback(user.id);
-
-    if (shouldPrompt && activity) {
-      // Delay showing feedback modal slightly to avoid overwhelming on load
-      setTimeout(() => {
-        setFeedbackActivity(activity);
-        setShowFeedbackModal(true);
-      }, 1000);
-    }
+    // This function is intentionally a no-op now.
+    // Feedback prompts are triggered directly when user taps "Rate Activity"
+    // via the handleMarkAsComplete function.
+    return;
   };
 
-  // Sync calendar from device
+  // Open sync preview modal - shows device calendar events for selection
   const handleSyncCalendar = async () => {
     if (!user) return;
 
     try {
-      setIsSyncing(true);
-      console.log('📅 Starting calendar sync...');
+      setIsLoadingPreview(true);
+      console.log('📅 Loading calendar events for preview...');
 
       // Check if we have calendar permissions
       const hasPermission = await checkCalendarPermissions();
@@ -302,20 +377,63 @@ export default function CalendarScreen() {
           'Loop needs access to your calendar to import events and detect free time.',
           [{ text: 'OK' }]
         );
+        setIsLoadingPreview(false);
         return;
       }
 
-      // Sync calendar events to database
-      const result = await syncCalendarToDatabase(user.id);
+      // Fetch events for preview
+      const previewEvents = await fetchCalendarEventsForPreview(30);
+      setSyncPreviewEvents(previewEvents);
+      setShowSyncPreview(true);
+
+    } catch (error) {
+      console.error('❌ Error loading calendar preview:', error);
+      Alert.alert('Error', 'Failed to load calendar events. Please try again.', [{ text: 'OK' }]);
+    } finally {
+      setIsLoadingPreview(false);
+    }
+  };
+
+  // Toggle event selection in sync preview
+  const toggleEventSelection = (eventId: string) => {
+    setSyncPreviewEvents(prev =>
+      prev.map(event =>
+        event.id === eventId ? { ...event, selected: !event.selected } : event
+      )
+    );
+  };
+
+  // Select/deselect all events
+  const toggleAllEvents = (selected: boolean) => {
+    setSyncPreviewEvents(prev =>
+      prev.map(event => ({ ...event, selected: event.hasLocation ? selected : false }))
+    );
+  };
+
+  // Confirm and sync selected events
+  const confirmSyncEvents = async () => {
+    if (!user) return;
+
+    const selectedEvents = syncPreviewEvents.filter(e => e.selected);
+
+    if (selectedEvents.length === 0) {
+      Alert.alert('No Events Selected', 'Please select at least one event to sync.');
+      return;
+    }
+
+    try {
+      setIsSyncing(true);
+      setShowSyncPreview(false);
+
+      console.log(`📅 Syncing ${selectedEvents.length} selected events...`);
+
+      const result = await syncSelectedEventsToDatabase(user.id, selectedEvents);
 
       if (result.success) {
         console.log(`✅ Synced ${result.eventsSynced} events`);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-        // Reload events to show newly synced ones
         await loadEvents();
-
-        // Load free time slots
         await loadFreeTime();
 
         Alert.alert(
@@ -471,9 +589,10 @@ export default function CalendarScreen() {
       Alert.alert('Success', 'Task added to calendar!');
       closeCreateModal();
       loadEvents();
-    } catch (error) {
-      console.error('Error creating event:', error);
-      Alert.alert('Error', 'Failed to create task');
+    } catch (error: any) {
+      const msg = error?.message || error?.details || JSON.stringify(error);
+      console.error('Error creating event:', msg, error);
+      Alert.alert('Error', `Failed to create task: ${msg}`);
     }
   };
 
@@ -519,12 +638,8 @@ export default function CalendarScreen() {
     // Reload events list to reflect the completed status
     loadEvents();
 
-    // Wait 2 seconds before checking for more pending feedback
-    // This prevents the same modal from reopening immediately
-    // and gives the database time to fully commit the status update
-    setTimeout(() => {
-      checkForPendingFeedback();
-    }, 2000);
+    // NOTE: We no longer auto-check for more pending feedback.
+    // Each task should be rated individually when the user taps "Rate Activity".
   };
 
   const handleEventPress = (event: CalendarEvent) => {
@@ -667,15 +782,68 @@ export default function CalendarScreen() {
 
   // Memoize tasks for LoopMapView to prevent unnecessary re-renders
   const loopMapTasks = useMemo(() => {
-    return events.map(event => ({
-      id: event.id,
-      title: event.title,
-      latitude: event.location.latitude,
-      longitude: event.location.longitude,
-      address: event.address,
-      start_time: event.start_time,
-      category: event.category,
-    }));
+    return events
+      .map(event => {
+        // Parse location from various PostGIS formats
+        let lat: number | undefined;
+        let lng: number | undefined;
+
+        const loc = event.location;
+
+        if (!loc) {
+          console.warn(`⚠️ No location data for event: ${event.title}`);
+          return null;
+        }
+
+        // Format 1: Object with latitude/longitude
+        if (typeof loc === 'object' && loc !== null && 'latitude' in loc && 'longitude' in loc) {
+          lat = (loc as any).latitude;
+          lng = (loc as any).longitude;
+        }
+        // Format 2: PostGIS GeoJSON { coordinates: [lng, lat] }
+        else if (typeof loc === 'object' && loc !== null && 'coordinates' in loc) {
+          const coords = (loc as any).coordinates;
+          if (Array.isArray(coords) && coords.length === 2) {
+            lng = coords[0];
+            lat = coords[1];
+          }
+        }
+        // Format 3: WKT string "POINT(lng lat)"
+        else if (typeof loc === 'string') {
+          const locStr = loc as string;
+          const match = locStr.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+          if (match) {
+            lng = parseFloat(match[1]);
+            lat = parseFloat(match[2]);
+          } else {
+            // Format 4: Hex-encoded WKB/EWKB from PostGIS
+            const parsed = parseWKBHexPoint(locStr);
+            if (parsed) {
+              lat = parsed.latitude;
+              lng = parsed.longitude;
+            }
+          }
+        }
+
+        // Validate parsed coordinates
+        if (typeof lat !== 'number' || typeof lng !== 'number' ||
+            isNaN(lat) || isNaN(lng) ||
+            lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+          console.warn(`⚠️ Invalid coordinates for event: ${event.title}`, { lat, lng });
+          return null;
+        }
+
+        return {
+          id: event.id,
+          title: event.title,
+          latitude: lat,
+          longitude: lng,
+          address: event.address,
+          start_time: event.start_time,
+          category: event.category,
+        };
+      })
+      .filter((task): task is NonNullable<typeof task> => task !== null);
   }, [events]);
 
   // Memoize home location parsing for LoopMapView
@@ -690,7 +858,7 @@ export default function CalendarScreen() {
         longitude: loc.coordinates[0],
       };
     }
-    // Handle PostGIS string format: "POINT(lng lat)"
+    // Handle PostGIS string format: "POINT(lng lat)" or hex WKB
     if (typeof loc === 'string') {
       const match = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
       if (match) {
@@ -699,6 +867,9 @@ export default function CalendarScreen() {
           longitude: parseFloat(match[1]),
         };
       }
+      // Try hex-encoded WKB/EWKB
+      const parsed = parseWKBHexPoint(loc);
+      if (parsed) return parsed;
     }
     return undefined;
   }, [user?.home_location]);
@@ -706,43 +877,17 @@ export default function CalendarScreen() {
   return (
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
-        {/* Header */}
+        {/* Header - Tap Loop icon/title to toggle map, menu button for options */}
         <CalendarHeader
-          title="My Loop"
-          subtitle={selectedDate}
+          title="Loop"
+          showLoopIcon={true}
           onAddPress={openCreateModal}
+          onMenuPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowMenuDrawer(true);
+          }}
+          onTitlePress={toggleViewMode}
         />
-
-        {/* Action Bar (below header) */}
-        <View style={[styles.actionBar, { backgroundColor: Colors[colorScheme ?? 'light'].background, borderBottomColor: Colors[colorScheme ?? 'light'].border }]}>
-          {/* Sync Calendar Button */}
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={handleSyncCalendar}
-            disabled={isSyncing}
-          >
-            <Ionicons
-              name={isSyncing ? 'sync' : 'calendar-outline'}
-              size={20}
-              color={isSyncing ? '#888' : Colors[colorScheme ?? 'light'].text}
-            />
-            <Text style={[styles.actionButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
-              {isSyncing ? 'Syncing...' : 'Sync'}
-            </Text>
-          </TouchableOpacity>
-
-          {/* List/Loop Toggle */}
-          <TouchableOpacity style={styles.actionButton} onPress={toggleViewMode}>
-            <Ionicons
-              name={viewMode === 'list' ? 'map-outline' : 'list-outline'}
-              size={20}
-              color={Colors[colorScheme ?? 'light'].text}
-            />
-            <Text style={[styles.actionButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
-              {viewMode === 'list' ? 'Map View' : 'List View'}
-            </Text>
-          </TouchableOpacity>
-        </View>
 
       {viewMode === 'list' ? (
         <>
@@ -820,7 +965,7 @@ export default function CalendarScreen() {
                   activeOpacity={0.7}
                 >
               <View style={styles.eventHeader}>
-                <View style={styles.eventIconContainer}>
+                <View style={[styles.eventIconContainer, { backgroundColor: getCategoryColor(event.category) + '1A' }]}>
                   <Ionicons
                     name={getCategoryIcon(event.category) as any}
                     size={24}
@@ -892,7 +1037,7 @@ export default function CalendarScreen() {
             style={[styles.loopViewButton, { backgroundColor: BrandColors.loopBlue }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              Alert.alert('Loop View', 'Map visualization coming in Phase 2!');
+              toggleViewMode();
             }}
           >
             <Ionicons name="map" size={20} color="#ffffff" />
@@ -922,17 +1067,43 @@ export default function CalendarScreen() {
           <LoopMapView
             tasks={loopMapTasks}
             homeLocation={parsedHomeLocation}
-            onTaskPress={(taskId) => {
+            onViewFeed={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setViewMode('list'); // Switch back to list view first
+              router.push('/(tabs)'); // Navigate to recommendation feed (index)
+            }}
+            onTaskPress={async (taskId) => {
               const task = events.find(e => e.id === taskId);
               if (task) {
-                Alert.alert(
-                  task.title,
-                  `${task.address}\n${new Date(task.start_time).toLocaleTimeString('en-US', {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}`,
-                  [{ text: 'OK' }]
-                );
+                // Set the task for details modal
+                setSelectedTaskForDetails(task);
+                setSelectedTaskVenueDetails(null); // Reset venue details
+
+                // If task has an activity_id, fetch venue details
+                if (task.activity_id) {
+                  try {
+                    const { data: activity } = await supabase
+                      .from('activities')
+                      .select('rating, reviews_count, website, phone, photos')
+                      .eq('id', task.activity_id)
+                      .single();
+
+                    if (activity) {
+                      setSelectedTaskVenueDetails({
+                        rating: activity.rating,
+                        reviewsCount: activity.reviews_count,
+                        website: activity.website,
+                        phone: activity.phone,
+                        photos: activity.photos,
+                      });
+                    }
+                  } catch (error) {
+                    console.error('Error fetching venue details:', error);
+                  }
+                }
+
+                // Show the task details modal
+                setShowTaskDetailsModal(true);
               }
             }}
           />
@@ -1459,6 +1630,308 @@ export default function CalendarScreen() {
           recommendationId={feedbackActivity.recommendationId || undefined}
         />
       )}
+
+      {/* Task Details Modal (from loop map "View Details") */}
+      <TaskDetailsModal
+        visible={showTaskDetailsModal}
+        task={selectedTaskForDetails}
+        venueDetails={selectedTaskVenueDetails}
+        onClose={() => {
+          setShowTaskDetailsModal(false);
+          setSelectedTaskForDetails(null);
+          setSelectedTaskVenueDetails(null);
+        }}
+        onEdit={() => {
+          // Close details modal and open edit modal
+          setShowTaskDetailsModal(false);
+          if (selectedTaskForDetails) {
+            setEditingEvent(selectedTaskForDetails);
+            setShowEditModal(true);
+          }
+        }}
+        onMarkComplete={() => {
+          if (selectedTaskForDetails) {
+            handleMarkAsComplete(selectedTaskForDetails);
+          }
+        }}
+        onDelete={() => {
+          if (selectedTaskForDetails) {
+            // Use the existing delete logic
+            handleSwipeDelete(selectedTaskForDetails.id);
+          }
+        }}
+      />
+
+      {/* Menu Drawer Modal */}
+      <Modal
+        visible={showMenuDrawer}
+        animationType="fade"
+        transparent={true}
+        onRequestClose={() => setShowMenuDrawer(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setShowMenuDrawer(false)}
+        >
+          <View
+            style={[
+              styles.menuDrawer,
+              { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white },
+            ]}
+          >
+            {/* Menu Header */}
+            <View style={styles.menuHeader}>
+              <View style={styles.menuLoopIcon}>
+                <View style={[styles.menuLoopCircle, styles.menuLoopCircleBlue]} />
+                <View style={[styles.menuLoopCircle, styles.menuLoopCircleGreen]} />
+              </View>
+              <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
+                Loop Menu
+              </Text>
+            </View>
+
+            {/* Menu Items */}
+            <View style={styles.menuItems}>
+              {/* View Toggle */}
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenuDrawer(false);
+                  toggleViewMode();
+                }}
+              >
+                <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopBlue}15` }]}>
+                  <Ionicons
+                    name={viewMode === 'list' ? 'map' : 'list'}
+                    size={22}
+                    color={BrandColors.loopBlue}
+                  />
+                </View>
+                <View style={styles.menuItemContent}>
+                  <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                    {viewMode === 'list' ? 'View Loop Map' : 'View Calendar List'}
+                  </Text>
+                  <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                    {viewMode === 'list' ? 'See your day as a connected route' : 'See your tasks as a list'}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />
+              </TouchableOpacity>
+
+              {/* Sync Calendar */}
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenuDrawer(false);
+                  handleSyncCalendar();
+                }}
+                disabled={isSyncing || isLoadingPreview}
+              >
+                <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopGreen}15` }]}>
+                  <Ionicons
+                    name={isLoadingPreview ? 'hourglass' : isSyncing ? 'sync' : 'calendar'}
+                    size={22}
+                    color={BrandColors.loopGreen}
+                  />
+                </View>
+                <View style={styles.menuItemContent}>
+                  <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                    {isLoadingPreview ? 'Loading...' : isSyncing ? 'Syncing...' : 'Sync Device Calendar'}
+                  </Text>
+                  <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                    Select events to import from your phone
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />
+              </TouchableOpacity>
+
+              {/* Free Time (if we have slots) */}
+              {freeTimeSlots.length > 0 && (
+                <TouchableOpacity
+                  style={styles.menuItem}
+                  onPress={() => {
+                    setShowMenuDrawer(false);
+                    setShowFreeTime(!showFreeTime);
+                  }}
+                >
+                  <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopOrange}15` }]}>
+                    <Ionicons name="time" size={22} color={BrandColors.loopOrange} />
+                  </View>
+                  <View style={styles.menuItemContent}>
+                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                      View Free Time
+                    </Text>
+                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                      {freeTimeSlots.length} free slots this week
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />
+                </TouchableOpacity>
+              )}
+            </View>
+
+            {/* Close Button */}
+            <TouchableOpacity
+              style={styles.menuCloseButton}
+              onPress={() => setShowMenuDrawer(false)}
+            >
+              <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                Close
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Sync Preview Modal - Select events to import */}
+      <Modal
+        visible={showSyncPreview}
+        animationType="slide"
+        transparent={true}
+        onRequestClose={() => setShowSyncPreview(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.syncPreviewModal, { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white }]}>
+            {/* Header */}
+            <View style={styles.syncPreviewHeader}>
+              <View>
+                <Text style={[Typography.titleLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                  Select Events to Import
+                </Text>
+                <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginTop: 4 }]}>
+                  {syncPreviewEvents.filter(e => e.selected).length} of {syncPreviewEvents.filter(e => e.hasLocation).length} events selected
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setShowSyncPreview(false)}>
+                <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Select All / Deselect All */}
+            <View style={styles.syncPreviewActions}>
+              <TouchableOpacity
+                style={[styles.syncSelectButton, { backgroundColor: `${BrandColors.loopBlue}15` }]}
+                onPress={() => toggleAllEvents(true)}
+              >
+                <Ionicons name="checkmark-circle" size={18} color={BrandColors.loopBlue} />
+                <Text style={[Typography.labelMedium, { color: BrandColors.loopBlue, marginLeft: 4 }]}>
+                  Select All
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.syncSelectButton, { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground }]}
+                onPress={() => toggleAllEvents(false)}
+              >
+                <Ionicons name="close-circle" size={18} color={Colors[colorScheme ?? 'light'].icon} />
+                <Text style={[Typography.labelMedium, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 4 }]}>
+                  Deselect All
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Events List */}
+            <ScrollView style={styles.syncPreviewList}>
+              {syncPreviewEvents.length === 0 ? (
+                <View style={styles.syncEmptyState}>
+                  <Ionicons name="calendar-outline" size={48} color={Colors[colorScheme ?? 'light'].icon} />
+                  <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].icon, marginTop: Spacing.md, textAlign: 'center' }]}>
+                    No upcoming events found in your device calendar
+                  </Text>
+                </View>
+              ) : (
+                syncPreviewEvents.map((event) => (
+                  <TouchableOpacity
+                    key={event.id}
+                    style={[
+                      styles.syncEventItem,
+                      { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground },
+                      !event.hasLocation && styles.syncEventDisabled,
+                    ]}
+                    onPress={() => event.hasLocation && toggleEventSelection(event.id)}
+                    disabled={!event.hasLocation}
+                  >
+                    {/* Checkbox */}
+                    <View style={[
+                      styles.syncCheckbox,
+                      event.selected && styles.syncCheckboxChecked,
+                      !event.hasLocation && styles.syncCheckboxDisabled,
+                    ]}>
+                      {event.selected && (
+                        <Ionicons name="checkmark" size={16} color="white" />
+                      )}
+                    </View>
+
+                    {/* Event Info */}
+                    <View style={styles.syncEventInfo}>
+                      <Text
+                        style={[
+                          Typography.labelLarge,
+                          { color: event.hasLocation ? Colors[colorScheme ?? 'light'].text : Colors[colorScheme ?? 'light'].icon },
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {event.title}
+                      </Text>
+                      <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                        {event.startDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} at{' '}
+                        {event.startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                      </Text>
+                      {event.location ? (
+                        <View style={styles.syncEventLocation}>
+                          <Ionicons name="location-outline" size={12} color={BrandColors.loopGreen} />
+                          <Text
+                            style={[Typography.bodySmall, { color: BrandColors.loopGreen, marginLeft: 4 }]}
+                            numberOfLines={1}
+                          >
+                            {event.location}
+                          </Text>
+                        </View>
+                      ) : (
+                        <View style={styles.syncEventLocation}>
+                          <Ionicons name="warning-outline" size={12} color={BrandColors.loopOrange} />
+                          <Text style={[Typography.bodySmall, { color: BrandColors.loopOrange, marginLeft: 4 }]}>
+                            No location - cannot import
+                          </Text>
+                        </View>
+                      )}
+                      <Text style={[Typography.labelSmall, { color: Colors[colorScheme ?? 'light'].icon, marginTop: 2 }]}>
+                        {event.calendarName}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+
+            {/* Footer with Import Button */}
+            <View style={styles.syncPreviewFooter}>
+              <TouchableOpacity
+                style={[styles.syncCancelButton, { borderColor: Colors[colorScheme ?? 'light'].border }]}
+                onPress={() => setShowSyncPreview(false)}
+              >
+                <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.syncImportButton,
+                  { backgroundColor: BrandColors.loopGreen },
+                  syncPreviewEvents.filter(e => e.selected).length === 0 && styles.syncImportButtonDisabled,
+                ]}
+                onPress={confirmSyncEvents}
+                disabled={syncPreviewEvents.filter(e => e.selected).length === 0}
+              >
+                <Ionicons name="download-outline" size={20} color="white" />
+                <Text style={[Typography.labelLarge, { color: 'white', marginLeft: 8 }]}>
+                  Import {syncPreviewEvents.filter(e => e.selected).length} Events
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
       </View>
     </SwipeableLayout>
   );
@@ -1786,5 +2259,182 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     marginTop: 4,
+  },
+  // Menu Drawer Styles
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-start',
+  },
+  menuDrawer: {
+    marginTop: 100,
+    marginHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    ...Shadows.lg,
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+    marginBottom: Spacing.md,
+  },
+  menuLoopIcon: {
+    width: 28,
+    height: 28,
+    position: 'relative',
+    marginRight: Spacing.sm,
+  },
+  menuLoopCircle: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 3,
+    position: 'absolute',
+  },
+  menuLoopCircleBlue: {
+    borderColor: BrandColors.loopBlue,
+    backgroundColor: 'transparent',
+    top: 0,
+    left: 0,
+  },
+  menuLoopCircleGreen: {
+    borderColor: BrandColors.loopGreen,
+    backgroundColor: 'transparent',
+    bottom: 0,
+    right: 0,
+  },
+  menuItems: {
+    gap: Spacing.xs,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.sm,
+    borderRadius: BorderRadius.md,
+  },
+  menuItemIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  menuItemContent: {
+    flex: 1,
+  },
+  menuCloseButton: {
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    marginTop: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  // Sync Preview Modal Styles
+  syncPreviewModal: {
+    flex: 1,
+    marginTop: 60,
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+  },
+  syncPreviewHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: Spacing.lg,
+    paddingTop: Spacing.lg,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  syncPreviewActions: {
+    flexDirection: 'row',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    gap: Spacing.sm,
+  },
+  syncSelectButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+  },
+  syncPreviewList: {
+    flex: 1,
+    paddingHorizontal: Spacing.lg,
+  },
+  syncEmptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.xl * 2,
+  },
+  syncEventItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.sm,
+  },
+  syncEventDisabled: {
+    opacity: 0.5,
+  },
+  syncCheckbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: BrandColors.loopBlue,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+    marginTop: 2,
+  },
+  syncCheckboxChecked: {
+    backgroundColor: BrandColors.loopBlue,
+  },
+  syncCheckboxDisabled: {
+    borderColor: '#ccc',
+  },
+  syncEventInfo: {
+    flex: 1,
+  },
+  syncEventLocation: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  syncPreviewFooter: {
+    flexDirection: 'row',
+    padding: Spacing.lg,
+    paddingBottom: Spacing.xl,
+    gap: Spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+  },
+  syncCancelButton: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  syncImportButton: {
+    flex: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.md,
+    borderRadius: BorderRadius.lg,
+  },
+  syncImportButtonDisabled: {
+    opacity: 0.5,
   },
 });
