@@ -570,11 +570,20 @@ export default function CalendarScreen() {
       endDateTime.setHours(newTaskEndTime.getHours());
       endDateTime.setMinutes(newTaskEndTime.getMinutes());
 
-      // Use selected location from autocomplete, or fallback to Dallas coordinates
-      const location = newTaskLocation || {
-        latitude: 32.7767, // Dallas default
-        longitude: -96.797,
-      };
+      // Use selected location, or GPS, or user's home, or Dallas fallback
+      let location = newTaskLocation;
+      if (!location) {
+        try {
+          const gps = await getCurrentLocation();
+          location = { latitude: gps.latitude, longitude: gps.longitude };
+        } catch {
+          // Fall back to user's home location or Dallas
+          const homeCoords = user.home_location && (user.home_location as any).coordinates;
+          location = homeCoords
+            ? { latitude: homeCoords[1], longitude: homeCoords[0] }
+            : { latitude: 32.7767, longitude: -96.797 };
+        }
+      }
 
       const { error } = await supabase.from('calendar_events').insert({
         user_id: user.id,
@@ -1087,6 +1096,7 @@ export default function CalendarScreen() {
           <LoopMapView
             tasks={loopMapTasks}
             homeLocation={parsedHomeLocation}
+            currentLocation={currentUserLocation || undefined}
             onViewFeed={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setViewMode('list'); // Switch back to list view first

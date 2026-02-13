@@ -2625,8 +2625,20 @@ function applyBusinessRules(
     }
   }
 
-  // Rule 6: Respect price range filter
-  // TODO: Filter by user budget preference
+  // Rule 6: Soft budget filter — exclude places 2+ levels above user's budget
+  // Only applies when no explicit UI price filter is set
+  if (!priceRange || priceRange === 'any') {
+    const userBudget = user.ai_profile?.budget_level || user.preferences?.budget || 2;
+    const beforeCount = balancedRecommendations.length;
+    balancedRecommendations = balancedRecommendations.filter(rec => {
+      const price = rec.place?.price_level || 0;
+      return price === 0 || price <= userBudget + 1; // Allow one level above
+    });
+    const removed = beforeCount - balancedRecommendations.length;
+    if (removed > 0) {
+      console.log(`💰 Budget filter: Removed ${removed} places above user budget level ${userBudget}`);
+    }
+  }
 
   // Return top N results
   return balancedRecommendations.slice(0, maxResults);

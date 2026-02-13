@@ -293,11 +293,12 @@ export async function submitFeedback(feedback: {
 /**
  * Update user's AI profile based on feedback
  */
-async function updateAIProfile(feedback: {
+export async function updateAIProfile(feedback: {
   userId: string;
   activityId: string;
   rating: 'thumbs_up' | 'thumbs_down';
   tags?: string[];
+  completedAt?: string;
 }): Promise<void> {
   try {
     console.log('🧠 Updating AI profile for user:', feedback.userId);
@@ -354,6 +355,24 @@ async function updateAIProfile(feedback: {
         updatedProfile.budget_level = Math.round(
           updatedProfile.budget_level * 0.7 + activity.price_range * 0.3
         );
+      }
+      // Update time preferences from completed time
+      if (feedback.completedAt) {
+        const hour = new Date(feedback.completedAt).getHours();
+        let timePref = 'evening';
+        if (hour >= 5 && hour < 12) timePref = 'morning';
+        else if (hour >= 12 && hour < 17) timePref = 'afternoon';
+        else if (hour >= 17 && hour < 21) timePref = 'evening';
+        else timePref = 'night';
+
+        if (!updatedProfile.time_preferences) updatedProfile.time_preferences = [];
+        if (!updatedProfile.time_preferences.includes(timePref)) {
+          updatedProfile.time_preferences.push(timePref);
+          // Keep last 4 unique time preferences
+          if (updatedProfile.time_preferences.length > 4) {
+            updatedProfile.time_preferences = updatedProfile.time_preferences.slice(-4);
+          }
+        }
       }
       console.log('👍 Added', activity.category, 'to favorites');
     } else if (feedback.rating === 'thumbs_down' && feedback.tags) {

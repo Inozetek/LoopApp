@@ -36,7 +36,8 @@ export async function getFriends(userId: string): Promise<Friend[]> {
           profile_picture_url,
           loop_score,
           streak_days,
-          last_active_date
+          last_active_date,
+          interests
         )
       `)
       .eq('user_id', userId)
@@ -49,22 +50,61 @@ export async function getFriends(userId: string): Promise<Friend[]> {
       return [];
     }
 
+    // Get current user's friends set for mutual friend calculation
+    const currentUserFriendIds = new Set(data.map((f: any) => f.friend.id));
+
+    // Get current user's interests for shared interests
+    const { data: currentUser } = await supabase
+      .from('users')
+      .select('interests')
+      .eq('id', userId)
+      .single();
+    const currentUserInterests: string[] = (currentUser as any)?.interests || [];
+
+    // For each friend, compute mutual friends in-memory
+    // Batch-fetch all friends-of-friends to avoid N+1
+    const friendIds = data.map((f: any) => f.friend.id);
+    const { data: friendsOfFriends } = await supabase
+      .from('friendships')
+      .select('user_id, friend_id')
+      .in('user_id', friendIds)
+      .eq('status', 'accepted');
+
+    // Build a map: friendId -> Set of their friend IDs
+    const friendFriendsMap = new Map<string, Set<string>>();
+    for (const fof of (friendsOfFriends || []) as any[]) {
+      if (!friendFriendsMap.has(fof.user_id)) {
+        friendFriendsMap.set(fof.user_id, new Set());
+      }
+      friendFriendsMap.get(fof.user_id)!.add(fof.friend_id);
+    }
+
     // Transform to Friend interface
-    const friends: Friend[] = data.map((f: any) => ({
-      id: f.friend.id,
-      name: f.friend.name,
-      email: f.friend.email,
-      profilePictureUrl: f.friend.profile_picture_url,
-      loopScore: f.friend.loop_score || 0,
-      streakDays: f.friend.streak_days || 0,
-      isOnline: isUserOnline(f.friend.last_active_date),
-      lastActiveAt: f.friend.last_active_date ? new Date(f.friend.last_active_date) : new Date(),
-      friendsSince: f.accepted_at ? new Date(f.accepted_at) : new Date(f.created_at),
-      mutualFriends: 0, // TODO: Calculate mutual friends
-      sharedInterests: [], // TODO: Calculate shared interests
-      canViewLoop: f.can_view_loop,
-      canInviteToActivities: f.can_invite_to_activities,
-    }));
+    const friends: Friend[] = data.map((f: any) => {
+      // Mutual friends = friends of this person that are also friends of the current user
+      const theirFriends = friendFriendsMap.get(f.friend.id) || new Set();
+      const mutualCount = [...theirFriends].filter(id => currentUserFriendIds.has(id) && id !== userId).length;
+
+      // Shared interests
+      const friendInterests: string[] = f.friend.interests || [];
+      const shared = calculateSharedInterests(currentUserInterests, friendInterests);
+
+      return {
+        id: f.friend.id,
+        name: f.friend.name,
+        email: f.friend.email,
+        profilePictureUrl: f.friend.profile_picture_url,
+        loopScore: f.friend.loop_score || 0,
+        streakDays: f.friend.streak_days || 0,
+        isOnline: isUserOnline(f.friend.last_active_date),
+        lastActiveAt: f.friend.last_active_date ? new Date(f.friend.last_active_date) : new Date(),
+        friendsSince: f.accepted_at ? new Date(f.accepted_at) : new Date(f.created_at),
+        mutualFriends: mutualCount,
+        sharedInterests: shared,
+        canViewLoop: f.can_view_loop,
+        canInviteToActivities: f.can_invite_to_activities,
+      };
+    });
 
     return friends;
   } catch (error) {
@@ -104,22 +144,27 @@ export async function getPendingRequests(userId: string): Promise<FriendRequest[
       return [];
     }
 
-    // Transform to FriendRequest interface
-    const requests: FriendRequest[] = data.map((r: any) => ({
-      id: r.id,
-      fromUserId: r.user_id,
-      toUserId: userId,
-      fromUser: {
-        id: r.requester.id,
-        name: r.requester.name,
-        email: r.requester.email,
-        profilePictureUrl: r.requester.profile_picture_url,
-        loopScore: r.requester.loop_score || 0,
-        mutualFriends: 0, // TODO: Calculate mutual friends
-      },
-      status: 'pending',
-      createdAt: new Date(r.created_at),
-    }));
+    // Calculate mutual friends for each requester
+    const requests: FriendRequest[] = await Promise.all(
+      data.map(async (r: any) => {
+        const mutual = await calculateMutualFriends(r.user_id, userId);
+        return {
+          id: r.id,
+          fromUserId: r.user_id,
+          toUserId: userId,
+          fromUser: {
+            id: r.requester.id,
+            name: r.requester.name,
+            email: r.requester.email,
+            profilePictureUrl: r.requester.profile_picture_url,
+            loopScore: r.requester.loop_score || 0,
+            mutualFriends: mutual,
+          },
+          status: 'pending' as const,
+          createdAt: new Date(r.created_at),
+        };
+      })
+    );
 
     return requests;
   } catch (error) {
@@ -168,20 +213,23 @@ export async function searchFriends(
       (friendships || []).map((f: any) => [f.friend_id, f.status])
     );
 
-    // Transform to FriendSearchResult interface
-    const results: FriendSearchResult[] = data.map((u: any) => {
-      const friendshipStatus = friendshipMap.get(u.id);
-      return {
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        profilePictureUrl: u.profile_picture_url,
-        loopScore: u.loop_score || 0,
-        mutualFriends: 0, // TODO: Calculate mutual friends
-        isFriend: friendshipStatus === 'accepted',
-        hasPendingRequest: friendshipStatus === 'pending',
-      };
-    });
+    // Transform to FriendSearchResult interface with mutual friend counts
+    const results: FriendSearchResult[] = await Promise.all(
+      data.map(async (u: any) => {
+        const friendshipStatus = friendshipMap.get(u.id);
+        const mutual = await calculateMutualFriends(u.id, currentUserId);
+        return {
+          id: u.id,
+          name: u.name,
+          email: u.email,
+          profilePictureUrl: u.profile_picture_url,
+          loopScore: u.loop_score || 0,
+          mutualFriends: mutual,
+          isFriend: friendshipStatus === 'accepted',
+          hasPendingRequest: friendshipStatus === 'pending',
+        };
+      })
+    );
 
     return results;
   } catch (error) {
@@ -358,9 +406,22 @@ export async function getFriendProfile(friendId: string, currentUserId: string):
       }
     }
 
-    // Get shared interests
-    const currentUserInterests = user.interests || [];
-    // TODO: Get current user's interests to calculate shared interests
+    // Get current user's interests for shared interests
+    const { data: currentUserData } = await supabase
+      .from('users')
+      .select('interests')
+      .eq('id', currentUserId)
+      .single();
+    const currentUserInterests: string[] = (currentUserData as any)?.interests || [];
+    const friendInterests: string[] = user.interests || [];
+
+    // Calculate real stats in parallel
+    const [scoreBreakdown, mutualCount] = await Promise.all([
+      calculateLoopScoreBreakdown(friendId),
+      calculateMutualFriends(friendId, currentUserId),
+    ]);
+
+    const sharedInterests = calculateSharedInterests(currentUserInterests, friendInterests);
 
     const profile: FriendProfile = {
       id: user.id,
@@ -371,20 +432,20 @@ export async function getFriendProfile(friendId: string, currentUserId: string):
       loopScore: user.loop_score || 0,
       loopScoreBreakdown: {
         total: user.loop_score || 0,
-        tasksCompleted: 0, // TODO: Calculate from calendar_events
-        recommendationsAccepted: 0, // TODO: Calculate from recommendations
-        feedbackGiven: 0, // TODO: Calculate from feedback
-        groupActivitiesAttended: 0, // TODO: Calculate from plan_participants
+        tasksCompleted: scoreBreakdown.tasksCompleted,
+        recommendationsAccepted: scoreBreakdown.recommendationsAccepted,
+        feedbackGiven: scoreBreakdown.feedbackGiven,
+        groupActivitiesAttended: scoreBreakdown.groupActivitiesAttended,
         streakBonus: (user.streak_days || 0) * 20,
-        badges: [], // TODO: Implement badge system
+        badges: [],
       },
       streakDays: user.streak_days || 0,
-      interests: currentUserInterests,
-      sharedInterests: [], // TODO: Calculate
+      interests: friendInterests,
+      sharedInterests,
       friendsSince: friendship?.accepted_at
         ? new Date(friendship.accepted_at)
         : new Date(friendship?.created_at || Date.now()),
-      mutualFriends: 0, // TODO: Calculate
+      mutualFriends: mutualCount,
       canViewLoop: friendship?.can_view_loop || false,
       todayActivities,
     };
@@ -403,6 +464,99 @@ export async function getSuggestedFriends(userId: string): Promise<SuggestedFrie
   // TODO: Implement smart friend suggestions algorithm
   // For now, return empty array
   return [];
+}
+
+// ============================================================================
+// STAT CALCULATION FUNCTIONS
+// ============================================================================
+
+/**
+ * Calculate Loop Score breakdown for a user
+ */
+export async function calculateLoopScoreBreakdown(userId: string): Promise<{
+  tasksCompleted: number;
+  recommendationsAccepted: number;
+  feedbackGiven: number;
+  groupActivitiesAttended: number;
+}> {
+  try {
+    const [tasksResult, recsResult, feedbackResult, groupResult] = await Promise.all([
+      supabase
+        .from('calendar_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('status', 'completed'),
+      supabase
+        .from('recommendations')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('status', 'accepted'),
+      supabase
+        .from('feedback')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId),
+      supabase
+        .from('plan_participants')
+        .select('id, group_plans!inner(status)', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('rsvp_status', 'accepted')
+        .eq('group_plans.status' as any, 'completed'),
+    ]);
+
+    return {
+      tasksCompleted: tasksResult.count || 0,
+      recommendationsAccepted: recsResult.count || 0,
+      feedbackGiven: feedbackResult.count || 0,
+      groupActivitiesAttended: groupResult.count || 0,
+    };
+  } catch (error) {
+    console.error('Error calculating loop score breakdown:', error);
+    return { tasksCompleted: 0, recommendationsAccepted: 0, feedbackGiven: 0, groupActivitiesAttended: 0 };
+  }
+}
+
+/**
+ * Calculate mutual friends count between two users
+ */
+export async function calculateMutualFriends(userId: string, currentUserId: string): Promise<number> {
+  try {
+    // Get both users' friend sets
+    const [userFriends, currentUserFriends] = await Promise.all([
+      supabase
+        .from('friendships')
+        .select('friend_id')
+        .eq('user_id', userId)
+        .eq('status', 'accepted'),
+      supabase
+        .from('friendships')
+        .select('friend_id')
+        .eq('user_id', currentUserId)
+        .eq('status', 'accepted'),
+    ]);
+
+    if (!userFriends.data || !currentUserFriends.data) return 0;
+
+    const userFriendIds = new Set(userFriends.data.map((f: any) => f.friend_id));
+    const currentFriendIds = currentUserFriends.data.map((f: any) => f.friend_id);
+
+    return currentFriendIds.filter((id: string) => userFriendIds.has(id)).length;
+  } catch (error) {
+    console.error('Error calculating mutual friends:', error);
+    return 0;
+  }
+}
+
+/**
+ * Calculate shared interests between two users
+ * Pure function: array intersection
+ */
+export function calculateSharedInterests(
+  userInterests: string[],
+  friendInterests: string[]
+): string[] {
+  if (!userInterests || !friendInterests) return [];
+  const friendSet = new Set(friendInterests.map(i => i.toLowerCase()));
+  return userInterests.filter(i => friendSet.has(i.toLowerCase()));
 }
 
 // ============================================================================

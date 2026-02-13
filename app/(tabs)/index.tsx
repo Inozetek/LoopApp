@@ -46,7 +46,7 @@ import { handleError } from '@/utils/error-handler';
 import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
 import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
-import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity } from '@/services/feedback-service';
+import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities } from '@/services/feedback-service';
 import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service';
 
 // Type for lat/lng coordinates
@@ -356,6 +356,8 @@ export default function RecommendationFeedScreen() {
     };
   } | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null); // Track card being removed with animation
+  const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
+  const [feedbackBannerDismissed, setFeedbackBannerDismissed] = useState(false);
 
   // Conflict warning modal state
   const [showConflictModal, setShowConflictModal] = useState(false);
@@ -444,6 +446,7 @@ export default function RecommendationFeedScreen() {
   const lastLoadMoreTime = useRef<number>(0); // Timestamp of last load more call (cooldown)
   const searchRadiusRef = useRef<number>(10); // Track current search radius synchronously for infinite scroll
   const feedExhaustedRef = useRef<boolean>(false); // Track if feed is exhausted synchronously
+  const locationUpdatedThisSession = useRef<boolean>(false); // Throttle location updates to once per session
 
   // Viewability config for tracking first card
   const viewabilityConfig = useRef({
@@ -718,6 +721,18 @@ export default function RecommendationFeedScreen() {
           lat: location.latitude,
           lng: location.longitude,
         };
+
+        // Update user's current_location in Supabase (once per session)
+        if (!locationUpdatedThisSession.current && user.id) {
+          locationUpdatedThisSession.current = true;
+          supabase
+            .from('users')
+            .update({ current_location: `POINT(${location.longitude} ${location.latitude})` })
+            .eq('id', user.id)
+            .then(({ error }) => {
+              if (error) console.warn('Failed to update current_location:', error.message);
+            });
+        }
 
         // Detect city for loading message using current GPS location
         const cityInfo = await detectUserCityWithFallback(user, {
@@ -1374,6 +1389,15 @@ export default function RecommendationFeedScreen() {
       console.error('Error checking for pending feedback:', error);
     }
   };
+
+  // Check for pending feedback count on mount (for banner)
+  useEffect(() => {
+    if (!user) return;
+    getPendingFeedbackActivities(user.id).then(activities => {
+      setPendingFeedbackCount(activities.length);
+      setFeedbackBannerDismissed(false);
+    }).catch(() => {});
+  }, [user]);
 
   // Cache handlers per item to prevent recreation
   const handlersCache = useRef<Map<string, any>>(new Map());
@@ -2357,6 +2381,30 @@ export default function RecommendationFeedScreen() {
           </Text>
         </Animated.View>
 
+        {/* Feedback nudge banner */}
+        {pendingFeedbackCount > 0 && !feedbackBannerDismissed && (
+          <View style={[styles.feedbackBanner, { backgroundColor: colorScheme === 'dark' ? 'rgba(16,163,127,0.15)' : 'rgba(16,163,127,0.1)' }]}>
+            <TouchableOpacity
+              style={styles.feedbackBannerContent}
+              onPress={() => checkForPendingFeedback()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={18} color={BrandColors.loopGreen} />
+              <Text style={[Typography.labelMedium, { color: colors.text, marginLeft: Spacing.sm, flex: 1 }]}>
+                {pendingFeedbackCount === 1 ? 'You have 1 activity to rate' : `You have ${pendingFeedbackCount} activities to rate`}
+              </Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setFeedbackBannerDismissed(true)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={styles.feedbackBannerClose}
+            >
+              <Ionicons name="close" size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+        )}
+
         {/* Collapsible Filters (push cards down when visible) */}
         <Animated.View style={filtersStyle}>
           <FeedFiltersBar
@@ -2449,6 +2497,12 @@ export default function RecommendationFeedScreen() {
             console.log('📱 Feedback modal closing, resetting state');
             setShowFeedbackModal(false);
             setFeedbackActivity(null);
+            // Refresh pending feedback count for the banner
+            if (user) {
+              getPendingFeedbackActivities(user.id).then(activities => {
+                setPendingFeedbackCount(activities.length);
+              }).catch(() => {});
+            }
           }}
           onSubmit={handleFeedbackSubmit}
         />
@@ -2544,6 +2598,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.3,
     lineHeight: 24,
+  },
+  feedbackBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.sm,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: 10,
+  },
+  feedbackBannerContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  feedbackBannerClose: {
+    marginLeft: Spacing.sm,
+    padding: 2,
   },
   listContent: {
     paddingHorizontal: 0, // Cards handle their own margins for edge-to-edge feel
