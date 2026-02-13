@@ -3,7 +3,8 @@
  * Creates a gradient mask for tab bar icons
  *
  * UX ENHANCEMENT (v2.0):
- * - Emerald → Blue gradient for "For You" tab (updated colors)
+ * - Emerald → Blue gradient for "For You" tab when focused
+ * - Darker flat color when unfocused for stronger contrast
  * - Subtle scale animation on selection
  * - Consistent with new mature color palette
  */
@@ -24,7 +25,7 @@ import { TabBadge } from '@/components/tab-badge';
  * Matches SF Symbols "sparkles" — three four-pointed stars
  * Large star lower-right, medium star upper-left, tiny star between/above
  */
-function SparklesIcon({ size, color }: { size: number; color: string }) {
+function SparklesIcon({ size, color, mediumStarColor }: { size: number; color: string; mediumStarColor?: string }) {
   // Four-pointed star via cubic bezier curves
   // inner ratio 0.18 gives slightly wider, higher-quality points
   const star = (cx: number, cy: number, r: number) => {
@@ -40,10 +41,10 @@ function SparklesIcon({ size, color }: { size: number; color: string }) {
   };
 
   return (
-    <Svg width={size} height={size} viewBox="-2 -2 52 52" fill="none">
+    <Svg width={size} height={size} viewBox="0 -1 50 50" fill="none">
       <Path d={star(30, 28, 20)} fill={color} />
-      <Path d={star(10, 12, 8.5)} fill={color} />
-      <Path d={star(22, 3.5, 4.2)} fill={color} />
+      <Path d={star(10, 15, 8.5)} fill={mediumStarColor ?? color} />
+      <Path d={star(20.5, 5, 5.5)} fill={color} />
     </Svg>
   );
 }
@@ -84,12 +85,25 @@ export function GradientIcon({ name, size, focused, customIcon, showBadge = fals
     return <IconSymbol size={size} name={name as any} color={iconColor} />;
   };
 
-  // If not focused, use same dark gray as other tab icons
+  // Unfocused: slightly darker than tabIconDefault for stronger contrast against focused state
   if (!focused) {
+    const unfocusedColor = colorScheme === 'dark' ? colors.tabIconDefault : '#2A2E32';
+
+    // Sparkles: use SVG on all platforms so we can style individual stars
+    if (name === 'sparkles' && colorScheme !== 'dark') {
+      return (
+        <TabBadge showDot={showBadge} count={badgeCount}>
+          <RNAnimated.View style={{ transform: [{ scale: scaleAnim }] }}>
+            <SparklesIcon size={size} color={unfocusedColor} mediumStarColor="#000000" />
+          </RNAnimated.View>
+        </TabBadge>
+      );
+    }
+
     return (
       <TabBadge showDot={showBadge} count={badgeCount}>
         <RNAnimated.View style={{ transform: [{ scale: scaleAnim }] }}>
-          {renderIcon(colors.tabIconDefault)}
+          {renderIcon(unfocusedColor)}
         </RNAnimated.View>
       </TabBadge>
     );

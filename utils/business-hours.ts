@@ -219,37 +219,18 @@ export function isOpenAt(hours: BusinessHours, dateTime: Date): boolean {
   const dayName = dayNames[dateTime.getDay()];
   const dayHours = hours[dayName];
 
-  console.log('🕐 isOpenAt check:', {
-    day: dayName,
-    date: dateTime.toLocaleDateString(),
-    time: dateTime.toLocaleTimeString(),
-    hours: dayHours,
-  });
-
   if (!dayHours || dayHours.isClosed || !dayHours.open || !dayHours.close) {
-    console.log('❌ No hours data or closed');
     return false;
   }
 
   const currentTime = `${String(dateTime.getHours()).padStart(2, '0')}:${String(dateTime.getMinutes()).padStart(2, '0')}`;
 
-  console.log('🕐 Time check:', {
-    currentTime,
-    open: dayHours.open,
-    close: dayHours.close,
-  });
-
   // Handle closing times after midnight (e.g., bar closes at 2am)
   if (dayHours.close < dayHours.open) {
-    // Open time is today, close time is tomorrow
-    const isOpen = currentTime >= dayHours.open || currentTime <= dayHours.close;
-    console.log(isOpen ? '✅ OPEN (overnight hours)' : '❌ CLOSED');
-    return isOpen;
+    return currentTime >= dayHours.open || currentTime <= dayHours.close;
   }
 
-  const isOpen = currentTime >= dayHours.open && currentTime <= dayHours.close;
-  console.log(isOpen ? '✅ OPEN' : '❌ CLOSED');
-  return isOpen;
+  return currentTime >= dayHours.open && currentTime <= dayHours.close;
 }
 
 /**

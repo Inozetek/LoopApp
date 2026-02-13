@@ -97,6 +97,10 @@ export interface GooglePlaceResult {
   opening_hours?: {
     open_now?: boolean;
     weekday_text?: string[];
+    periods?: Array<{
+      open: { day: number; time: string };
+      close?: { day: number; time: string };
+    }>;
   };
 }
 

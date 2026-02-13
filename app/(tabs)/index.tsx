@@ -1602,12 +1602,12 @@ export default function RecommendationFeedScreen() {
       // Feed is always visible
       feedOpacity.value = 1;
 
-      // After 5 seconds, fade out then shrink (genie-like)
+      // After 5 seconds, fade out then snap height to 0
       const timeout = setTimeout(() => {
-        // Fade out first
-        welcomeOpacity.value = withTiming(0, { duration: 800, easing: Easing.out(Easing.ease) });
-        // Height collapses slightly after fade starts
-        welcomeHeight.value = withTiming(0, { duration: 900, easing: Easing.inOut(Easing.ease) });
+        welcomeOpacity.value = withTiming(0, { duration: 600, easing: Easing.out(Easing.ease) }, () => {
+          // After fade completes, collapse height instantly
+          welcomeHeight.value = 0;
+        });
       }, 5000);
 
       return () => clearTimeout(timeout);
@@ -2167,24 +2167,10 @@ export default function RecommendationFeedScreen() {
 
   // Animated styles (must be defined before any conditional returns to follow Rules of Hooks)
   const welcomeMessageStyle = useAnimatedStyle(() => {
-    const scale = interpolate(
-      welcomeOpacity.value,
-      [0, 1],
-      [0.6, 1],
-      Extrapolate.CLAMP
-    );
-    const scaleY = interpolate(
-      welcomeOpacity.value,
-      [0, 1],
-      [0.2, 1],
-      Extrapolate.CLAMP
-    );
-
     return {
       opacity: welcomeOpacity.value,
       maxHeight: welcomeHeight.value,
       paddingVertical: welcomeHeight.value > 0 ? Spacing.md : 0,
-      transform: [{ scale }, { scaleY }],
     };
   });
 

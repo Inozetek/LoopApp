@@ -292,7 +292,6 @@ function getPlacePhotoUrl(photoReference: string): string {
 async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_reference: string }>> {
   // ⭐ CRITICAL: Check kill switch first
   if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
-    console.warn('🚫 Google Places API disabled - skipping photo enrichment');
     return [];
   }
 
@@ -307,7 +306,6 @@ async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_referen
     // The new Places API (v1) requires resource name format: places/PLACE_ID
     // Convert plain place ID to resource name if needed
     const resourceName = placeId.startsWith('places/') ? placeId : `places/${placeId}`;
-    console.log(`📸 Enriching photos for place: ${resourceName}`);
 
     const response = await fetch(
       `https://places.googleapis.com/v1/${resourceName}`,
@@ -437,6 +435,10 @@ async function searchPlacesByText(params: {
       })) || [],
       opening_hours: {
         open_now: place.currentOpeningHours?.openNow ?? true,
+        periods: place.currentOpeningHours?.periods?.map((p: any) => ({
+          open: { day: p.open?.day ?? 0, time: p.open?.hour != null ? `${String(p.open.hour).padStart(2, '0')}${String(p.open.minute ?? 0).padStart(2, '0')}` : '0000' },
+          close: p.close ? { day: p.close.day ?? 0, time: `${String(p.close.hour).padStart(2, '0')}${String(p.close.minute ?? 0).padStart(2, '0')}` } : undefined,
+        })),
       },
     }));
 
@@ -568,7 +570,11 @@ export async function searchNearbyPlaces(params: {
         photo_reference: photo.name || '', // NEW API uses 'name' field for photo reference
       })) || [],
       opening_hours: {
-        open_now: place.currentOpeningHours?.openNow ?? true, // Use actual data or default to open
+        open_now: place.currentOpeningHours?.openNow ?? true,
+        periods: place.currentOpeningHours?.periods?.map((p: any) => ({
+          open: { day: p.open?.day ?? 0, time: p.open?.hour != null ? `${String(p.open.hour).padStart(2, '0')}${String(p.open.minute ?? 0).padStart(2, '0')}` : '0000' },
+          close: p.close ? { day: p.close.day ?? 0, time: `${String(p.close.hour).padStart(2, '0')}${String(p.close.minute ?? 0).padStart(2, '0')}` } : undefined,
+        })),
       },
     }));
 
@@ -1424,107 +1430,46 @@ export async function generateRecommendations(
 
     // Try to get multiple photos from Google Places
     if (place.photos && place.photos.length > 0) {
-      console.log(`\n📸 ========== PHOTO DEBUG: ${place.name} ==========`);
-      console.log(`📸 Total photos from Google API: ${place.photos.length}`);
-      console.log(`📸 All photo objects:`, JSON.stringify(place.photos, null, 2));
-
-      // CRITICAL: Check if API key exists
       const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
       if (!API_KEY) {
-        console.error('❌ CRITICAL: No Google Places API key found! Photos will not load.');
-        console.log('📸 Falling back to Unsplash immediately');
         photoUrl = await getCachedUnsplashImage(category);
       } else {
-        console.log('✅ API key exists, generating photo URLs...');
-
         // Get all available photos (up to 5 for performance)
-        const allPhotos = place.photos.slice(0, 5).map((photo, idx) => {
+        const allPhotos = place.photos.slice(0, 5).map((photo) => {
           const photoRef = photo.photo_reference;
-          console.log(`📸 Photo ${idx + 1}: ref="${photoRef?.substring(0, 80)}..."`);
-
-          if (!photoRef) {
-            console.error(`❌ Photo ${idx + 1} has no photo_reference!`);
-            return '';
-          }
-
-          // Handle both Ticketmaster (full URLs) and Google Places (references)
-          let url: string;
-
+          if (!photoRef) return '';
           if (photoRef.startsWith('http://') || photoRef.startsWith('https://')) {
-            // Ticketmaster: photo_reference is already a full URL
-            url = photoRef;
-            console.log(`📸 Photo ${idx + 1}: Ticketmaster URL (direct use): ${url.substring(0, 100)}...`);
-          } else {
-            // Google Places: photo_reference needs conversion to URL
-            url = getPlacePhotoUrl(photoRef);
-            console.log(`📸 Photo ${idx + 1}: Google Places URL (converted): ${url?.substring(0, 100)}...`);
-
-            if (!url) {
-              console.error(`❌ getPlacePhotoUrl returned empty for photo ${idx + 1}`);
-              return '';
-            }
+            return photoRef;
           }
-
-          return url;
+          return getPlacePhotoUrl(photoRef);
         }).filter(Boolean);
 
-        console.log(`📸 ${place.name}: Generated ${allPhotos.length} valid photo URLs out of ${place.photos.length} photos`);
-
         if (allPhotos.length > 0) {
-          photoUrl = allPhotos[0]; // Primary photo
-          console.log(`✅ Using Google photo for ${place.name}: ${photoUrl.substring(0, 100)}...`);
+          photoUrl = allPhotos[0];
 
-          // Only populate photoUrls array if we have 2+ photos (for carousel)
           if (allPhotos.length >= 2) {
             photoUrls = allPhotos;
-            console.log(`✅ CAROUSEL ENABLED: ${place.name} has ${allPhotos.length} photos`);
-            console.log(`📸 Carousel URLs:`, photoUrls.map(url => url.substring(0, 80) + '...'));
           } else if (allPhotos.length === 1 && place.place_id) {
-            // Try to enrich with additional photos from Place Details API
-            // Only enrich Google Places - skip Ticketmaster and other sources (their IDs aren't valid Google Place IDs)
-            if (place.source && place.source !== 'google_places') {
-              console.log(`📸 Skipping photo enrichment for ${place.name} (source: ${place.source})`);
-            } else {
-              console.log(`📸 Enriching ${place.name} - currently has only ${allPhotos.length} photo`);
-
+            if (!place.source || place.source === 'google_places') {
               const additionalPhotos = await enrichPlacePhotos(place.place_id);
-
               if (additionalPhotos.length > 0) {
-                // Combine original photo with additional photos
                 const enrichedPhotos = [
                   ...allPhotos,
-                  ...additionalPhotos.slice(1, 5).map(photo => {
-                    const photoRef = photo.photo_reference;
-                    return getPlacePhotoUrl(photoRef);
-                  }).filter(Boolean)
+                  ...additionalPhotos.slice(1, 5).map(photo => getPlacePhotoUrl(photo.photo_reference)).filter(Boolean)
                 ];
-
-                console.log(`📸 Enrichment successful: ${place.name} now has ${enrichedPhotos.length} photos`);
-
                 if (enrichedPhotos.length >= 2) {
                   photoUrls = enrichedPhotos;
-                  console.log(`✅ CAROUSEL ENABLED (after enrichment): ${place.name}`);
                 }
-              } else {
-                console.log(`⚠️ No additional photos found for ${place.name}`);
               }
             }
-          } else {
-            console.log(`⚠️ Not enough photos for carousel: ${place.name} has ${allPhotos.length} photos (need 2+)`);
           }
-        } else {
-          console.error(`❌ No valid photo URLs generated for ${place.name} - all URLs were empty!`);
         }
       }
-    } else {
-      console.log(`📸 ${place.name} has NO photos array from Google API (photos=${place.photos})`);
     }
 
     // If no Google photo, use Unsplash fallback for primary
     if (!photoUrl) {
-      console.log(`📸 FALLBACK: Using Unsplash for ${place.name} (category: ${category})`);
       photoUrl = await getCachedUnsplashImage(category);
-      console.log(`📸 FALLBACK: Unsplash returned: ${photoUrl?.substring(0, 100)}...`);
     }
 
     // Get business hours (from Google or estimated)
@@ -2491,13 +2436,20 @@ function applyBusinessRules(
     // TODO: Implement sponsored activity management
   }
 
-  // Rule 2: Never show same business twice
+  // Rule 2: Never show same business twice (by place_id AND by normalized name)
   const seenPlaceIds = new Set<string>();
+  const seenNames = new Set<string>();
   const uniqueRecommendations = recommendations.filter(r => {
     if (seenPlaceIds.has(r.place.place_id)) {
       return false;
     }
+    // Deduplicate chains: "Planet Fitness" appearing 3x with different place_ids
+    const normalizedName = r.place.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (seenNames.has(normalizedName)) {
+      return false;
+    }
     seenPlaceIds.add(r.place.place_id);
+    seenNames.add(normalizedName);
     return true;
   });
 
