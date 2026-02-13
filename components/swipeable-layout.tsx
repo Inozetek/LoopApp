@@ -66,6 +66,8 @@ function SwipeableLayout({ children }: SwipeableLayoutProps) {
   };
 
   const panGesture = Gesture.Pan()
+    .activeOffsetX([-20, 20])
+    .failOffsetY([-10, 10])
     .onBegin((event) => {
       // Store starting X position
       startXRef.current = event.absoluteX;

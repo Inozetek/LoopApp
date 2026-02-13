@@ -13,6 +13,7 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Entypo from '@expo/vector-icons/Entypo';
 import * as Haptics from 'expo-haptics';
 import { Spacing, Typography } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,15 +22,15 @@ import { Colors } from '@/constants/theme';
 interface ProfileHeaderProps {
   username: string;
   onBackPress?: () => void;
-  onSettingsPress?: () => void;
   onMenuPress?: () => void;
+  onUsernamePress?: () => void;
 }
 
 export function ProfileHeader({
   username,
   onBackPress,
-  onSettingsPress,
   onMenuPress,
+  onUsernamePress,
 }: ProfileHeaderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -40,14 +41,14 @@ export function ProfileHeader({
     onBackPress?.();
   };
 
-  const handleSettingsPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSettingsPress?.();
-  };
-
   const handleMenuPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onMenuPress?.();
+  };
+
+  const handleUsernamePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onUsernamePress?.();
   };
 
   return (
@@ -65,31 +66,30 @@ export function ProfileHeader({
         )}
       </View>
 
-      {/* Center - Username */}
-      <View style={styles.usernameContainer}>
+      {/* Center - Username with down arrow (Instagram-style) */}
+      <TouchableOpacity
+        style={styles.usernameContainer}
+        onPress={handleUsernamePress}
+        activeOpacity={onUsernamePress ? 0.7 : 1}
+        disabled={!onUsernamePress}
+      >
         <Text style={[styles.username, { color: colors.text }]} numberOfLines={1}>
           {username}
         </Text>
-      </View>
-
-      {/* Right Side - Settings/Menu */}
-      <View style={styles.rightSection}>
-        {onSettingsPress && (
-          <TouchableOpacity
-            onPress={handleSettingsPress}
-            style={styles.iconButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="settings-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
+        {onUsernamePress && (
+          <Ionicons name="chevron-down" size={16} color={colors.text} style={styles.chevron} />
         )}
+      </TouchableOpacity>
+
+      {/* Right Side - Hamburger Menu */}
+      <View style={styles.rightSection}>
         {onMenuPress && (
           <TouchableOpacity
             onPress={handleMenuPress}
             style={styles.iconButton}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="menu" size={26} color={colors.text} />
+            <Entypo name="cog" size={24} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -113,12 +113,19 @@ const styles = StyleSheet.create({
   },
   usernameContainer: {
     flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: Spacing.sm,
   },
   username: {
-    ...Typography.titleLarge,
-    fontWeight: '700',
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: -0.3,
+  },
+  chevron: {
+    marginLeft: 4,
+    marginTop: 2,
   },
   rightSection: {
     flexDirection: 'row',

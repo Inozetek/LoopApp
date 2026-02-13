@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, FlatList, StyleSheet, RefreshControl, Text, TouchableOpacity, ActivityIndicator, Modal, SafeAreaView, Alert } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -27,13 +27,17 @@ import { BlockActivityModal } from '@/components/block-activity-modal';
 import { ActivityFeedbackModal } from '@/components/activity-feedback-modal';
 import { ConflictWarningModal } from '@/components/conflict-warning-modal';
 import { FeedFiltersBar, type FeedFilters } from '@/components/feed-filters';
+import { FilterSheet, type FilterSheetFilters } from '@/components/filter-sheet';
+import { FilterPopover, type FilterPopoverFilters } from '@/components/filter-popover';
+import { MainMenuModal } from '@/components/main-menu-modal';
 import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
 import { checkDailyLimit, type DailyLimitCheck } from '@/services/subscription-service';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { Recommendation } from '@/types/activity';
 import { generateRecommendations, type RecommendationParams } from '@/services/recommendations';
 import { useAuth } from '@/contexts/auth-context';
-import { useRouter } from 'expo-router';
+import { useTabNotifications } from '@/contexts/tab-notifications-context';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BrandColors, BorderRadius, Typography } from '@/constants/brand';
 import { supabase } from '@/lib/supabase';
@@ -47,6 +51,90 @@ import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service'
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
+
+// ============================================================================
+// MOCK DATA FOR PHASE 2: Group & Friend Activity Features (Demo)
+// ============================================================================
+
+// Mock friends for friend activity display
+const MOCK_FRIENDS = [
+  { id: 'friend-1', name: 'Sarah Chen', avatarUrl: 'https://i.pravatar.cc/150?u=sarah' },
+  { id: 'friend-2', name: 'Mike Johnson', avatarUrl: 'https://i.pravatar.cc/150?u=mike' },
+  { id: 'friend-3', name: 'Emily Davis', avatarUrl: 'https://i.pravatar.cc/150?u=emily' },
+  { id: 'friend-4', name: 'Alex Rivera', avatarUrl: 'https://i.pravatar.cc/150?u=alex' },
+  { id: 'friend-5', name: 'Jordan Lee', avatarUrl: 'https://i.pravatar.cc/150?u=jordan' },
+];
+
+// Generate mock social data for a recommendation based on index
+const getMockSocialData = (index: number, recId: string) => {
+  // Every 3rd card (index 2, 5, 8...) shows friend activity
+  if (index % 3 === 2) {
+    const friendCount = (index % 4) + 1; // 1-4 friends
+    return {
+      friendActivity: {
+        friendsWhoVisited: MOCK_FRIENDS.slice(0, friendCount),
+        friendsWithInLoop: [],
+      },
+      groupPlan: undefined,
+    };
+  }
+
+  // Every 4th card (index 3, 7, 11...) shows "friends have this looped"
+  if (index % 4 === 3) {
+    return {
+      friendActivity: {
+        friendsWhoVisited: [],
+        friendsWithInLoop: MOCK_FRIENDS.slice(1, 3),
+      },
+      groupPlan: undefined,
+    };
+  }
+
+  // Every 5th card (index 4, 9, 14...) is a group plan
+  if (index % 5 === 4) {
+    const deadline = new Date();
+    deadline.setHours(deadline.getHours() + (index % 12) + 1); // 1-12 hours from now
+
+    return {
+      friendActivity: undefined,
+      groupPlan: {
+        planId: `plan-${recId}`,
+        suggestedTime: index % 2 === 0 ? 'Fri 7pm' : 'Sat 2pm',
+        deadline,
+        userStatus: 'pending' as const,
+        participants: [
+          { id: 'friend-1', name: 'Sarah Chen', avatarUrl: 'https://i.pravatar.cc/150?u=sarah', status: 'accepted' as const, isCurrentUser: false },
+          { id: 'current-user', name: 'You', avatarUrl: undefined, status: 'pending' as const, isCurrentUser: true },
+          { id: 'friend-2', name: 'Mike Johnson', avatarUrl: 'https://i.pravatar.cc/150?u=mike', status: index % 3 === 0 ? 'accepted' as const : 'pending' as const, isCurrentUser: false },
+        ],
+      },
+    };
+  }
+
+  // Every 10th card (index 9, 19...) is an accepted group plan (shows glow border)
+  if (index % 10 === 9) {
+    return {
+      friendActivity: undefined,
+      groupPlan: {
+        planId: `plan-accepted-${recId}`,
+        suggestedTime: 'Tomorrow 6pm',
+        deadline: undefined,
+        userStatus: 'accepted' as const,
+        participants: [
+          { id: 'current-user', name: 'You', avatarUrl: undefined, status: 'accepted' as const, isCurrentUser: true },
+          { id: 'friend-1', name: 'Sarah Chen', avatarUrl: 'https://i.pravatar.cc/150?u=sarah', status: 'accepted' as const, isCurrentUser: false },
+          { id: 'friend-3', name: 'Emily Davis', avatarUrl: 'https://i.pravatar.cc/150?u=emily', status: 'pending' as const, isCurrentUser: false },
+        ],
+      },
+    };
+  }
+
+  // Regular cards - no social data
+  return {
+    friendActivity: undefined,
+    groupPlan: undefined,
+  };
+};
 
 // Type for user preferences (from Supabase Json type)
 type UserPreferences = {
@@ -145,7 +233,7 @@ const FeedList = memo(
               <View style={styles.exhaustionCard}>
                 <Ionicons name="location-outline" size={48} color={colors.textSecondary} />
                 <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.md }]}>
-                  You've seen all activities within {filters.maxDistance} miles
+                  You&apos;ve seen all activities within {filters.maxDistance} miles
                 </Text>
                 <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center' }]}>
                   Try expanding your search or adjusting filters to discover more
@@ -175,7 +263,7 @@ const FeedList = memo(
               <View style={styles.exhaustionCard}>
                 <Ionicons name="refresh-outline" size={48} color={colors.textSecondary} />
                 <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.md }]}>
-                  You've reached the end
+                  You&apos;ve reached the end
                 </Text>
                 <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center' }]}>
                   Pull down to refresh for new recommendations
@@ -220,12 +308,25 @@ const FeedList = memo(
            prevProps.filters === nextProps.filters;
   }
 );
+FeedList.displayName = 'FeedList';
 
 export default function RecommendationFeedScreen() {
   const { user } = useAuth();
+  const { setHasNewRecommendations } = useTabNotifications();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
+
+  // Deep link params for scrolling to specific cards (from notifications)
+  const { highlightPlanId, scrollToCard } = useLocalSearchParams<{
+    highlightPlanId?: string;
+    scrollToCard?: string;
+  }>();
+
+  // Clear the recommendation badge when user visits this screen
+  useEffect(() => {
+    setHasNewRecommendations(false);
+  }, [setHasNewRecommendations]);
 
   const [recommendations, setRecommendations] = useState<Recommendation[]>([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -276,6 +377,9 @@ export default function RecommendationFeedScreen() {
   // Notifications tray state
   const [showNotificationsTray, setShowNotificationsTray] = useState(false);
 
+  // Main menu modal state
+  const [showMainMenu, setShowMainMenu] = useState(false);
+
   // Filters state
   const [filters, setFilters] = useState<FeedFilters>({
     timeOfDay: 'any',
@@ -283,6 +387,33 @@ export default function RecommendationFeedScreen() {
     priceRange: 'any',
   });
   const [showFilters, setShowFilters] = useState(false);
+
+  // Filter sheet state (iOS 26 Liquid Glass style bottom sheet - for advanced filters)
+  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  const [filterSheetFilters, setFilterSheetFilters] = useState<FilterSheetFilters>({
+    mode: 'ai_curated', // Default to AI Curated mode
+    categories: [],
+    maxDistance: 100,
+    priceRange: 'any',
+    minRating: 0,
+    timeOfDay: 'any',
+  });
+
+  // Filter popover state (iOS 26 Liquid Glass style floating popover - for quick filters)
+  const [showFilterPopover, setShowFilterPopover] = useState(false);
+  const [filterPopoverPosition, setFilterPopoverPosition] = useState({ x: 0, y: 0 });
+
+  // Check if any filter sheet filters are active (for icon rotation animation)
+  const isFilterSheetActive = useMemo(() => {
+    return (
+      filterSheetFilters.categories.length > 0 ||
+      filterSheetFilters.maxDistance < 100 ||
+      filterSheetFilters.priceRange !== 'any' ||
+      filterSheetFilters.minRating > 0 ||
+      filterSheetFilters.timeOfDay !== 'any'
+    );
+  }, [filterSheetFilters]);
+
   const [isFirstCardVisible, setIsFirstCardVisible] = useState(true);
   const [collapsingFilters, setCollapsingFilters] = useState(false);
 
@@ -296,6 +427,7 @@ export default function RecommendationFeedScreen() {
   // Animated value for filters height
   const filtersHeight = useSharedValue(0);
   const gestureTranslationY = useSharedValue(0);
+
   const scrollY = useSharedValue(0);
 
   // Welcome message animation
@@ -341,6 +473,36 @@ export default function RecommendationFeedScreen() {
     };
     loadSavedRadius();
   }, [user]);
+
+  // Handle deep link scroll to card (from notifications)
+  useEffect(() => {
+    if (!highlightPlanId || scrollToCard !== 'true' || recommendations.length === 0) return;
+
+    // Find the index of the card with matching plan ID
+    const cardIndex = recommendations.findIndex(
+      (rec: Recommendation) => {
+        // Check if this recommendation has a group plan with matching ID
+        const socialData = getMockSocialData(recommendations.indexOf(rec), rec.id);
+        return socialData.groupPlan?.planId === highlightPlanId;
+      }
+    );
+
+    if (cardIndex >= 0) {
+      console.log(`📍 Deep link: Scrolling to card index ${cardIndex} (plan: ${highlightPlanId})`);
+
+      // Small delay to ensure FlatList is ready
+      setTimeout(() => {
+        flatListRef.current?.scrollToIndex({
+          index: cardIndex,
+          animated: true,
+          viewPosition: 0.1, // Position near top of viewport
+        });
+      }, 300);
+
+      // Clear params after scrolling (using router.setParams)
+      router.setParams({ highlightPlanId: undefined, scrollToCard: undefined });
+    }
+  }, [highlightPlanId, scrollToCard, recommendations, router]);
 
   // Check daily limit for subscription-based limits (Daily tab)
   useEffect(() => {
@@ -429,6 +591,25 @@ export default function RecommendationFeedScreen() {
         }
       }
 
+      // Filter by minimum rating (from FilterSheet)
+      if (filterSheetFilters.minRating > 0 && rec.rating) {
+        const rating = parseFloat(rec.rating.toString());
+        if (rating < filterSheetFilters.minRating) {
+          return false;
+        }
+      }
+
+      // Filter by categories (from FilterSheet)
+      if (filterSheetFilters.categories.length > 0) {
+        const recCategory = rec.category?.toLowerCase() || '';
+        const matchesCategory = filterSheetFilters.categories.some(
+          cat => recCategory.includes(cat.toLowerCase()) || cat.toLowerCase().includes(recCategory)
+        );
+        if (!matchesCategory) {
+          return false;
+        }
+      }
+
       return true;
     });
 
@@ -450,7 +631,7 @@ export default function RecommendationFeedScreen() {
     }
 
     return filtered;
-  }, [recommendations, filters, dailyLimitInfo]);
+  }, [recommendations, filters, filterSheetFilters, dailyLimitInfo]);
 
   // Sync refs with state for synchronous access in callbacks (avoid stale closures)
   useEffect(() => {
@@ -1209,10 +1390,33 @@ export default function RecommendationFeedScreen() {
     return handlersCache.current.get(cacheKey);
   }, [handleAddToCalendar, handleSeeDetails, handleNotInterested]);
 
+  // RSVP handlers for group plans (mock for demo)
+  const handleAcceptRSVP = useCallback((recId: string) => {
+    console.log('✅ Accepted RSVP for:', recId);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setToast({ type: 'success', message: "You're going! We'll notify the group." });
+  }, []);
+
+  const handleDeclineRSVP = useCallback((recId: string) => {
+    console.log('❌ Declined RSVP for:', recId);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setToast({ type: 'info', message: "No problem! We'll let them know." });
+  }, []);
+
+  const handleMaybeRSVP = useCallback((recId: string) => {
+    console.log('❓ Maybe RSVP for:', recId);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setToast({ type: 'info', message: "Marked as maybe. You can change this later." });
+  }, []);
+
   // Memoized render item to prevent unnecessary re-renders
   const renderItem = useCallback(
     ({ item, index }: { item: Recommendation; index: number }) => {
       const handlers = getHandlersForItem(item, index);
+
+      // Get mock social/group data for this item (Phase 2 demo)
+      const mockData = getMockSocialData(index, item.id);
+
       return (
         <ActivityCardIntelligent
           recommendation={item}
@@ -1221,10 +1425,16 @@ export default function RecommendationFeedScreen() {
           onNotInterested={handlers.onNotInterested}
           index={index}
           isRemoving={removingCardId === item.id}
+          // Phase 2: Social & Group features (mock data for demo)
+          friendActivity={mockData.friendActivity}
+          groupPlan={mockData.groupPlan}
+          onAcceptRSVP={() => handleAcceptRSVP(item.id)}
+          onDeclineRSVP={() => handleDeclineRSVP(item.id)}
+          onMaybeRSVP={() => handleMaybeRSVP(item.id)}
         />
       );
     },
-    [getHandlersForItem, removingCardId]
+    [getHandlersForItem, removingCardId, handleAcceptRSVP, handleDeclineRSVP, handleMaybeRSVP]
   );
 
   // Phase 1.2: Smart Merge Pull-to-Refresh
@@ -1349,284 +1559,11 @@ export default function RecommendationFeedScreen() {
   // Handle load more (infinite scroll) - DISABLED for Daily tab
   // Daily tab shows finite recommendations based on subscription tier
   // Infinite scroll is only available in Explore tab
-  const handleLoadMore = useCallback(async () => {
+  // Note: Full infinite scroll implementation is in explore.tsx
+  const handleLoadMore = useCallback(() => {
     // Daily tab does not support infinite scroll - recommendations are tier-limited
-    console.log('🎯 onEndReached fired - Daily tab does not support infinite scroll');
-    return;
-
-    // NOTE: Code below is preserved for Explore tab implementation
-    // console.log('🎯 onEndReached fired - attempting to load more recommendations');
-    // console.log(`🎯 Current state: loadingMore=${loadingMore}, feedExhausted=${feedExhausted}, searchRadius=${searchRadius}, ref=${searchRadiusRef.current}`);
-
-    // CRITICAL: Multi-layer protection against rapid-fire onEndReached calls
-
-    // Layer 1: Ref check (synchronous, blocks immediate duplicate calls)
-    if (isLoadingMoreRef.current) {
-      console.log('⏸️ Skipping loadMore - ref already locked');
-      return;
-    }
-
-    // Layer 2: State checks
-    if (refreshing || loading || !user) {
-      console.log('⏸️ Skipping loadMore - state indicates already loading');
-      return;
-    }
-
-    // Layer 3: Check if feed is exhausted (use ref to avoid stale closure)
-    if (feedExhaustedRef.current) {
-      console.log('⏸️ Skipping loadMore - feed already exhausted (ref check)');
-      return;
-    }
-
-    // Layer 4: Cooldown period (prevent calls within 2 seconds of last call)
-    const now = Date.now();
-    const timeSinceLastLoad = now - lastLoadMoreTime.current;
-    if (timeSinceLastLoad < 2000) {
-      console.log(`⏸️ Skipping loadMore - cooldown period (${timeSinceLastLoad}ms < 2000ms)`);
-      return;
-    }
-
-    // All checks passed - lock and proceed
-    isLoadingMoreRef.current = true;
-    lastLoadMoreTime.current = now;
-    console.log('📜 Loading more recommendations (infinite scroll)...');
-    console.log(`📜 Starting with searchRadius=${searchRadius}, ref=${searchRadiusRef.current}, recommendations.length=${recommendations.length}`);
-    setLoadingMore(true);
-
-    try {
-      // Get user's current location
-      const location = await getCurrentLocation();
-      const userLocation: PlaceLocation = {
-        lat: location.latitude,
-        lng: location.longitude,
-      };
-
-      // Get home/work locations if available
-      // Note: user is guaranteed non-null here due to guard at top of function
-      const homeLocation = user?.home_location && (user?.home_location as any)?.coordinates
-        ? { lat: (user?.home_location as any).coordinates[1], lng: (user?.home_location as any).coordinates[0] }
-        : undefined;
-
-      const workLocation = user?.work_location && (user?.work_location as any)?.coordinates
-        ? { lat: (user?.work_location as any).coordinates[1], lng: (user?.work_location as any).coordinates[0] }
-        : undefined;
-
-      // Build params for recommendations
-      // Use filter's maxDistance if set (100 = "any"), otherwise use current searchRadius
-      const useFilterDistance = filters.maxDistance < 100;
-
-      // BATCHED LOADING: Fetch large batches for uninterrupted scrolling
-      // User scrolls through entire batch smoothly, then brief loading moment for next batch
-      const TARGET_COUNT = 250; // Extra large batch = 5-10 min scrolling before loading pause
-      // Use setRecommendations callback to get current value
-      let existingPlaceIds: Set<string> = new Set();
-      setRecommendations(currentRecs => {
-        existingPlaceIds = new Set(
-          currentRecs
-            .map(r => r.activity?.googlePlaceId)
-            .filter((id): id is string => Boolean(id))
-        );
-        console.log(`📋 Current feed has ${currentRecs.length} recommendations with ${existingPlaceIds.size} unique place IDs`);
-        console.log(`📋 Place IDs to exclude:`, Array.from(existingPlaceIds).slice(0, 5), existingPlaceIds.size > 5 ? `... and ${existingPlaceIds.size - 5} more` : '');
-        return currentRecs;
-      });
-      const uniqueNewRecommendations: Recommendation[] = [];
-      let attempts = 0;
-      const MAX_ATTEMPTS = 20; // High limit for metroplex - allows expansion up to 200+ miles
-
-      console.log(`🎯 Target: ${TARGET_COUNT} unique places`);
-
-      // Track current search radius (will expand with each attempt)
-      // Use ref to get synchronous access to latest value (not stale closure)
-      let currentRadius = useFilterDistance ? filters.maxDistance : searchRadiusRef.current;
-
-      console.log(`🔄 Infinite scroll starting: searchRadius=${searchRadius}, ref=${searchRadiusRef.current}, will expand from ${currentRadius}mi`);
-      console.log(`🔄 Filter distance mode: ${useFilterDistance}, filters.maxDistance=${filters.maxDistance}`);
-
-      while (uniqueNewRecommendations.length < TARGET_COUNT && attempts < MAX_ATTEMPTS) {
-        attempts++;
-        console.log(`📡 Attempt ${attempts}: Searching within ${currentRadius} miles...`);
-
-        const params: RecommendationParams = {
-          user: user!, // Non-null assertion - user is checked at function start
-          userLocation,
-          homeLocation,
-          workLocation,
-          maxDistance: currentRadius, // Use expanding radius
-          maxResults: 150, // Large per-category fetch for maximum variety
-          excludePlaceIds: Array.from(existingPlaceIds), // Only exclude current feed items
-          timeOfDay: filters.timeOfDay !== 'any' ? filters.timeOfDay : undefined,
-          priceRange: filters.priceRange !== 'any' ? filters.priceRange : undefined,
-          discoveryMode,
-          categories: selectedCategories.length > 0 ? selectedCategories : undefined,
-        };
-
-        // Generate new recommendations with current radius
-        const scored = await generateRecommendations(params);
-
-        if (scored.length === 0) {
-          console.log('📭 No more places available from API');
-          break;
-        }
-
-        console.log(`✅ Fetched ${scored.length} places from API`);
-
-        // Convert ScoredRecommendation[] to Recommendation[]
-        const newRecommendations: Recommendation[] = scored.map((s, index) => ({
-          id: s.place.place_id || `rec-${Date.now()}-${index}`,
-          title: s.place.name,
-          category: s.category,
-          location: s.place.vicinity || s.place.formatted_address || 'Unknown location',
-          distance: `${s.distance.toFixed(1)} mi`,
-          priceRange: s.place.price_level || 2,
-          rating: s.place.rating || 0,
-          imageUrl: s.photoUrl || '',
-          photos: s.photoUrls,
-          aiExplanation: s.aiExplanation,
-          suggestedTime: s.suggestedTime, // Phase 1.6a: Use recommendation context time
-          description: s.place.description,
-          openNow: s.place.opening_hours?.open_now,
-          isSponsored: s.isSponsored,
-          score: s.score,
-          businessHours: s.businessHours,
-          hasEstimatedHours: s.hasEstimatedHours,
-          scoreBreakdown: {
-            baseScore: s.scoreBreakdown.baseScore,
-            locationScore: s.scoreBreakdown.locationScore,
-            timeScore: s.scoreBreakdown.timeScore,
-            feedbackScore: s.scoreBreakdown.feedbackScore,
-            collaborativeScore: s.scoreBreakdown.collaborativeScore,
-            sponsorBoost: s.scoreBreakdown.sponsoredBoost,
-            finalScore: s.scoreBreakdown.finalScore,
-          },
-          activity: {
-            id: s.place.place_id || `act-${Date.now()}-${index}`,
-            name: s.place.name,
-            category: s.category,
-            description: s.place.description,
-            location: {
-              latitude: s.place.geometry.location.lat,
-              longitude: s.place.geometry.location.lng,
-              address: s.place.vicinity || s.place.formatted_address || '',
-            },
-            distance: s.distance,
-            rating: s.place.rating,
-            reviewsCount: s.place.user_ratings_total,
-            priceRange: s.place.price_level || 2,
-            photoUrl: s.photoUrl,
-            phone: s.place.formatted_phone_number,
-            website: s.place.website,
-            googlePlaceId: s.place.place_id,
-          },
-        }));
-
-        // Filter out duplicates (both from existing list and newly collected)
-        const allSeenIds = new Set([...existingPlaceIds, ...uniqueNewRecommendations.map(r => r.activity?.googlePlaceId).filter(Boolean)]);
-
-        console.log(`🔍 Checking ${newRecommendations.length} new places against ${allSeenIds.size} seen IDs`);
-        console.log(`🔍 Seen IDs (first 5):`, Array.from(allSeenIds).slice(0, 5));
-        console.log(`🔍 New place IDs (first 5):`, newRecommendations.slice(0, 5).map(r => r.activity?.googlePlaceId));
-
-        const freshRecommendations = newRecommendations.filter(
-          rec => {
-            const isDuplicate = allSeenIds.has(rec.activity?.googlePlaceId);
-            if (isDuplicate) {
-              console.log(`❌ Duplicate found: ${rec.title} (${rec.activity?.googlePlaceId})`);
-            }
-            return !isDuplicate;
-          }
-        );
-
-        console.log(`🔍 Found ${freshRecommendations.length} unique places (${newRecommendations.length - freshRecommendations.length} were duplicates)`);
-
-        // Early exit: Only stop if at max radius with no new places after multiple attempts
-        if (currentRadius >= 31 && freshRecommendations.length === 0 && attempts >= 3) {
-          console.log(`⚠️  At maximum search radius (31mi/50km) with no new unique places after ${attempts} attempts. Stopping search.`);
-          break;
-        }
-
-        // Add unique ones to our collection
-        uniqueNewRecommendations.push(...freshRecommendations);
-
-        console.log(`📊 Progress: ${uniqueNewRecommendations.length}/${TARGET_COUNT} unique places collected`);
-
-        // If we've reached the target, stop fetching
-        if (uniqueNewRecommendations.length >= TARGET_COUNT) {
-          break;
-        }
-
-        // Expand search radius for next attempt (unless using filter distance)
-        if (!useFilterDistance && uniqueNewRecommendations.length < TARGET_COUNT) {
-          const oldRadius = currentRadius;
-          if (currentRadius <= 10) {
-            currentRadius = 20;
-          } else if (currentRadius <= 20) {
-            currentRadius = 30;
-          } else if (currentRadius <= 30) {
-            currentRadius = 31; // ~50km
-          }
-          console.log(`🔍 Expanding search radius: ${oldRadius}mi → ${currentRadius}mi`);
-        }
-      }
-
-      if (uniqueNewRecommendations.length > 0) {
-        // Add all unique recommendations (no artificial cap)
-        const placesToAdd = uniqueNewRecommendations;
-
-        console.log(`✅ Adding ${placesToAdd.length} new places to feed (no cap applied)`);
-
-        // Reset exhausted flag since we found new places
-        if (feedExhaustedRef.current) {
-          console.log('🔄 Resetting feedExhausted flag (found new places)');
-          setFeedExhausted(false);
-          feedExhaustedRef.current = false;
-        }
-
-        // Update search radius state AND ref to persist the expanded radius for next scroll
-        if (!useFilterDistance) {
-          setSearchRadius(currentRadius);
-          searchRadiusRef.current = currentRadius; // Update ref synchronously for immediate access
-          console.log(`📍 Search radius updated to ${currentRadius} miles (state + ref) for next infinite scroll`);
-        }
-
-        // Append all at once
-        setRecommendations(prev => {
-          const newList = [...prev, ...placesToAdd];
-          console.log(`📊 Total recommendations in feed: ${newList.length} (added ${placesToAdd.length} new)`);
-          return newList;
-        });
-        setRefreshKey(prev => prev + 1);
-
-        // Save to database
-        const userIdForSave = user?.id ?? '';
-        if (userIdForSave) {
-          await saveRecommendationsToDB(userIdForSave, placesToAdd);
-        }
-      } else {
-        // CRITICAL: Only mark as exhausted if at max radius AND user has distance filter
-        const maxDistanceFilter = activeFilters?.maxDistance ?? 0;
-        if (maxDistanceFilter > 0 && currentRadius >= maxDistanceFilter) {
-          console.log(`📭 Exhausted within ${maxDistanceFilter}mi filter`);
-          setFeedExhausted(true);
-          feedExhaustedRef.current = true;
-        } else {
-          // No filter: Never exhaust, just keep expanding radius
-          console.log(`⏸️ No new places at ${currentRadius}mi, will expand on next scroll`);
-          // Update radius to continue expanding
-          if (!useFilterDistance) {
-            const nextRadius = currentRadius + 10; // Expand by 10 miles
-            setSearchRadius(nextRadius);
-            searchRadiusRef.current = nextRadius;
-          }
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error loading more recommendations:', error);
-    } finally {
-      setLoadingMore(false);
-      isLoadingMoreRef.current = false; // Reset ref
-    }
-  }, [refreshing, loading, user, searchRadius, filters]);
+    // Infinite scroll is implemented in the Explore tab (explore.tsx)
+  }, []);
 
   // Welcome message animation - shows for 5 seconds then fades (only on first load)
   useEffect(() => {
@@ -1641,10 +1578,12 @@ export default function RecommendationFeedScreen() {
       // Feed is always visible
       feedOpacity.value = 1;
 
-      // After 5 seconds, fade out welcome and collapse gap
+      // After 5 seconds, fade out then shrink (genie-like)
       const timeout = setTimeout(() => {
-        welcomeOpacity.value = withTiming(0, { duration: 400, easing: Easing.inOut(Easing.ease) });
-        welcomeHeight.value = withTiming(0, { duration: 400, easing: Easing.inOut(Easing.ease) }); // Collapse gap smoothly
+        // Fade out first
+        welcomeOpacity.value = withTiming(0, { duration: 800, easing: Easing.out(Easing.ease) });
+        // Height collapses slightly after fade starts
+        welcomeHeight.value = withTiming(0, { duration: 900, easing: Easing.inOut(Easing.ease) });
       }, 5000);
 
       return () => clearTimeout(timeout);
@@ -2163,12 +2102,57 @@ export default function RecommendationFeedScreen() {
     fetchRecommendations(true);
   }, [fetchRecommendations]);
 
+  // Handle filter sheet apply
+  const handleFilterSheetApply = useCallback((newFilters: FilterSheetFilters) => {
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    setShowFilterSheet(false);
+
+    // Sync with FeedFilters bar for consistency
+    setFilters(prev => ({
+      ...prev,
+      timeOfDay: newFilters.timeOfDay,
+      maxDistance: newFilters.maxDistance,
+      priceRange: newFilters.priceRange,
+    }));
+
+    // Sync categories
+    setSelectedCategories(newFilters.categories);
+  }, []);
+
+  // Handle filter sheet reset
+  const handleFilterSheetReset = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const defaultFilters: FilterSheetFilters = {
+      mode: 'ai_curated', // Reset to default AI Curated mode
+      categories: [],
+      maxDistance: 100,
+      priceRange: 'any',
+      minRating: 0,
+      timeOfDay: 'any',
+    };
+    setFilterSheetFilters(defaultFilters);
+
+    // Also sync with FeedFilters
+    setFilters({
+      timeOfDay: 'any',
+      maxDistance: 100,
+      priceRange: 'any',
+    });
+    setSelectedCategories([]);
+  }, []);
+
   // Animated styles (must be defined before any conditional returns to follow Rules of Hooks)
   const welcomeMessageStyle = useAnimatedStyle(() => {
     const scale = interpolate(
       welcomeOpacity.value,
       [0, 1],
-      [0.95, 1],
+      [0.6, 1],
+      Extrapolate.CLAMP
+    );
+    const scaleY = interpolate(
+      welcomeOpacity.value,
+      [0, 1],
+      [0.2, 1],
       Extrapolate.CLAMP
     );
 
@@ -2176,7 +2160,7 @@ export default function RecommendationFeedScreen() {
       opacity: welcomeOpacity.value,
       maxHeight: welcomeHeight.value,
       paddingVertical: welcomeHeight.value > 0 ? Spacing.md : 0,
-      transform: [{ scale }]
+      transform: [{ scale }, { scaleY }],
     };
   });
 
@@ -2200,16 +2184,15 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
-            showNotificationBell={true}
-            onNotificationPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowNotificationsTray(true);
+            showMenuButton={true}
+            onMenuPress={() => setShowMainMenu(true)}
+            isMenuOpen={showMainMenu}
+            showFilterButton={true}
+            onFilterPress={(position) => {
+              setFilterPopoverPosition(position);
+              setShowFilterPopover(true);
             }}
-            showAddButton={true}
-            onAddPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowAdvancedSearch(true);
-            }}
+            isFilterActive={isFilterSheetActive}
             onDashboardOpen={handleDashboardOpen}
             notificationCount={notificationCount}
           />
@@ -2243,16 +2226,15 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
-            showNotificationBell={true}
-            onNotificationPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowNotificationsTray(true);
+            showMenuButton={true}
+            onMenuPress={() => setShowMainMenu(true)}
+            isMenuOpen={showMainMenu}
+            showFilterButton={true}
+            onFilterPress={(position) => {
+              setFilterPopoverPosition(position);
+              setShowFilterPopover(true);
             }}
-            showAddButton={true}
-            onAddPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowAdvancedSearch(true);
-            }}
+            isFilterActive={isFilterSheetActive}
             onDashboardOpen={handleDashboardOpen}
             notificationCount={notificationCount}
           />
@@ -2272,16 +2254,15 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
-            showNotificationBell={true}
-            onNotificationPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowNotificationsTray(true);
+            showMenuButton={true}
+            onMenuPress={() => setShowMainMenu(true)}
+            isMenuOpen={showMainMenu}
+            showFilterButton={true}
+            onFilterPress={(position) => {
+              setFilterPopoverPosition(position);
+              setShowFilterPopover(true);
             }}
-            showAddButton={true}
-            onAddPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowAdvancedSearch(true);
-            }}
+            isFilterActive={isFilterSheetActive}
             onDashboardOpen={handleDashboardOpen}
             notificationCount={notificationCount}
           />
@@ -2291,12 +2272,12 @@ export default function RecommendationFeedScreen() {
             <View style={[styles.dailyLimitCard, { backgroundColor: colors.cardBackground }]}>
               <Ionicons name="time-outline" size={56} color={BrandColors.loopBlue} />
               <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.lg, textAlign: 'center' }]}>
-                You've seen all your daily picks!
+                You&apos;ve seen all your daily picks!
               </Text>
               <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center', paddingHorizontal: Spacing.md }]}>
                 {dailyLimitInfo.subscriptionTier === 'free'
                   ? `Free users get ${dailyLimitInfo.dailyLimit} curated picks per day. Upgrade for more, or tap Explore to browse unlimited activities.`
-                  : `You've viewed ${dailyLimitInfo.dailyLimit} picks today. Come back tomorrow for fresh recommendations, or tap Explore for unlimited browsing.`
+                  : `You&apos;ve viewed ${dailyLimitInfo.dailyLimit} picks today. Come back tomorrow for fresh recommendations, or tap Explore for unlimited browsing.`
                 }
               </Text>
 
@@ -2348,17 +2329,15 @@ export default function RecommendationFeedScreen() {
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LoopHeader
-          showNotificationBell={true}
-          onNotificationPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            // TODO: Open notification tray
-            handleDashboardOpen();
+          showMenuButton={true}
+          onMenuPress={() => setShowMainMenu(true)}
+          isMenuOpen={showMainMenu}
+          showFilterButton={true}
+          onFilterPress={(position) => {
+            setFilterPopoverPosition(position);
+            setShowFilterPopover(true);
           }}
-          showAddButton={true}
-          onAddPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowAdvancedSearch(true); // Opens search/add modal
-          }}
+          isFilterActive={isFilterSheetActive}
           onDashboardOpen={handleDashboardOpen}
           notificationCount={notificationCount}
           onLogoPress={() => {
@@ -2517,6 +2496,33 @@ export default function RecommendationFeedScreen() {
           onClose={() => setShowNotificationsTray(false)}
         />
 
+        {/* Filter Popover (iOS 26 Liquid Glass style - quick filters) */}
+        <FilterPopover
+          visible={showFilterPopover}
+          anchorPosition={filterPopoverPosition}
+          onClose={() => setShowFilterPopover(false)}
+          filters={filterSheetFilters}
+          onFiltersChange={setFilterSheetFilters}
+          onOpenAdvanced={() => setShowFilterSheet(true)}
+        />
+
+        {/* Filter Sheet (iOS 26 style - advanced filters) */}
+        <FilterSheet
+          visible={showFilterSheet}
+          filters={filterSheetFilters}
+          onClose={() => setShowFilterSheet(false)}
+          onFiltersChange={setFilterSheetFilters}
+          onApply={() => handleFilterSheetApply(filterSheetFilters)}
+          onReset={handleFilterSheetReset}
+        />
+
+        {/* Main Menu Modal */}
+        <MainMenuModal
+          visible={showMainMenu}
+          onClose={() => setShowMainMenu(false)}
+          notificationCount={notificationCount}
+        />
+
       </View>
     </SwipeableLayout>
   );
@@ -2540,9 +2546,9 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   listContent: {
-    paddingHorizontal: Spacing.md,
+    paddingHorizontal: 0, // Cards handle their own margins for edge-to-edge feel
     paddingTop: Spacing.xs, // Minimal top padding
-    paddingBottom: Spacing.xl,
+    paddingBottom: 100, // Account for tab bar + safe area
   },
   exhaustedContainer: {
     paddingVertical: Spacing.xl,

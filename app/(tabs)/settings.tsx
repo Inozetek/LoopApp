@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LoopHeader } from '@/components/loop-header';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useThemeContext, ThemePreference } from '@/contexts/theme-context';
 import { ThemeColors, Spacing, BorderRadius, BrandColors, Typography } from '@/constants/brand';
 import { getBlockedActivities, unblockActivity } from '@/services/recommendation-persistence';
 
@@ -32,6 +33,7 @@ export default function SettingsScreen() {
   const colors = ThemeColors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
+  const { themePreference, setThemePreference } = useThemeContext();
 
   const [blockedPlaces, setBlockedPlaces] = useState<any[]>([]);
   const [showBlockedPlacesModal, setShowBlockedPlacesModal] = useState(false);
@@ -118,6 +120,47 @@ export default function SettingsScreen() {
     );
   };
 
+  const ThemeSegmented = () => {
+    const options: { label: string; value: ThemePreference }[] = [
+      { label: 'Light', value: 'light' },
+      { label: 'Dark', value: 'dark' },
+      { label: 'System', value: 'system' },
+    ];
+    return (
+      <View style={[styles.menuItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={styles.menuItemLeft}>
+          <View style={[styles.menuIcon, { backgroundColor: BrandColors.loopIndigo + '20' }]}>
+            <Ionicons name="color-palette-outline" size={24} color={BrandColors.loopIndigo} />
+          </View>
+          <View style={styles.menuItemTextContainer}>
+            <Text style={[styles.menuItemTitle, { color: colors.text }]}>Appearance</Text>
+          </View>
+        </View>
+        <View style={[styles.themeSegmented, { backgroundColor: colors.border }]}>
+          {options.map((opt) => (
+            <TouchableOpacity
+              key={opt.value}
+              style={[
+                styles.themeSegmentedOption,
+                themePreference === opt.value && { backgroundColor: BrandColors.loopBlue },
+              ]}
+              onPress={() => setThemePreference(opt.value)}
+            >
+              <Text
+                style={[
+                  styles.themeSegmentedText,
+                  { color: themePreference === opt.value ? '#fff' : colors.text },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+    );
+  };
+
   const renderMenuItem = (
     icon: string,
     iconColor: string,
@@ -153,7 +196,7 @@ export default function SettingsScreen() {
       {/* Header */}
       <LoopHeader
         showBackButton={true}
-        onBackPress={() => router.push('/(tabs)')}
+        onBackPress={() => router.push('/(tabs)/profile')}
         showSettingsButton={false}
       />
 
@@ -199,64 +242,6 @@ export default function SettingsScreen() {
           )}
         </View>
 
-        {/* Account Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
-
-          {renderMenuItem(
-            'notifications',
-            BrandColors.loopOrange,
-            BrandColors.loopOrange + '20',
-            'Notifications',
-            'Manage notification preferences',
-            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-          )}
-
-          {renderMenuItem(
-            'shield-checkmark',
-            BrandColors.success,
-            BrandColors.success + '20',
-            'Privacy',
-            'Control who can see your Loop and invite you',
-            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-          )}
-        </View>
-
-        {/* Preferences Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Preferences</Text>
-
-          {renderMenuItem(
-            'heart',
-            BrandColors.like,
-            BrandColors.like + '20',
-            'Interests',
-            'Update your interests and preferences',
-            () => router.push('/(tabs)/profile')
-          )}
-
-          {renderMenuItem(
-            'location',
-            BrandColors.loopBlue,
-            BrandColors.loopBlue + '20',
-            'Locations',
-            'Update home and work addresses',
-            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
-          )}
-
-          {renderMenuItem(
-            'ban',
-            BrandColors.error,
-            BrandColors.error + '20',
-            'Blocked Places',
-            'Manage places hidden from recommendations',
-            () => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowBlockedPlacesModal(true);
-            }
-          )}
-        </View>
-
         {/* Subscription Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Subscription</Text>
@@ -284,6 +269,121 @@ export default function SettingsScreen() {
               </Text>
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Account Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
+
+          {renderMenuItem(
+            'notifications',
+            BrandColors.loopOrange,
+            BrandColors.loopOrange + '20',
+            'Notifications',
+            'Manage notification preferences',
+            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+          )}
+
+          {renderMenuItem(
+            'shield-checkmark',
+            BrandColors.success,
+            BrandColors.success + '20',
+            'Privacy',
+            'Control who can see your Loop and invite you',
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/settings/privacy' as any);
+            }
+          )}
+
+          {/* Business Account Option */}
+          {user?.account_type === 'business' ? (
+            renderMenuItem(
+              'storefront',
+              BrandColors.loopGreen,
+              BrandColors.loopGreen + '20',
+              'Business Dashboard',
+              'Manage your business listing and analytics',
+              () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/(tabs)/business-dashboard' as any);
+              }
+            )
+          ) : (
+            renderMenuItem(
+              'storefront-outline',
+              BrandColors.loopGreen,
+              BrandColors.loopGreen + '20',
+              'Create Business Account',
+              'Promote your venue on Loop',
+              () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                Alert.alert(
+                  'Create Business Account',
+                  'Want to list your business on Loop and reach thousands of users looking for things to do?',
+                  [
+                    { text: 'Not Now', style: 'cancel' },
+                    {
+                      text: 'Get Started',
+                      onPress: () => router.push('/auth/onboarding?accountType=business' as any),
+                    },
+                  ]
+                );
+              }
+            )
+          )}
+        </View>
+
+        {/* Preferences Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Preferences</Text>
+
+          <ThemeSegmented />
+
+          {renderMenuItem(
+            'sparkles',
+            BrandColors.loopPurple,
+            BrandColors.loopPurple + '20',
+            'AI Preferences',
+            'Discovery mode, social context, data sharing',
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/settings/ai-preferences' as any);
+            }
+          )}
+
+          {renderMenuItem(
+            'heart',
+            BrandColors.like,
+            BrandColors.like + '20',
+            'Interests',
+            'Update your interests and preferences',
+            () => router.push('/(tabs)/profile')
+          )}
+
+          {renderMenuItem(
+            'location',
+            BrandColors.loopBlue,
+            BrandColors.loopBlue + '20',
+            'Locations',
+            'Update home and work addresses',
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/(tabs)/locations');
+            }
+          )}
+
+          {renderMenuItem(
+            'ban',
+            BrandColors.error,
+            BrandColors.error + '20',
+            'Blocked Places',
+            'Manage places hidden from recommendations',
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowBlockedPlacesModal(true);
+            }
+          )}
         </View>
 
         {/* About Section */}
@@ -360,7 +460,7 @@ export default function SettingsScreen() {
               <Ionicons name="checkmark-circle" size={64} color={BrandColors.success} />
               <Text style={[styles.emptyStateTitle, { color: colors.text }]}>No Blocked Places</Text>
               <Text style={[styles.emptyStateDescription, { color: colors.textSecondary }]}>
-                You haven't blocked any places from recommendations yet.
+                You have not blocked any places from recommendations yet.
               </Text>
             </View>
           ) : (
@@ -408,7 +508,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.lg,
-    paddingBottom: Spacing.xl * 2,
+    paddingBottom: 100, // Account for tab bar + safe area
   },
   profileCard: {
     flexDirection: 'row',
@@ -635,5 +735,20 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#fff',
+  },
+  themeSegmented: {
+    flexDirection: 'row',
+    borderRadius: BorderRadius.sm,
+    overflow: 'hidden',
+  },
+  themeSegmentedOption: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  themeSegmentedText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

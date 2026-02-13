@@ -1,19 +1,32 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Session, User as SupabaseUser, AuthChangeEvent } from '@supabase/supabase-js';
-import * as Facebook from 'expo-facebook';
+import { makeRedirectUri } from 'expo-auth-session';
+import * as WebBrowser from 'expo-web-browser';
 import { supabase } from '@/lib/supabase';
 import { User, UserInsert, UserUpdate, BusinessProfile } from '@/types/database';
-import { extractInterestsFromFacebook } from '@/services/facebook';
+import {
+  signInWithGoogleNative,
+  signInWithAppleNative,
+  isAppleSignInAvailable,
+  initializeOAuth,
+  type GoogleSignInResult,
+} from '@/services/oauth-service';
+import { type ExtractedGoogleData } from '@/services/google-data';
+
+// Required for OAuth redirect
+WebBrowser.maybeCompleteAuthSession();
 
 interface AuthContextType {
   session: Session | null;
   user: User | null;
   businessProfile: BusinessProfile | null;
   loading: boolean;
+  isAppleSignInAvailable: boolean;
   signUp: (email: string, password: string) => Promise<{ error: Error | null; user: SupabaseUser | null }>;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
-  signInWithGoogle: () => Promise<{ error: Error | null }>;
-  signInWithFacebook: () => Promise<{ error: Error | null; facebookToken?: string }>;
+  signInWithGoogle: () => Promise<{ error: Error | null; extractedData?: ExtractedGoogleData }>;
+  signInWithApple: () => Promise<{ error: Error | null }>;
+  signInWithFacebook: () => Promise<{ error: Error | null }>;
   signOut: () => Promise<{ error: Error | null }>;
   updateUserProfile: (userData: UserUpdate) => Promise<{ error: Error | null }>;
   updateBusinessProfile: (data: Partial<BusinessProfile>) => Promise<{ error: Error | null }>;
@@ -81,6 +94,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(DEMO_MODE ? MOCK_USER : null);
   const [businessProfile, setBusinessProfile] = useState<BusinessProfile | null>(null);
   const [loading, setLoading] = useState(DEMO_MODE ? false : true);
+  const [appleSignInAvailable, setAppleSignInAvailable] = useState(false);
+
+  // Initialize OAuth providers and check Apple availability on mount
+  useEffect(() => {
+    initializeOAuth();
+    isAppleSignInAvailable().then(setAppleSignInAvailable);
+  }, []);
 
   useEffect(() => {
     // Skip auth in demo mode
@@ -269,18 +289,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  async function signInWithGoogle() {
+  async function signInWithGoogle(): Promise<{ error: Error | null; extractedData?: ExtractedGoogleData }> {
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: {
-          redirectTo: 'loopapp://auth/callback', // This needs to match your app scheme
-        },
-      });
+      // Use native Google Sign-In flow with data extraction
+      const result = await signInWithGoogleNative();
 
-      if (error) throw error;
+      if (result.error) throw result.error;
 
-      return { error: null };
+      // If we have extracted data, it will be used during onboarding
+      // to pre-populate user interests
+      if (result.extractedData) {
+        console.log('📊 Google data extracted:', {
+          categories: result.extractedData.categories,
+          calendarEvents: result.extractedData.calendarEvents.length,
+          favoritePlaces: result.extractedData.favoritePlaces.length,
+        });
+      }
+
+      return { error: null, extractedData: result.extractedData };
     } catch (error) {
       console.error('Google sign in error:', error);
       return {
@@ -289,33 +315,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  async function signInWithApple() {
+    try {
+      // Use native Apple Sign-In flow
+      const { error } = await signInWithAppleNative();
+
+      if (error) throw error;
+
+      return { error: null };
+    } catch (error) {
+      console.error('Apple sign in error:', error);
+      return {
+        error: error instanceof Error ? error : new Error('Failed to sign in with Apple'),
+      };
+    }
+  }
+
   async function signInWithFacebook() {
     try {
-      const facebookAppId = process.env.EXPO_PUBLIC_FACEBOOK_APP_ID;
+      // Use Supabase OAuth redirect flow for Facebook
+      // This opens Facebook login in browser and redirects back to app
+      const redirectUri = makeRedirectUri({
+        scheme: 'loopapp',
+        path: 'auth/callback',
+      });
 
-      if (!facebookAppId) {
-        throw new Error('Facebook App ID not configured. Please add EXPO_PUBLIC_FACEBOOK_APP_ID to .env');
-      }
+      console.log('Starting Facebook OAuth with redirect:', redirectUri);
 
-      // Initialize Facebook SDK
-      await Facebook.initializeAsync({ appId: facebookAppId });
-
-      // Request permissions: basic profile + likes for interest extraction
-      const result = await Facebook.logInWithReadPermissionsAsync({
-        permissions: ['public_profile', 'email', 'user_likes'],
-      }) as any;
-
-      if (result.type !== 'success' || !result.token) {
-        return { error: new Error('Facebook login was cancelled or failed') };
-      }
-
-      console.log('Facebook login successful, token received');
-
-      // Sign in to Supabase with Facebook token
-      const { error: supabaseError } = await supabase.auth.signInWithOAuth({
+      const { data, error: supabaseError } = await supabase.auth.signInWithOAuth({
         provider: 'facebook',
         options: {
-          redirectTo: 'loopapp://auth/callback',
+          redirectTo: redirectUri,
+          scopes: 'public_profile,email',
         },
       });
 
@@ -324,20 +355,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw supabaseError;
       }
 
-      // Extract interests from Facebook (will be used in onboarding)
-      console.log('Extracting interests from Facebook...');
-      const interests = await extractInterestsFromFacebook(result.token);
-      console.log('Extracted interests:', interests);
+      // Open the OAuth URL in browser
+      if (data?.url) {
+        const result = await WebBrowser.openAuthSessionAsync(data.url, redirectUri);
 
-      // Store interests temporarily for onboarding to use
-      // You'll need to pass this to the onboarding screen
-      // For now, we'll log it
-      console.log('Facebook interests extracted successfully:', {
-        totalInterests: interests.interests.length,
-        totalCategories: interests.categories.length,
-      });
+        if (result.type === 'cancel') {
+          return { error: new Error('Facebook login was cancelled') };
+        }
 
-      return { error: null, facebookToken: result.token };
+        console.log('✅ Facebook OAuth completed');
+      }
+
+      return { error: null };
     } catch (error) {
       console.error('Facebook sign in error:', error);
       return {
@@ -451,9 +480,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     businessProfile,
     loading,
+    isAppleSignInAvailable: appleSignInAvailable,
     signUp,
     signIn,
     signInWithGoogle,
+    signInWithApple,
     signInWithFacebook,
     signOut,
     updateUserProfile,

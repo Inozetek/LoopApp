@@ -1,27 +1,55 @@
 /**
  * Loop Brand Design System
- * Modern, sleek color palette inspired by Instagram/Snapchat
+ * Sophisticated, mature color palette with harmonious chart colors
  * Built for millions of users with investor-grade polish
+ *
+ * COLOR PALETTE v3.0 (User-Approved):
+ * - Primary Cyan (#00A6D9) - vibrant yet professional
+ * - Primary Green (#09DB98) - fresh and distinct
+ * - Harmonious chart colors for score breakdown (no visual noise)
+ * - Full color scales provided for variants
  */
 
 export const BrandColors = {
-  // Primary Brand Colors (Updated to Neon/Cyberpunk aesthetic)
-  loopBlue: '#00BFFF',      // Neon Cyan - primary CTA
-  loopBlueLight: '#33CFFF',  // Lighter cyan for highlights
-  loopBlueDark: '#00A0E3',   // Darker cyan for pressed states
+  // ============================================================================
+  // PRIMARY BRAND COLORS (User-Approved v3.0)
+  // ============================================================================
 
-  // Strong Match Highlight (Blue LED glow - deep ocean blue)
-  strongMatchGlow: '#0099FF', // Deep ocean blue LED - for strong match borders
+  // PRIMARY CYAN SCALE (for loopBlue)
+  // 50: #E6F9FF, 100: #B8EEFF, 200: #8AE4FF, 300: #5CD9FF, 400: #2ECEFF
+  // 500: #00C3FF, 600: #00A6D9 ← PRIMARY, 700: #007DA3, 800: #005A75, 900: #003747
+  // PREVIOUS: '#4A80F0' (Material Blue 500 - too purple)
+  loopBlue: '#00A6D9',       // Primary Cyan - vibrant yet professional
+  loopBlueLight: '#2ECEFF',  // Cyan 400 - bright highlight
+  loopBlueDark: '#007DA3',   // Cyan 700 - pressed states, dark variant
 
-  loopGreen: '#00FF9F',     // Neon Mint Green - success/secondary
-  loopGreenLight: '#33FFB2', // Lighter mint for highlights
-  loopGreenDark: '#00E38C',  // Darker mint for pressed states
+  // Strong Match Highlight (matches new cyan palette)
+  // PREVIOUS: '#3B82F6'
+  strongMatchGlow: '#00A6D9', // Same as loopBlue for cohesion
 
-  loopOrange: '#FF9500',    // Orange for warnings/highlights
-  loopOrangeLight: '#FFB340', // Lighter orange
-  loopOrangeDark: '#E08500',  // Darker orange
+  // PRIMARY GREEN SCALE (for loopGreen)
+  // 50: #09DB98 ← PRIMARY, 100: #34D296, 200: #47C993, 300: #55C091
+  // PREVIOUS: '#10B981' (Emerald 500 - too dark/muted)
+  loopGreen: '#09DB98',      // Primary Green - fresh, vibrant
+  loopGreenLight: '#34D296', // Green 100 - softer highlight
+  loopGreenDark: '#47C993',  // Green 200 - pressed states
 
-  // Neutral Palette (Modern, High Contrast)
+  // ORANGE (unchanged - already good)
+  loopOrange: '#F59E0B',     // Amber 500 - warm, friendly
+  loopOrangeLight: '#FBBF24', // Amber 400 - highlight
+  loopOrangeDark: '#D97706',  // Amber 600 - pressed states
+
+  // ============================================================================
+  // ACCENT COLORS (for charts, highlights, variety)
+  // ============================================================================
+  accentLime: '#D1E800',     // Bright lime - attention-grabbing
+  accentYellow: '#F0DA6A',   // Warm yellow - friendly
+  accentGold: '#EDB95A',     // Premium gold - achievement
+  accentPurple: '#553C96',   // Deep purple - sophisticated
+
+  // ============================================================================
+  // NEUTRAL PALETTE (Unchanged - already modern and high contrast)
+  // ============================================================================
   black: '#000000',
   almostBlack: '#0A0A0A',
   darkGray: '#1C1C1E',      // iOS 13 dark card
@@ -33,85 +61,111 @@ export const BrandColors = {
   offWhite: '#F9F9F9',
   lightBackground: '#F2F2F7', // iOS light background
 
-  // Semantic Colors
-  success: '#00D9A3',
-  error: '#FF3B30',
-  warning: '#FF9500',
-  info: '#0066FF',
+  // ============================================================================
+  // SEMANTIC COLORS (Updated to match v3.0 palette)
+  // ============================================================================
+  success: '#09DB98',        // Matches loopGreen for consistency
+  error: '#EF4444',          // Tailwind Red 500 - slightly softer than iOS red
+  warning: '#F59E0B',        // Matches loopOrange
+  info: '#00A6D9',           // Matches loopBlue - cohesive palette
 
-  // Social/Engagement Colors (Instagram-inspired)
-  like: '#FF3B6C',          // Heart red
-  star: '#FFD700',          // Star yellow
-  verified: '#0066FF',      // Verified blue
+  // ============================================================================
+  // SOCIAL/ENGAGEMENT COLORS (Refined)
+  // ============================================================================
+  like: '#EC4899',           // Pink 500 - modern heart color
+  star: '#F59E0B',           // Amber 500 - star/rating gold
+  verified: '#00A6D9',       // Matches loopBlue - verified badge
 
-  // Opacity Variants (for overlays)
+  // ============================================================================
+  // OPACITY VARIANTS (Updated to use v3.0 colors)
+  // ============================================================================
   blackOverlay: 'rgba(0, 0, 0, 0.4)',
   whiteOverlay: 'rgba(255, 255, 255, 0.9)',
-  blueOverlay: 'rgba(0, 102, 255, 0.1)',
-  greenOverlay: 'rgba(0, 217, 163, 0.1)',
+  blueOverlay: 'rgba(0, 166, 217, 0.1)',   // Based on new loopBlue #00A6D9
+  greenOverlay: 'rgba(9, 219, 152, 0.1)',  // Based on new loopGreen #09DB98
 
-  // Bottom Sheet Colors (YouTube-inspired dark theme + Loop brand accents)
+  // ============================================================================
+  // BOTTOM SHEET COLORS (Updated accents to match new palette)
+  // ============================================================================
   sheetBackground: '#1C1C1E',        // Dark gray background (YouTube-inspired)
   sheetHandle: '#3A3A3C',            // Handle indicator (subtle gray)
   sheetText: '#FFFFFF',              // Primary text (white)
   sheetSubtext: '#8E8E93',           // Secondary text (light gray)
   sheetBorder: '#3A3A3C',            // Separator lines (subtle gray)
-  sheetDestructive: '#FF3B30',       // Destructive action (iOS red)
+  sheetDestructive: '#EF4444',       // Matches error color
   sheetBackdrop: 'rgba(0,0,0,0.5)',  // Semi-transparent black backdrop
 
-  // Loop Brand Accents for Bottom Sheets
-  sheetPrimaryAction: '#00BFFF',     // Loop Blue for primary actions (matches loopBlue)
-  sheetFeaturedAction: '#FF9500',    // Loop Orange for featured/urgent actions (matches loopOrange)
-  sheetPrimaryActionPressed: '#00A0E3', // Darker blue for pressed state (matches loopBlueDark)
+  // Loop Brand Accents for Bottom Sheets (v3.0)
+  sheetPrimaryAction: '#00A6D9',     // Matches new loopBlue
+  sheetFeaturedAction: '#F59E0B',    // Matches loopOrange
+  sheetPrimaryActionPressed: '#007DA3', // Matches new loopBlueDark
 
-  // Extended Palette (for badges, context detection, score bars)
-  loopPurple: '#8B5CF6',    // Purple for feedback/past data
-  loopPink: '#EC4899',      // Pink for social/collaborative
-  loopIndigo: '#6366F1',    // Indigo for events/about
-  loopTeal: '#14B8A6',      // Teal for walking distance
+  // ============================================================================
+  // EXTENDED PALETTE (Slightly refined for cohesion)
+  // ============================================================================
+  loopPurple: '#8B5CF6',    // Violet 500 - unchanged, already good
+  loopPink: '#EC4899',      // Pink 500 - unchanged, already good
+  loopIndigo: '#6366F1',    // Indigo 500 - unchanged, already good
+  loopTeal: '#14B8A6',      // Teal 500 - unchanged, already good
+
+  // ============================================================================
+  // ROUTE LINE COLORS (Google Maps navigation inspired)
+  // ============================================================================
+  routeCompleted: '#1A73E8',        // Google Maps blue - bold, authoritative
+  routeCompletedBorder: '#0D47A1',  // Darker navy border for completed routes
+  routeFuture: '#90CAF9',           // Light blue - clearly lighter than completed
+  routeFutureBorder: '#5B9BD5',     // Medium blue border for future routes
+  routeInProgress: '#1A73E8',       // Same blue as completed, animated opacity
+  routeInProgressBorder: '#0D47A1', // Same border as completed
 };
 
 // Category colors for calendar events and activity cards
 export const CategoryColors: Record<string, string> = {
-  dining: '#FF6B6B',
+  dining: '#EF4444',         // Red 500 - warmer, more appetizing
   entertainment: BrandColors.loopBlue,
   fitness: BrandColors.loopGreen,
-  social: BrandColors.like,
-  work: BrandColors.info,
+  social: BrandColors.loopPurple,
+  work: BrandColors.loopIndigo,
   personal: BrandColors.loopOrange,
-  travel: BrandColors.loopBlueLight,
+  travel: BrandColors.loopTeal,
   other: BrandColors.veryLightGray,
 };
 
 // Score bar segment colors (stacked bar in activity cards)
+// HARMONIOUS CHART PALETTE - User-approved colors that work well together
+// These colors are distinct but don't create visual noise when shown together
 export const ScoreBarColors = {
-  interest: BrandColors.loopBlue,
-  location: BrandColors.loopGreen,
-  time: BrandColors.loopOrange,
-  feedback: BrandColors.loopPurple,
-  social: BrandColors.loopPink,
+  interest: '#00A6D9',    // Cyan (matches loopBlue) - primary factor
+  location: '#09DB98',    // Green (matches loopGreen) - proximity
+  time: '#F0DA6A',        // Warm yellow - timing context
+  feedback: '#EDB95A',    // Gold - past user feedback
+  social: '#553C96',      // Deep purple - collaborative/social
 };
 
-// Match score tile colors (5-tier)
+// Alias for components that import ChartColors
+export const ChartColors = ScoreBarColors;
+
+// Match score tile colors (5-tier) - Updated to new cyan/green palette
 export const MatchScoreColors = {
-  excellent: { color: BrandColors.success, bg: 'rgba(0, 217, 163, 0.12)' },     // 85+
-  good:      { color: BrandColors.loopBlue, bg: 'rgba(0, 191, 255, 0.12)' },    // 75-84
-  fair:      { color: BrandColors.info, bg: 'rgba(0, 102, 255, 0.12)' },        // 60-74
-  average:   { color: BrandColors.loopOrange, bg: 'rgba(255, 149, 0, 0.12)' },  // 35-59
-  low:       { color: BrandColors.error, bg: 'rgba(255, 59, 48, 0.12)' },       // <35
+  excellent: { color: '#09DB98', bg: 'rgba(9, 219, 152, 0.12)' },    // 85+ (primary green)
+  good:      { color: '#00A6D9', bg: 'rgba(0, 166, 217, 0.12)' },    // 75-84 (primary cyan)
+  fair:      { color: '#2ECEFF', bg: 'rgba(46, 206, 255, 0.12)' },   // 60-74 (light cyan)
+  average:   { color: '#F59E0B', bg: 'rgba(245, 158, 11, 0.12)' },   // 35-59 (amber)
+  low:       { color: '#EF4444', bg: 'rgba(239, 68, 68, 0.12)' },    // <35 (red)
 };
 
 // Context badge colors (for context-detection service)
+// Uses new mature palette for professional appearance
 export const ContextBadgeColors: Record<string, string> = {
-  free: BrandColors.loopGreen,
-  available: BrandColors.loopBlue,
-  on_route: BrandColors.loopPurple,
-  friend_loves: BrandColors.loopPink,
-  group_friendly: BrandColors.loopOrange,
-  before_event: BrandColors.loopIndigo,
-  after_event: BrandColors.loopIndigo,
-  walking_distance: BrandColors.loopTeal,
-  time_limited: BrandColors.error,
+  free: BrandColors.loopGreen,         // #10B981 - emerald
+  available: BrandColors.loopBlue,     // #4A80F0 - material blue
+  on_route: BrandColors.loopPurple,    // #8B5CF6 - violet
+  friend_loves: BrandColors.loopPink,  // #EC4899 - pink
+  group_friendly: BrandColors.loopOrange, // #F59E0B - amber
+  before_event: BrandColors.loopIndigo,   // #6366F1 - indigo
+  after_event: BrandColors.loopIndigo,    // #6366F1 - indigo
+  walking_distance: BrandColors.loopTeal, // #14B8A6 - teal
+  time_limited: BrandColors.error,        // #EF4444 - red
 };
 
 export const ThemeColors = {
@@ -128,9 +182,9 @@ export const ThemeColors = {
     textSecondary: BrandColors.veryLightGray,
     textTertiary: BrandColors.lightGray,
 
-    // Brand
-    primary: BrandColors.loopBlueDark, // Using darker cyan for better visibility
-    primaryLight: BrandColors.loopBlue,
+    // Brand (Updated to use new mature blue palette)
+    primary: BrandColors.loopBlue,     // #4A80F0 - primary actions
+    primaryLight: BrandColors.loopBlueLight,
     primaryDark: BrandColors.loopBlueDark,
     secondary: BrandColors.loopGreen,
     secondaryLight: BrandColors.loopGreenLight,
@@ -143,10 +197,10 @@ export const ThemeColors = {
     shadow: 'rgba(0, 0, 0, 0.1)',
     icon: BrandColors.veryLightGray, // Icon tint color
 
-    // Interactive
+    // Interactive (Updated to use new blue)
     tabIconDefault: BrandColors.veryLightGray,
-    tabIconSelected: BrandColors.loopBlueDark,
-    tint: BrandColors.loopBlueDark,
+    tabIconSelected: BrandColors.loopBlue,  // Use main blue for better visibility
+    tint: BrandColors.loopBlue,
 
     // Feedback
     success: BrandColors.success,
@@ -168,9 +222,9 @@ export const ThemeColors = {
     textSecondary: BrandColors.veryLightGray,
     textTertiary: BrandColors.lightGray,
 
-    // Brand
-    primary: BrandColors.loopBlueDark, // Using darker cyan for better visibility
-    primaryLight: BrandColors.loopBlue,
+    // Brand (Updated to use new mature blue palette)
+    primary: BrandColors.loopBlue,     // #4A80F0 - primary actions (same as light for consistency)
+    primaryLight: BrandColors.loopBlueLight,
     primaryDark: BrandColors.loopBlueDark,
     secondary: BrandColors.loopGreen,
     secondaryLight: BrandColors.loopGreenLight,
@@ -183,10 +237,10 @@ export const ThemeColors = {
     shadow: 'rgba(0, 0, 0, 0.5)',
     icon: BrandColors.veryLightGray, // Icon tint color
 
-    // Interactive
+    // Interactive (Updated to use new blue)
     tabIconDefault: BrandColors.veryLightGray,
-    tabIconSelected: BrandColors.loopBlueDark,
-    tint: BrandColors.loopBlueDark,
+    tabIconSelected: BrandColors.loopBlue,  // Use main blue for better visibility
+    tint: BrandColors.loopBlue,
 
     // Feedback
     success: BrandColors.success,

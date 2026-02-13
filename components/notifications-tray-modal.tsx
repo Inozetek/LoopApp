@@ -3,9 +3,14 @@
  *
  * Full-screen notification center showing all user notifications
  * Grouped by time: Today, Yesterday, Earlier
+ *
+ * UX REDESIGN (v2.0):
+ * - Replaced horizontal scrolling categories with vertical filter chips
+ * - Updated header to match profile page styling
+ * - Modern notification patterns like iOS/Android native
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -31,6 +36,16 @@ import {
 } from '@/services/dashboard-aggregator';
 import type { DashboardNotification } from '@/types/dashboard';
 
+// Notification filter categories
+type NotificationFilter = 'all' | 'recommendations' | 'social' | 'reminders';
+
+const NOTIFICATION_FILTERS: { id: NotificationFilter; label: string; icon: string }[] = [
+  { id: 'all', label: 'All', icon: 'apps-outline' },
+  { id: 'recommendations', label: 'For You', icon: 'sparkles-outline' },
+  { id: 'social', label: 'Social', icon: 'people-outline' },
+  { id: 'reminders', label: 'Reminders', icon: 'alarm-outline' },
+];
+
 interface NotificationsTrayModalProps {
   visible: boolean;
   onClose: () => void;
@@ -45,6 +60,25 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<NotificationFilter>('all');
+
+  // Filter notifications based on active filter
+  const filteredNotifications = useMemo(() => {
+    if (activeFilter === 'all') return notifications;
+
+    return notifications.filter(n => {
+      switch (activeFilter) {
+        case 'recommendations':
+          return ['new_recommendations', 'featured_venue', 'featured_movie', 'lunch_suggestion'].includes(n.notification_type);
+        case 'social':
+          return ['friend_activity', 'pending_invite', 'family_in_town'].includes(n.notification_type);
+        case 'reminders':
+          return ['loops_planned', 'event_reminder'].includes(n.notification_type);
+        default:
+          return true;
+      }
+    });
+  }, [notifications, activeFilter]);
 
   // Fetch notifications when modal opens
   useEffect(() => {
@@ -91,7 +125,19 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
       // Handle deep link if present
       if (notification.action_deep_link) {
         const link = notification.action_deep_link;
-        if (link.startsWith('/') || link.startsWith('(')) {
+
+        // Handle pending invite deep links with highlightPlanId param
+        if (notification.notification_type === 'pending_invite' && notification.related_plan_id) {
+          onClose();
+          // Navigate to feed with params to scroll to the card
+          router.push({
+            pathname: '/(tabs)',
+            params: {
+              highlightPlanId: notification.related_plan_id,
+              scrollToCard: 'true',
+            },
+          });
+        } else if (link.startsWith('/') || link.startsWith('(')) {
           // Internal route - use expo-router
           onClose();
           router.push(link as any);
@@ -100,6 +146,16 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
           onClose();
           Linking.openURL(link);
         }
+      } else if (notification.notification_type === 'pending_invite' && notification.related_plan_id) {
+        // Fallback for pending_invite without explicit deep link
+        onClose();
+        router.push({
+          pathname: '/(tabs)',
+          params: {
+            highlightPlanId: notification.related_plan_id,
+            scrollToCard: 'true',
+          },
+        });
       }
 
       // Remove from list
@@ -127,8 +183,14 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
     }
   };
 
-  // Group notifications by time
-  const groupedNotifications = groupNotificationsByTime(notifications);
+  // Group notifications by time (use filtered notifications)
+  const groupedNotifications = groupNotificationsByTime(filteredNotifications);
+
+  // Handle filter change
+  const handleFilterChange = useCallback((filter: NotificationFilter) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setActiveFilter(filter);
+  }, []);
 
   return (
     <Modal
@@ -138,7 +200,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
       onRequestClose={handleClose}
     >
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* HEADER */}
+        {/* HEADER - Updated to match profile page styling */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <Pressable onPress={handleClose} style={styles.closeButton} hitSlop={8}>
             <Ionicons name="close" size={24} color={colors.text} />
@@ -157,6 +219,40 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
           )}
         </View>
 
+        {/* FILTER CHIPS - Vertical layout replacing horizontal scroll */}
+        {notifications.length > 0 && (
+          <View style={styles.filterChipsContainer}>
+            {NOTIFICATION_FILTERS.map((filter) => {
+              const isActive = activeFilter === filter.id;
+              return (
+                <Pressable
+                  key={filter.id}
+                  style={[
+                    styles.filterChip,
+                    { backgroundColor: isActive ? BrandColors.loopBlue : colors.card },
+                    isActive && styles.filterChipActive,
+                  ]}
+                  onPress={() => handleFilterChange(filter.id)}
+                >
+                  <Ionicons
+                    name={filter.icon as any}
+                    size={14}
+                    color={isActive ? '#FFFFFF' : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      { color: isActive ? '#FFFFFF' : colors.text },
+                    ]}
+                  >
+                    {filter.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+
         {/* CONTENT */}
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -165,15 +261,29 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
               Loading notifications...
             </Text>
           </View>
-        ) : notifications.length === 0 ? (
+        ) : filteredNotifications.length === 0 ? (
           <View style={styles.emptyContainer}>
-            <Ionicons name="notifications-off-outline" size={64} color={colors.textSecondary} />
+            <Ionicons
+              name={notifications.length === 0 ? "notifications-off-outline" : "filter-outline"}
+              size={64}
+              color={colors.textSecondary}
+            />
             <Text style={[styles.emptyTitle, { color: colors.text }]}>
-              All caught up!
+              {notifications.length === 0 ? 'All caught up!' : 'No matching notifications'}
             </Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              You have no new notifications
+              {notifications.length === 0
+                ? 'You have no new notifications'
+                : `No notifications in "${NOTIFICATION_FILTERS.find(f => f.id === activeFilter)?.label}" category`}
             </Text>
+            {notifications.length > 0 && (
+              <Pressable
+                style={[styles.resetFilterButton, { backgroundColor: BrandColors.loopBlue }]}
+                onPress={() => setActiveFilter('all')}
+              >
+                <Text style={styles.resetFilterButtonText}>Show All</Text>
+              </Pressable>
+            )}
           </View>
         ) : (
           <ScrollView
@@ -456,6 +566,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  // FILTER CHIPS (v2.0 - replaces horizontal scroll categories)
+  filterChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+    borderBottomWidth: 1,
+    borderBottomColor: 'transparent', // Will use colors.border in component
+  },
+  filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.xs,
+    borderRadius: BorderRadius.full,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
+  },
+  filterChipActive: {
+    borderColor: 'transparent',
+  },
+  filterChipText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+
   // Loading
   loadingContainer: {
     flex: 1,
@@ -483,6 +621,17 @@ const styles = StyleSheet.create({
   emptySubtitle: {
     fontSize: 16,
     textAlign: 'center',
+  },
+  resetFilterButton: {
+    marginTop: Spacing.lg,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+    borderRadius: BorderRadius.full,
+  },
+  resetFilterButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   // Scroll

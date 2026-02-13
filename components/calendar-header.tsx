@@ -3,25 +3,19 @@
  *
  * Section title header for Calendar tab.
  * Features:
- * - "L [logo] P" spelling LOOP with Venn diagram logo
+ * - Clean "Loop" text header (Instagram/Snapchat style)
  * - Add event button on right
  * - Optional subtitle (e.g., "Today, Dec 15")
- *
- * Logo Design (v3.0):
- * - Two overlapping circles (Venn diagram)
- * - Left: Cyan, Right: Green
- * - Thin strokes with transparent fills
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { BrandColors, Spacing, Typography } from '@/constants/brand';
+import { Spacing, Typography } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { LoopLogoVariant } from '@/components/loop-logo-variant';
 
 interface CalendarHeaderProps {
   title?: string;
@@ -74,23 +68,14 @@ export function CalendarHeader({
         )}
       </View>
 
-      {/* Center - "L [logo] P" spelling LOOP (tappable to toggle map) */}
+      {/* Center - Clean "Loop" text (Instagram/Snapchat style) */}
       <TouchableOpacity
         style={styles.titleContainer}
         onPress={handleTitlePress}
         activeOpacity={onTitlePress ? 0.7 : 1}
         disabled={!onTitlePress}
       >
-        {showLoopIcon ? (
-          <View style={styles.loopBrandContainer}>
-            {/* L + OO (logo) + P = LOOP */}
-            <Text style={[styles.loopLetter, { color: BrandColors.loopBlueLight }]}>L</Text>
-            <LoopLogoVariant size={22} style={styles.loopLogo} />
-            <Text style={[styles.loopLetter, { color: BrandColors.loopGreen }]}>P</Text>
-          </View>
-        ) : (
-          <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
-        )}
+        <Text style={[styles.brandTitle, { color: colors.textSecondary || colors.text }]}>Loop</Text>
         {subtitle && (
           <Text style={[styles.subtitle, { color: colors.icon }]}>{subtitle}</Text>
         )}
@@ -104,7 +89,7 @@ export function CalendarHeader({
             style={styles.iconButton}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="add-circle-outline" size={28} color={BrandColors.loopBlue} />
+            <Ionicons name="add-circle-outline" size={28} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -132,20 +117,44 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  loopBrandContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  // ============================================================
+  // FONT VARIANTS TO TEST - Uncomment one at a time
+  // ============================================================
+
+  // VARIANT 1: System Default (San Francisco iOS / Roboto Android)
+  // Clean, native feel - what most apps use
+  brandTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
-  loopLetter: {
-    fontSize: 24,
-    fontFamily: 'Avenir Next',
-    fontWeight: '500',
-    letterSpacing: -0.5,
-  },
-  loopLogo: {
-    marginHorizontal: 2, // Tight spacing for "L OO P" effect
-  },
+
+  // VARIANT 2: Avenir Next (iOS) - Snapchat's original font
+  // Modern, geometric, slightly playful
+  // brandTitle: {
+  //   fontSize: 22,
+  //   fontFamily: Platform.OS === 'ios' ? 'Avenir Next' : 'sans-serif-medium',
+  //   fontWeight: '600',
+  //   letterSpacing: 0.3,
+  // },
+
+  // VARIANT 3: Helvetica Neue - Classic, clean
+  // Used by many apps, very neutral
+  // brandTitle: {
+  //   fontSize: 22,
+  //   fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif',
+  //   fontWeight: '500',
+  //   letterSpacing: 0.5,
+  // },
+
+  // VARIANT 4: Georgia (Serif) - Editorial, premium feel
+  // Different vibe - more like a magazine
+  // brandTitle: {
+  //   fontSize: 24,
+  //   fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  //   fontWeight: '600',
+  //   letterSpacing: 0,
+  // },
   title: {
     ...Typography.titleLarge,
     fontWeight: '700',

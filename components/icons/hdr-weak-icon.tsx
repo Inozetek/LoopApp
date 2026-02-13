@@ -1,0 +1,15 @@
+import React from 'react';
+import Svg, { Path } from 'react-native-svg';
+
+interface HdrWeakIconProps {
+  size?: number;
+  color?: string;
+}
+
+export function HdrWeakIcon({ size = 24, color = '#000' }: HdrWeakIconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 -960 960 960" fill={color}>
+      <Path d="M87-367q-47-47-47-113t47-113q47-47 113-47t113 47q47 47 47 113t-47 113q-47 47-113 47T87-367Zm423 57q-70-70-70-170t70-170q70-70 170-70t170 70q70 70 70 170t-70 170q-70 70-170 70t-170-70Zm283-57q47-47 47-113t-47-113q-47-47-113-47t-113 47q-47 47-47 113t47 113q47 47 113 47t113-47Z" />
+    </Svg>
+  );
+}

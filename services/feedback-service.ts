@@ -27,7 +27,12 @@ const DEMO_USER_ID = 'demo-user-123';
 
 /**
  * Find activities that were completed but haven't received feedback
- * Checks for events that ended in the last 3 hours (not 24 hours to avoid stale prompts)
+ *
+ * IMPORTANT: This now only returns events that have been explicitly marked as "completed"
+ * by the user (via the "Rate Activity" button). We no longer auto-prompt based on time alone
+ * because we can't verify the user actually visited the location.
+ *
+ * Future enhancement: Use geofencing/location tracking to automatically detect visits.
  */
 export async function getPendingFeedbackActivities(
   userId: string
@@ -39,23 +44,24 @@ export async function getPendingFeedbackActivities(
 
   try {
     const now = new Date();
-    // CRITICAL FIX: Only check events from last 3 hours (not 24 hours)
-    // After 3 hours, user won't remember the experience well enough
-    const threeHoursAgo = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+    // Only check events completed in the last 24 hours
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
 
-    // CRITICAL FIX: Also set a minimum time (30 minutes ago)
-    // Don't prompt immediately after event ends - give user time to leave/travel
-    const thirtyMinutesAgo = new Date(now.getTime() - 30 * 60 * 1000);
-
-    // Find completed calendar events from the last 3 hours (but not within last 30 min)
+    // CRITICAL FIX: Only find events that have been EXPLICITLY marked as completed
+    // by the user (status = 'completed'). This ensures we only prompt for activities
+    // the user has confirmed they actually attended.
+    //
+    // We do NOT prompt based on end_time alone because:
+    // 1. User might not have actually gone to the task
+    // 2. Task might have been cancelled/skipped
+    // 3. We can't verify location without background tracking
     const { data: completedEvents, error: eventsError } = await supabase
       .from('calendar_events')
-      .select('id, title, category, activity_id, end_time, source, address, google_place_id')
+      .select('id, title, category, activity_id, end_time, completed_at, source, address, google_place_id')
       .eq('user_id', userId)
-      .eq('status', 'scheduled')
-      .gte('end_time', threeHoursAgo.toISOString())
-      .lte('end_time', thirtyMinutesAgo.toISOString())
-      .order('end_time', { ascending: false });
+      .eq('status', 'completed')  // Only events explicitly marked as completed
+      .gte('completed_at', oneDayAgo.toISOString())
+      .order('completed_at', { ascending: false });
 
     if (eventsError) throw eventsError;
     if (!completedEvents || completedEvents.length === 0) return [];
@@ -63,11 +69,17 @@ export async function getPendingFeedbackActivities(
     const events = completedEvents as any[];
 
     // Check which ones already have feedback
+    const eventIds = events.map((e) => e.id);
+
+    // Check feedback by event_id since not all events have activity_id
+    let existingFeedbackEventIds: Set<string> = new Set();
+
+    // We need to check if feedback exists for these events
+    // Since feedback table might reference activity_id or we can check by event metadata
     const eventActivityIds = events
       .map((e) => e.activity_id)
       .filter((id) => id !== null);
 
-    let existingFeedback: any[] = [];
     if (eventActivityIds.length > 0) {
       const { data: feedbackData, error: feedbackError } = await (supabase
         .from('feedback') as any)
@@ -76,25 +88,28 @@ export async function getPendingFeedbackActivities(
         .in('activity_id', eventActivityIds);
 
       if (!feedbackError && feedbackData) {
-        existingFeedback = feedbackData as any[];
+        const feedbackActivityIds = new Set(
+          (feedbackData as any[]).map((f) => f.activity_id)
+        );
+        // Map back to event IDs
+        events.forEach(event => {
+          if (event.activity_id && feedbackActivityIds.has(event.activity_id)) {
+            existingFeedbackEventIds.add(event.id);
+          }
+        });
       }
     }
 
-    const feedbackActivityIds = new Set(
-      existingFeedback.map((f) => f.activity_id)
-    );
-
     // Filter out events that already have feedback
     const pendingActivities: CompletedActivity[] = events
-      .filter((event) => !event.activity_id || !feedbackActivityIds.has(event.activity_id))
+      .filter((event) => !existingFeedbackEventIds.has(event.id))
       .map((event) => ({
         eventId: event.id,
         activityId: event.activity_id,
         activityName: event.title,
         activityCategory: event.category || 'other',
-        completedAt: event.end_time,
-        recommendationId: null, // Could fetch from recommendations table if needed
-        // Include place info for moment capture
+        completedAt: event.completed_at || event.end_time,
+        recommendationId: null,
         place: event.google_place_id || event.activity_id ? {
           id: event.google_place_id || event.activity_id || event.id,
           name: event.title,

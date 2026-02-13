@@ -28,6 +28,10 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { supabase } from '@/lib/supabase';
 import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { handleError } from '@/utils/error-handler';
+import { calculateGroupMidpoint } from '@/services/loop-service';
+import { searchNearbyPlaces, generateGroupRecommendations, PlaceLocation } from '@/services/recommendations';
+import { getPlacePhotoUrl } from '@/services/google-places';
+import { FriendGroup, getFriendGroups, getFriendsEligibleForGroupRecs } from '@/services/friend-groups-service';
 
 interface Friend {
   id: string;
@@ -75,17 +79,160 @@ export function GroupPlanningModal({
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
+  const [groupMidpoint, setGroupMidpoint] = useState<{ latitude: number; longitude: number } | null>(null);
+
+  // Step 0: Group selection
+  const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [showGroupSelection, setShowGroupSelection] = useState(true);
 
   useEffect(() => {
-    if (!visible) {
+    if (visible) {
+      // Load friend groups when modal opens
+      loadGroups();
+    } else {
       // Reset state when modal closes
       setSelectedFriends([]);
       setSelectedTags([]);
       setCustomTag('');
       setSuggestions([]);
       setShowSuggestions(false);
+      setGroupMidpoint(null);
+      setSelectedGroupId(null);
+      setShowGroupSelection(true);
     }
   }, [visible]);
+
+  const loadGroups = async () => {
+    try {
+      const groups = await getFriendGroups(userId);
+      setFriendGroups(groups);
+    } catch (error) {
+      console.error('[GroupPlanning] Error loading groups:', error);
+    }
+  };
+
+  const selectGroup = async (group: FriendGroup) => {
+    setSelectedGroupId(group.id);
+    // Pre-populate friends filtered by include_in_group_recs
+    try {
+      const eligible = await getFriendsEligibleForGroupRecs(userId, group.id);
+      setSelectedFriends(eligible);
+    } catch {
+      // Fallback: use all members
+      setSelectedFriends(group.members.map((m) => m.friend_user_id));
+    }
+    setShowGroupSelection(false);
+  };
+
+  /**
+   * Fetch locations of selected friends and current user to calculate group midpoint
+   */
+  const calculateMeetingMidpoint = async (): Promise<{ latitude: number; longitude: number }> => {
+    const locations: { latitude: number; longitude: number }[] = [];
+
+    try {
+      // Fetch current user's home location
+      const { data: currentUserData, error: userError } = await supabase
+        .from('users')
+        .select('home_location')
+        .eq('id', userId)
+        .single();
+
+      if (!userError && currentUserData?.home_location) {
+        // Parse PostGIS POINT format: "POINT(longitude latitude)" or geometry object
+        const userLocation = parseLocation(currentUserData.home_location);
+        if (userLocation) {
+          locations.push(userLocation);
+        }
+      }
+
+      // For demo friends, use mock locations around Dallas
+      const demoFriendLocations: Record<string, { latitude: number; longitude: number }> = {
+        'friend-1': { latitude: 32.8234, longitude: -96.7567 }, // North Dallas
+        'friend-2': { latitude: 32.7512, longitude: -96.8315 }, // Oak Cliff
+        'friend-3': { latitude: 32.7882, longitude: -96.6989 }, // East Dallas
+      };
+
+      // Fetch selected friends' home locations
+      for (const friendId of selectedFriends) {
+        // Check if it's a demo friend
+        if (friendId.startsWith('friend-')) {
+          const demoLocation = demoFriendLocations[friendId];
+          if (demoLocation) {
+            locations.push(demoLocation);
+          }
+          continue;
+        }
+
+        // Fetch real friend's location from database
+        const { data: friendData, error: friendError } = await supabase
+          .from('users')
+          .select('home_location')
+          .eq('id', friendId)
+          .single();
+
+        if (!friendError && friendData?.home_location) {
+          const friendLocation = parseLocation(friendData.home_location);
+          if (friendLocation) {
+            locations.push(friendLocation);
+          }
+        }
+      }
+
+      // If we have locations, calculate the midpoint
+      if (locations.length > 0) {
+        const midpoint = calculateGroupMidpoint(locations);
+        console.log(`[GroupPlanning] Calculated midpoint from ${locations.length} locations:`, midpoint);
+        return midpoint;
+      }
+
+      // Default fallback to Dallas downtown if no locations available
+      console.log('[GroupPlanning] No locations found, using Dallas downtown as fallback');
+      return { latitude: 32.7767, longitude: -96.7970 };
+    } catch (error) {
+      console.error('[GroupPlanning] Error calculating midpoint:', error);
+      // Fallback to Dallas downtown
+      return { latitude: 32.7767, longitude: -96.7970 };
+    }
+  };
+
+  /**
+   * Parse location from various PostGIS formats
+   */
+  const parseLocation = (location: any): { latitude: number; longitude: number } | null => {
+    if (!location) return null;
+
+    // Handle string format: "POINT(-96.7970 32.7767)"
+    if (typeof location === 'string') {
+      const match = location.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/);
+      if (match) {
+        return {
+          longitude: parseFloat(match[1]),
+          latitude: parseFloat(match[2]),
+        };
+      }
+    }
+
+    // Handle object format: { longitude: -96.7970, latitude: 32.7767 }
+    if (typeof location === 'object') {
+      if (location.latitude && location.longitude) {
+        return {
+          latitude: parseFloat(location.latitude),
+          longitude: parseFloat(location.longitude),
+        };
+      }
+      // Handle GeoJSON format
+      if (location.coordinates && Array.isArray(location.coordinates)) {
+        return {
+          longitude: location.coordinates[0],
+          latitude: location.coordinates[1],
+        };
+      }
+    }
+
+    return null;
+  };
 
   const toggleFriend = (friendId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -132,59 +279,175 @@ export function GroupPlanningModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // For MVP, show placeholder suggestions
-      // Phase 2: Call actual group planning service
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Calculate the group midpoint based on all participants' locations
+      const midpoint = await calculateMeetingMidpoint();
+      setGroupMidpoint(midpoint);
+      console.log('[GroupPlanning] Group midpoint calculated:', midpoint);
 
-      const mockSuggestions = [
-        {
-          id: '1',
-          name: 'Klyde Warren Park',
-          category: 'Outdoor',
-          description: 'Great outdoor space perfect for groups',
-          distance: 2.3,
-          rating: 4.7,
-          priceRange: 1,
-          photoUrl: 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=800',
-        },
-        {
-          id: '2',
-          name: 'Reunion Tower',
-          category: 'Sightseeing',
-          description: 'Iconic Dallas landmark with amazing views',
-          distance: 1.8,
-          rating: 4.5,
-          priceRange: 2,
-          photoUrl: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800',
-        },
-        {
-          id: '3',
-          name: 'Deep Ellum',
-          category: 'Entertainment',
-          description: 'Vibrant arts district with food and music',
-          distance: 3.1,
-          rating: 4.6,
-          priceRange: 2,
-          photoUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800',
-        },
-      ];
+      // Map selected tags to Google Places API types
+      const includedTypes = mapTagsToPlaceTypes(selectedTags);
+      console.log('[GroupPlanning] Searching with types:', includedTypes);
 
-      setSuggestions(mockSuggestions);
+      // Search for real places near the group midpoint
+      const places = await searchNearbyPlaces({
+        location: { lat: midpoint.latitude, lng: midpoint.longitude },
+        radius: 8000, // 8km radius to find good options
+        maxResults: 10,
+        includedTypes: includedTypes.length > 0 ? includedTypes : undefined,
+      });
+
+      if (places.length === 0) {
+        // Fallback to mock suggestions if no places found
+        console.log('[GroupPlanning] No places found, using fallback suggestions');
+        const fallbackSuggestions = getFallbackSuggestions();
+        setSuggestions(fallbackSuggestions);
+      } else {
+        // Convert places to suggestion format
+        const realSuggestions = places.slice(0, 5).map((place) => ({
+          id: place.place_id,
+          name: place.name,
+          category: mapPlaceTypesToCategory(place.types || []),
+          description: place.description || place.vicinity || 'Great spot for groups',
+          distance: calculateDistance(midpoint.latitude, midpoint.longitude, place.geometry.location.lat, place.geometry.location.lng),
+          rating: place.rating || 4.0,
+          priceRange: place.price_level || 2,
+          photoUrl: place.photos?.[0]?.photo_reference
+            ? getPlacePhotoUrl(place.photos[0].photo_reference, 800)
+            : 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800',
+          address: place.formatted_address || place.vicinity,
+        }));
+
+        console.log(`[GroupPlanning] Found ${realSuggestions.length} real places`);
+        setSuggestions(realSuggestions);
+      }
+
       setShowSuggestions(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
       console.error('Error finding group activities:', error);
-      handleError(error, 'finding group activities', handleFindActivities);
+      // Use fallback on error
+      const fallbackSuggestions = getFallbackSuggestions();
+      setSuggestions(fallbackSuggestions);
+      setShowSuggestions(true);
     } finally {
       setLoading(false);
     }
   };
 
+  /**
+   * Map selected tags to Google Places API types
+   */
+  const mapTagsToPlaceTypes = (tags: string[]): string[] => {
+    const tagToType: Record<string, string[]> = {
+      'Food & Drink': ['restaurant', 'bar', 'cafe'],
+      'Indoor': ['museum', 'movie_theater', 'bowling_alley'],
+      'Outdoor': ['park', 'tourist_attraction'],
+      'Live Music': ['night_club', 'bar'],
+      'Active': ['gym', 'park', 'bowling_alley'],
+      'Relaxing': ['spa', 'cafe', 'park'],
+      'Cultural': ['museum', 'art_gallery', 'library'],
+      'Family-Friendly': ['park', 'museum', 'zoo', 'aquarium'],
+      'Budget-Friendly': ['park', 'library'],
+    };
+
+    const types = new Set<string>();
+    for (const tag of tags) {
+      const mappedTypes = tagToType[tag];
+      if (mappedTypes) {
+        mappedTypes.forEach((t) => types.add(t));
+      }
+    }
+
+    return Array.from(types);
+  };
+
+  /**
+   * Map Google Place types to a display category
+   */
+  const mapPlaceTypesToCategory = (types: string[]): string => {
+    const typeToCategory: Record<string, string> = {
+      restaurant: 'Dining',
+      cafe: 'Coffee',
+      bar: 'Nightlife',
+      park: 'Outdoor',
+      museum: 'Culture',
+      movie_theater: 'Entertainment',
+      night_club: 'Nightlife',
+      gym: 'Fitness',
+      spa: 'Wellness',
+      tourist_attraction: 'Sightseeing',
+      bowling_alley: 'Entertainment',
+      zoo: 'Outdoor',
+      aquarium: 'Outdoor',
+    };
+
+    for (const type of types) {
+      if (typeToCategory[type]) {
+        return typeToCategory[type];
+      }
+    }
+
+    return 'Activities';
+  };
+
+  /**
+   * Calculate distance between two coordinates in miles
+   */
+  const calculateDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 3959; // Earth's radius in miles
+    const dLat = ((lat2 - lat1) * Math.PI) / 180;
+    const dLng = ((lng2 - lng1) * Math.PI) / 180;
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return Math.round(R * c * 10) / 10;
+  };
+
+  /**
+   * Get fallback suggestions when API fails
+   */
+  const getFallbackSuggestions = () => [
+    {
+      id: 'fallback-1',
+      name: 'Klyde Warren Park',
+      category: 'Outdoor',
+      description: 'Great outdoor space perfect for groups',
+      distance: 2.3,
+      rating: 4.7,
+      priceRange: 1,
+      photoUrl: 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=800',
+    },
+    {
+      id: 'fallback-2',
+      name: 'Reunion Tower',
+      category: 'Sightseeing',
+      description: 'Iconic landmark with amazing views',
+      distance: 1.8,
+      rating: 4.5,
+      priceRange: 2,
+      photoUrl: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800',
+    },
+    {
+      id: 'fallback-3',
+      name: 'Deep Ellum',
+      category: 'Entertainment',
+      description: 'Vibrant arts district with food and music',
+      distance: 3.1,
+      rating: 4.6,
+      priceRange: 2,
+      photoUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800',
+    },
+  ];
+
   const handleSelectActivity = async (activity: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      // Create group plan
+      // Use the calculated group midpoint, or fallback to Dallas
+      const meetingPoint = groupMidpoint || { latitude: 32.7767, longitude: -96.7970 };
+
+      // Create group plan with the calculated midpoint
       const { data: planData, error: planError } = await supabase
         .from('group_plans')
         .insert({
@@ -194,7 +457,7 @@ export function GroupPlanningModal({
           description: activity.description,
           suggested_time: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
           duration_minutes: 120,
-          meeting_location: `POINT(${-96.797} ${32.7767})`, // Dallas coordinates
+          meeting_location: `POINT(${meetingPoint.longitude} ${meetingPoint.latitude})`, // Calculated midpoint
           meeting_address: activity.name,
           constraint_tags: selectedTags,
           status: 'proposed',
@@ -277,7 +540,50 @@ export function GroupPlanningModal({
           </View>
 
           <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-            {!showSuggestions ? (
+            {showGroupSelection && friendGroups.length > 0 ? (
+              <>
+                {/* Step 0: Select a Group or Choose Individually */}
+                <View style={[styles.card, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+                  <Text style={[Typography.titleLarge, { color: colors.text, marginBottom: 8 }]}>
+                    Start from a Group?
+                  </Text>
+                  <Text style={[Typography.bodySmall, { color: colors.icon, marginBottom: 12 }]}>
+                    Select a friend group or choose individual friends
+                  </Text>
+
+                  {friendGroups.map((group) => (
+                    <TouchableOpacity
+                      key={group.id}
+                      style={[
+                        styles.groupOption,
+                        { borderColor: colors.icon + '30' },
+                      ]}
+                      onPress={() => selectGroup(group)}
+                    >
+                      <Text style={{ fontSize: 20, marginRight: 8 }}>{group.emoji || '👥'}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[Typography.bodyMedium, { color: colors.text }]}>{group.name}</Text>
+                        <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                          {group.members.length} member{group.members.length !== 1 ? 's' : ''}
+                        </Text>
+                      </View>
+                      <Ionicons name="chevron-forward" size={20} color={colors.icon} />
+                    </TouchableOpacity>
+                  ))}
+
+                  <TouchableOpacity
+                    style={[styles.groupOption, { borderColor: BrandColors.loopBlue + '40' }]}
+                    onPress={() => setShowGroupSelection(false)}
+                  >
+                    <Ionicons name="people-outline" size={20} color={BrandColors.loopBlue} style={{ marginRight: 8 }} />
+                    <Text style={[Typography.bodyMedium, { color: BrandColors.loopBlue, flex: 1 }]}>
+                      Choose Individual Friends
+                    </Text>
+                    <Ionicons name="chevron-forward" size={20} color={BrandColors.loopBlue} />
+                  </TouchableOpacity>
+                </View>
+              </>
+            ) : !showSuggestions ? (
               <>
                 {/* Select Friends */}
                 <View style={[styles.card, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
@@ -571,6 +877,14 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     marginBottom: Spacing.md,
     ...Shadows.sm,
+  },
+  groupOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    marginBottom: Spacing.sm,
   },
   friendsList: {
     flexDirection: 'row',

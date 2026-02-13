@@ -19,12 +19,11 @@ import type { Activity, UnifiedActivity, SearchParams as MultiSourceSearchParams
 // Multi-source integration
 import { activitySources, isMixedFeedEnabled } from './activity-source';
 import './google-places-service'; // Import to ensure Google Places service is registered
-// TEMPORARILY DISABLED (Fix: Reduce initialization complexity during testing)
-// import './ticketmaster-service'; // Import to ensure Ticketmaster service is registered
+import './ticketmaster-service'; // Import to ensure Ticketmaster service is registered
 // import './yelp-service'; // Import to ensure Yelp service is registered (postponed - no free tier)
 // import './groupon-service'; // Import to ensure Groupon service is registered
 // import './songkick-service'; // Import to ensure Songkick service is registered (postponed - $500/mo)
-// import './eventbrite-service'; // Import to ensure Eventbrite service is registered
+// import './eventbrite-service'; // Import to ensure Eventbrite service is registered (deprecated API)
 
 // City-based caching (Phase 4)
 import { detectUserCity, detectUserCityWithFallback } from './city-detection';
@@ -351,6 +350,12 @@ async function searchPlacesByText(params: {
   radius: number;
   maxResults?: number;
 }): Promise<PlaceResult[]> {
+  // COST CONTROL: Block API calls if disabled (use cache only)
+  if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    console.warn('🚫 Google Places API disabled (cost control) - searchPlacesByText blocked. Use cached data.');
+    return [];
+  }
+
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
   if (!API_KEY) {
@@ -453,6 +458,12 @@ export async function searchNearbyPlaces(params: {
   maxResults?: number;
   includedTypes?: string[]; // Filter by place types (e.g., ['restaurant', 'cafe'])
 }): Promise<PlaceResult[]> {
+  // COST CONTROL: Block API calls if disabled (use cache only)
+  if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    console.warn('🚫 Google Places API disabled (cost control) - searchNearbyPlaces blocked. Use cached data.');
+    return [];
+  }
+
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
   if (!API_KEY) {
@@ -477,31 +488,37 @@ export async function searchNearbyPlaces(params: {
     console.log(`📍 Location: ${location.lat}, ${location.lng}, Radius: ${radius}m`);
 
     console.log('📸 DEBUG: Requesting photos in field mask...');
-    // Call NEW Places API (New) - searchNearby endpoint
-    const response = await fetch('https://places.googleapis.com/v1/places:searchNearby', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': API_KEY,
-        // Request essential fields including photos for visual feed
-        // CRITICAL: Must include places.photos to get photo data
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.priceLevel,places.photos,places.currentOpeningHours,places.internationalPhoneNumber,places.websiteUri',
-      },
-      body: JSON.stringify({
-        locationRestriction: {
-          circle: {
-            center: {
-              latitude: location.lat,
-              longitude: location.lng,
-            },
-            radius: radius,
-          },
+
+    // Import rate limiter for controlled API access
+    const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
+
+    // Call NEW Places API (New) - searchNearby endpoint with rate limiting
+    const response = await rateLimitedPlacesRequest(() =>
+      fetch('https://places.googleapis.com/v1/places:searchNearby', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': API_KEY,
+          // Request essential fields including photos for visual feed
+          // CRITICAL: Must include places.photos to get photo data
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types,places.rating,places.userRatingCount,places.priceLevel,places.photos,places.currentOpeningHours,places.internationalPhoneNumber,places.websiteUri',
         },
-        // Filter by user interests if provided
-        ...(includedTypes && includedTypes.length > 0 ? { includedTypes } : {}),
-        maxResultCount: Math.min(maxResults, 20), // Google max is 20
-      }),
-    });
+        body: JSON.stringify({
+          locationRestriction: {
+            circle: {
+              center: {
+                latitude: location.lat,
+                longitude: location.lng,
+              },
+              radius: radius,
+            },
+          },
+          // Filter by user interests if provided
+          ...(includedTypes && includedTypes.length > 0 ? { includedTypes } : {}),
+          maxResultCount: Math.min(maxResults, 20), // Google max is 20
+        }),
+      })
+    );
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -2305,56 +2322,87 @@ function generateExplanation(params: {
   }
 
   // REGULAR PLACE EXPLANATIONS (Google Places, restaurants, etc.)
+  // v3.0 - Intelligent, compelling explanations that make Loop feel premium
 
-  // 1. LOCATION CONTEXT (highest priority)
-  const isOnRoute = scoreBreakdown.locationScore >= 15; // "on route" bonus from scoring
-
-  if (isOnRoute) {
-    parts.push("On your way home");
-  } else if (distance <= 2) {
-    parts.push("Right near you");
-  } else if (distance <= 5) {
-    parts.push(`${distance.toFixed(1)} mi away`);
-  }
-
-  // 2. TIME CONTEXT
-  const now = new Date();
-  const timeContext = getTimeContext(now.getHours());
-
-  // Could add free time slot detection here in future
-  // For now, use time-of-day context
-  if (timeContext === 'morning' && (category.includes('cafe') || category.includes('bakery'))) {
-    parts.push("perfect morning spot");
-  } else if (timeContext === 'afternoon' && category.includes('restaurant')) {
-    parts.push("great lunch option");
-  } else if (timeContext === 'evening' && (category.includes('bar') || category.includes('restaurant'))) {
-    parts.push("ideal for tonight");
-  }
-
-  // 3. INTEREST MATCH
   const interests = user.interests || [];
+  const rating = place.rating || 0;
+  const reviewCount = place.user_ratings_total || 0;
+  const isOnRoute = scoreBreakdown.locationScore >= 15;
+  const now = new Date();
+  const hour = now.getHours();
+
+  // Find matching interest
   const matchingInterest = interests.find(interest =>
     category.toLowerCase().includes(interest.toLowerCase()) ||
     place.name.toLowerCase().includes(interest.toLowerCase())
   );
 
-  if (matchingInterest) {
-    parts.push(`you love ${matchingInterest}`);
-  } else if (place.rating && place.rating >= 4.5) {
-    parts.push(`highly rated (${place.rating}★)`);
-  } else if (interests.length > 0) {
-    parts.push(`matches your vibe`);
+  // 1. BUILD COMPELLING OPENING (what makes this special)
+  if (matchingInterest && rating >= 4.5 && reviewCount >= 100) {
+    // Strong match: interest + highly rated + popular
+    parts.push(`Perfect for your ${matchingInterest} craving — ${rating}★ with ${reviewCount}+ reviews`);
+  } else if (matchingInterest && rating >= 4.0) {
+    // Good match: interest + decent rating
+    parts.push(`Great ${matchingInterest} pick — ${rating}★ local favorite`);
+  } else if (rating >= 4.7 && reviewCount >= 200) {
+    // Hidden gem: exceptional rating and popularity
+    parts.push(`Local gem — ${rating}★ with ${reviewCount}+ glowing reviews`);
+  } else if (rating >= 4.5 && reviewCount >= 50) {
+    // Solid choice: well-rated
+    parts.push(`Highly rated ${category.toLowerCase()} spot — ${rating}★`);
+  } else if (matchingInterest) {
+    // Interest match without strong ratings
+    parts.push(`Matches your love of ${matchingInterest}`);
   }
 
-  // Combine with smart punctuation
+  // 2. ADD CONVENIENCE CONTEXT (if we have room and it's relevant)
+  if (parts.length < 2) {
+    if (isOnRoute) {
+      parts.push("right on your commute");
+    } else if (distance <= 0.5) {
+      parts.push("just steps away");
+    } else if (distance <= 1.5) {
+      parts.push("quick walk from you");
+    } else if (distance <= 3) {
+      parts.push("short drive away");
+    }
+  }
+
+  // 3. ADD TIME CONTEXT (if relevant to the category)
+  if (parts.length < 2) {
+    const isCafe = category.includes('cafe') || category.includes('coffee') || category.includes('bakery');
+    const isRestaurant = category.includes('restaurant') || category.includes('food');
+    const isBar = category.includes('bar') || category.includes('nightlife') || category.includes('pub');
+    const isBreakfast = category.includes('breakfast') || category.includes('brunch');
+
+    if (hour >= 6 && hour < 11 && (isCafe || isBreakfast)) {
+      parts.push("perfect morning spot");
+    } else if (hour >= 11 && hour < 14 && isRestaurant) {
+      parts.push("ideal lunch choice");
+    } else if (hour >= 17 && hour < 20 && isRestaurant) {
+      parts.push("great dinner option");
+    } else if (hour >= 18 && hour < 24 && isBar) {
+      parts.push("perfect for tonight");
+    }
+  }
+
+  // 4. FALLBACK: Build something reasonable if we have nothing
   if (parts.length === 0) {
-    return `Recommended for you`;
-  } else if (parts.length === 1) {
+    if (rating >= 4.0) {
+      parts.push(`Well-rated ${category.toLowerCase()} — ${rating}★`);
+    } else if (distance <= 5) {
+      parts.push(`${category} nearby — worth checking out`);
+    } else {
+      parts.push(`Trending ${category.toLowerCase()} in your area`);
+    }
+  }
+
+  // Combine intelligently
+  if (parts.length === 1) {
     return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
-  } else if (parts.length === 2) {
-    return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + ' - ' + parts[1];
   } else {
-    return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + ' - ' + parts.slice(1).join(' - ');
+    // Join with em-dash for elegant separation
+    return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + ' — ' + parts[1];
   }
 }
 
@@ -2619,4 +2667,229 @@ export async function getRecommendationsByCategory(
     ...params,
     maxResults: 10,
   });
+}
+
+// ─── Group Recommendations ──────────────────────────────────────────────
+
+export interface GroupRecommendationParams {
+  groupId: string;
+  participants: {
+    userId: string;
+    name: string;
+    homeLocation?: PlaceLocation;
+    interests: string[];
+    preferences: { budget_level?: number; max_distance_miles?: number };
+  }[];
+  userLocation: PlaceLocation;
+  tags?: string[];
+  maxDistance?: number;
+  maxResults?: number;
+}
+
+/**
+ * Generate group-scored recommendations.
+ * Scoring differences from solo:
+ * - Interest averaging: shared by all → 2x, majority (>50%) → 1.5x, any single → 1x
+ * - Budget: use LOWEST budget_level in group (most conservative)
+ * - Distance: penalise based on MAX travel distance (worst-case)
+ * - Group-friendly boost: +10 for restaurants/bars/parks, -5 for solo-oriented
+ * - Tag filtering: constraint tags mapped to Google Places types
+ */
+export async function generateGroupRecommendations(
+  params: GroupRecommendationParams
+): Promise<ScoredRecommendation[]> {
+  const {
+    participants,
+    userLocation,
+    tags = [],
+    maxDistance = 5,
+    maxResults = 10,
+  } = params;
+
+  if (participants.length === 0) return [];
+
+  // Calculate midpoint from participant home locations
+  const locations = participants
+    .filter((p) => p.homeLocation)
+    .map((p) => p.homeLocation!);
+
+  const midpoint: PlaceLocation =
+    locations.length > 0
+      ? {
+          lat: locations.reduce((s, l) => s + l.lat, 0) / locations.length,
+          lng: locations.reduce((s, l) => s + l.lng, 0) / locations.length,
+        }
+      : userLocation;
+
+  // Map tags to Google Places types
+  const tagToType: Record<string, string[]> = {
+    'Food & Drink': ['restaurant', 'bar', 'cafe'],
+    'Indoor': ['museum', 'movie_theater', 'bowling_alley'],
+    'Outdoor': ['park', 'tourist_attraction'],
+    'Live Music': ['night_club', 'bar'],
+    'Active': ['gym', 'park', 'bowling_alley'],
+    'Relaxing': ['spa', 'cafe', 'park'],
+    'Cultural': ['museum', 'art_gallery', 'library'],
+    'Family-Friendly': ['park', 'museum', 'zoo', 'aquarium'],
+    'Budget-Friendly': ['park', 'library'],
+    'Evening': ['restaurant', 'bar', 'night_club'],
+    'Weekend': ['park', 'museum', 'restaurant'],
+    'Dog-Friendly': ['park'],
+  };
+
+  const typeFilter = new Set<string>();
+  for (const tag of tags) {
+    const types = tagToType[tag];
+    if (types) types.forEach((t) => typeFilter.add(t));
+  }
+
+  // Search nearby places around midpoint
+  const radiusMeters = maxDistance * 1609.34;
+  const places = await searchNearbyPlaces({
+    location: midpoint,
+    radius: Math.min(radiusMeters, 50000),
+    type: typeFilter.size > 0 ? [...typeFilter][0] : undefined,
+    maxResults: 50,
+  });
+
+  if (places.length === 0) return [];
+
+  // Collect all interests
+  const allInterests = participants.flatMap((p) => p.interests || []);
+  const interestCounts = new Map<string, number>();
+  for (const interest of allInterests) {
+    interestCounts.set(interest, (interestCounts.get(interest) || 0) + 1);
+  }
+
+  // Conservative budget: lowest in group
+  const lowestBudget = Math.min(
+    ...participants.map((p) => p.preferences?.budget_level ?? 3)
+  );
+
+  // Group-friendly categories
+  const GROUP_FRIENDLY_TYPES = new Set([
+    'restaurant', 'bar', 'cafe', 'park', 'night_club', 'bowling_alley',
+    'amusement_park', 'zoo', 'aquarium', 'tourist_attraction', 'museum',
+  ]);
+  const SOLO_ORIENTED_TYPES = new Set([
+    'spa', 'yoga_studio', 'gym', 'fitness_center', 'library',
+  ]);
+
+  // Score each place
+  const scored: ScoredRecommendation[] = [];
+
+  for (const place of places) {
+    const category = mapPlaceTypeToCategory(place.types);
+
+    // Filter by tag types if tags specified
+    if (typeFilter.size > 0) {
+      const matchesAnyType = place.types.some((t) => typeFilter.has(t));
+      if (!matchesAnyType) continue;
+    }
+
+    // Budget filter
+    if (place.price_level !== undefined && place.price_level > lowestBudget) continue;
+
+    // ── Interest Score (0-40) ──
+    let interestScore = 0;
+    const matchCount = interestCounts.get(category) || 0;
+    if (participants.length === 0) {
+      interestScore = 5; // No participants → base score
+    } else if (matchCount === participants.length) {
+      interestScore = 40; // Shared by all → 2x weight (20 * 2)
+    } else if (matchCount > participants.length / 2) {
+      interestScore = 30; // Majority → 1.5x weight (20 * 1.5)
+    } else if (matchCount > 0) {
+      interestScore = 20; // Any single → 1x weight
+    } else {
+      interestScore = 5; // No match but still eligible
+    }
+
+    // ── Location Score (0-20) ──
+    // Penalise based on MAX travel distance (worst-case member)
+    let maxMemberDistance = 0;
+    const placeLocation: PlaceLocation = {
+      lat: place.geometry.location.lat,
+      lng: place.geometry.location.lng,
+    };
+
+    for (const p of participants) {
+      const from = p.homeLocation || userLocation;
+      const dist = calculateDistance(from, placeLocation);
+      if (dist > maxMemberDistance) maxMemberDistance = dist;
+    }
+
+    let locationScore = 0;
+    if (maxMemberDistance <= 1) locationScore = 20;
+    else if (maxMemberDistance <= 3) locationScore = 15;
+    else if (maxMemberDistance <= maxDistance) locationScore = 10;
+    else locationScore = 5;
+
+    // ── Group-friendly Boost (0-10 or -5) ──
+    let groupFriendlyScore = 0;
+    if (place.types.some((t) => GROUP_FRIENDLY_TYPES.has(t))) {
+      groupFriendlyScore = 10;
+    } else if (place.types.some((t) => SOLO_ORIENTED_TYPES.has(t))) {
+      groupFriendlyScore = -5;
+    }
+
+    // ── Rating Score (0-15) ──
+    const ratingScore = place.rating ? Math.min(15, Math.round((place.rating / 5) * 15)) : 5;
+
+    // ── Final Score ──
+    const totalScore = interestScore + locationScore + groupFriendlyScore + ratingScore;
+
+    // Get photo
+    let photoUrl: string | undefined;
+    if (place.photos?.[0]?.photo_reference) {
+      const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+      if (apiKey) {
+        photoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${place.photos[0].photo_reference}&key=${apiKey}`;
+      }
+    }
+    if (!photoUrl) {
+      photoUrl = await getCachedUnsplashImage(category);
+    }
+
+    scored.push({
+      place,
+      score: totalScore,
+      scoreBreakdown: {
+        baseScore: interestScore,
+        locationScore,
+        timeScore: 0,
+        feedbackScore: 0,
+        collaborativeScore: 0,
+        eventUrgencyScore: 0,
+        sponsoredBoost: 0,
+        finalScore: totalScore,
+      },
+      distance: maxMemberDistance,
+      category,
+      photoUrl,
+      aiExplanation: buildGroupExplanation(place.name, category, participants.length, matchCount, maxMemberDistance),
+      isSponsored: false,
+    });
+  }
+
+  // Sort by score descending
+  scored.sort((a, b) => b.score - a.score);
+
+  return scored.slice(0, maxResults);
+}
+
+function buildGroupExplanation(
+  placeName: string,
+  category: string,
+  groupSize: number,
+  interestMatchCount: number,
+  maxDistance: number
+): string {
+  if (interestMatchCount === groupSize) {
+    return `Everyone in the group loves ${category.toLowerCase()}! ${placeName} is a great fit.`;
+  }
+  if (interestMatchCount > groupSize / 2) {
+    return `Most of the group enjoys ${category.toLowerCase()}. ${placeName} is ${maxDistance.toFixed(1)} mi from the farthest member.`;
+  }
+  return `${placeName} is a group-friendly ${category.toLowerCase()} spot ${maxDistance.toFixed(1)} mi from the farthest member.`;
 }

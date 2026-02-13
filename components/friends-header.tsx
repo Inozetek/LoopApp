@@ -3,31 +3,28 @@
  *
  * Section title header for Friends tab.
  * Features:
- * - Bold section title "Friends"
+ * - Clean "Groops" text header (Instagram/Snapchat style)
  * - Add friend button on right
- * - Settings gear on left
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { BrandColors, Spacing, Typography } from '@/constants/brand';
+import { BrandColors, Spacing } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
 interface FriendsHeaderProps {
   title?: string;
   onAddPress?: () => void;
-  onSettingsPress?: () => void;
   notificationCount?: number;
 }
 
 export function FriendsHeader({
   title = 'Friends',
   onAddPress,
-  onSettingsPress,
   notificationCount = 0,
 }: FriendsHeaderProps) {
   const colorScheme = useColorScheme();
@@ -39,29 +36,14 @@ export function FriendsHeader({
     onAddPress?.();
   };
 
-  const handleSettingsPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onSettingsPress?.();
-  };
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
-      {/* Left Side - Settings */}
-      <View style={styles.leftSection}>
-        {onSettingsPress && (
-          <TouchableOpacity
-            onPress={handleSettingsPress}
-            style={styles.iconButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="settings-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
-        )}
-      </View>
+      {/* Left Side */}
+      <View style={styles.leftSection} />
 
-      {/* Center - Title */}
+      {/* Center - Clean "Groops" text (Instagram/Snapchat style) */}
       <View style={styles.titleContainer}>
-        <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
+        <Text style={[styles.brandTitle, { color: colors.textSecondary || colors.text }]}>Groops</Text>
         {notificationCount > 0 && (
           <View style={styles.badge}>
             <Text style={styles.badgeText}>
@@ -71,15 +53,15 @@ export function FriendsHeader({
         )}
       </View>
 
-      {/* Right Side - Add Friend */}
+      {/* Right Side - Add / Create */}
       <View style={styles.rightSection}>
         {onAddPress && (
           <TouchableOpacity
             onPress={handleAddPress}
-            style={styles.iconButton}
+            style={styles.addButton}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="person-add-outline" size={26} color={BrandColors.loopBlue} />
+            <Ionicons name="add-circle-outline" size={26} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
@@ -108,10 +90,45 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.sm,
   },
-  title: {
-    ...Typography.titleLarge,
-    fontWeight: '700',
+  // ============================================================
+  // FONT VARIANTS TO TEST - Uncomment one at a time
+  // Keep in sync with calendar-header.tsx
+  // ============================================================
+
+  // VARIANT 1: System Default (San Francisco iOS / Roboto Android)
+  // Clean, native feel - what most apps use
+  brandTitle: {
+    fontSize: 22,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
+
+  // VARIANT 2: Avenir Next (iOS) - Snapchat's original font
+  // Modern, geometric, slightly playful
+  // brandTitle: {
+  //   fontSize: 22,
+  //   fontFamily: Platform.OS === 'ios' ? 'Avenir Next' : 'sans-serif-medium',
+  //   fontWeight: '600',
+  //   letterSpacing: 0.3,
+  // },
+
+  // VARIANT 3: Helvetica Neue - Classic, clean
+  // Used by many apps, very neutral
+  // brandTitle: {
+  //   fontSize: 22,
+  //   fontFamily: Platform.OS === 'ios' ? 'Helvetica Neue' : 'sans-serif',
+  //   fontWeight: '500',
+  //   letterSpacing: 0.5,
+  // },
+
+  // VARIANT 4: Georgia (Serif) - Editorial, premium feel
+  // Different vibe - more like a magazine
+  // brandTitle: {
+  //   fontSize: 24,
+  //   fontFamily: Platform.OS === 'ios' ? 'Georgia' : 'serif',
+  //   fontWeight: '600',
+  //   letterSpacing: 0,
+  // },
   badge: {
     backgroundColor: BrandColors.loopBlue,
     borderRadius: 10,
@@ -127,10 +144,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rightSection: {
-    width: 40,
+    width: 44,
     alignItems: 'flex-end',
   },
-  iconButton: {
+  addButton: {
     padding: Spacing.xs,
+    marginRight: -2,
+    marginTop: 1,
   },
 });

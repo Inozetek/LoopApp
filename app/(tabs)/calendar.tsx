@@ -211,6 +211,7 @@ export default function CalendarScreen() {
   const colorScheme = useColorScheme();
   const router = useRouter();
   const isDark = colorScheme === 'dark';
+  const colors = Colors[colorScheme ?? 'light'];
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const now = new Date();
@@ -897,29 +898,34 @@ export default function CalendarScreen() {
         <>
           {/* Calendar */}
           <Calendar
+            key={colorScheme}
             current={selectedDate}
             onDayPress={onDayPress}
             markedDates={markedDates}
             theme={{
-              calendarBackground: isDark ? BrandColors.darkGray : BrandColors.white,
+              calendarBackground: Colors[colorScheme ?? 'light'].background,
               textSectionTitleColor: isDark ? BrandColors.veryLightGray : BrandColors.lightGray,
               selectedDayBackgroundColor: BrandColors.loopBlue,
               selectedDayTextColor: BrandColors.white,
               todayTextColor: BrandColors.loopBlue,
-              dayTextColor: isDark ? BrandColors.offWhite : BrandColors.almostBlack,
+              dayTextColor: Colors[colorScheme ?? 'light'].text,
               textDisabledColor: isDark ? BrandColors.lightGray : '#d9e1e8',
-              monthTextColor: isDark ? BrandColors.white : BrandColors.black,
+              monthTextColor: Colors[colorScheme ?? 'light'].text,
+              arrowColor: Colors[colorScheme ?? 'light'].text,
               textMonthFontSize: 18,
               textMonthFontWeight: '600',
             }}
-            style={styles.calendar}
+            style={[styles.calendar, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}
           />
 
           {/* Events List */}
-          <ScrollView style={styles.eventsContainer}>
+          <ScrollView
+            style={styles.eventsContainer}
+            contentContainerStyle={{ paddingBottom: 100 }}
+          >
         <View style={styles.eventsHeader}>
           <Text style={[Typography.titleLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-            {new Date(selectedDate).toLocaleDateString('en-US', {
+            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
               weekday: 'long',
               month: 'long',
               day: 'numeric',
@@ -945,9 +951,19 @@ export default function CalendarScreen() {
             <Text style={[Typography.bodyLarge, styles.emptyText, { color: Colors[colorScheme ?? 'light'].icon }]}>
               No activities scheduled
             </Text>
-            <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center' }]}>
-              Tap the + button to add a task
+            <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center', marginBottom: Spacing.lg }]}>
+              Add something to your day
             </Text>
+            <TouchableOpacity
+              style={styles.createTaskButton}
+              onPress={openCreateModal}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={Colors[colorScheme ?? 'light'].text} />
+              <Text style={[styles.createTaskButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
+                Create Task
+              </Text>
+            </TouchableOpacity>
           </View>
         ) : (
           <Animated.View style={{ opacity: fadeAnim }}>
@@ -961,7 +977,7 @@ export default function CalendarScreen() {
                   style={[
                     styles.eventCard,
                     {
-                      backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white,
+                      backgroundColor: colors.card,
                       borderLeftColor: getCategoryColor(event.category),
                     },
                   ]}
@@ -1059,7 +1075,7 @@ export default function CalendarScreen() {
           <View style={styles.loopDateHeader}>
             <Ionicons name="calendar" size={20} color={BrandColors.loopBlue} />
             <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text, marginLeft: 8 }]}>
-              {new Date(selectedDate).toLocaleDateString('en-US', {
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
@@ -1122,7 +1138,7 @@ export default function CalendarScreen() {
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               style={{ flex: 1, justifyContent: 'flex-end' }}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white }]}>
+              <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
                     Create Task
@@ -1434,7 +1450,7 @@ export default function CalendarScreen() {
               behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
               style={{ flex: 1, justifyContent: 'flex-end' }}
             >
-              <View style={[styles.modalContent, { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white }]}>
+              <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
                     Edit Task
@@ -1681,7 +1697,7 @@ export default function CalendarScreen() {
           <View
             style={[
               styles.menuDrawer,
-              { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white },
+              { backgroundColor: colors.card },
             ]}
           >
             {/* Menu Header */}
@@ -1796,7 +1812,7 @@ export default function CalendarScreen() {
         onRequestClose={() => setShowSyncPreview(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.syncPreviewModal, { backgroundColor: isDark ? BrandColors.darkGray : BrandColors.white }]}>
+          <View style={[styles.syncPreviewModal, { backgroundColor: colors.card }]}>
             {/* Header */}
             <View style={styles.syncPreviewHeader}>
               <View>
@@ -2005,6 +2021,20 @@ const styles = StyleSheet.create({
   emptyText: {
     marginTop: Spacing.md,
     marginBottom: Spacing.sm,
+  },
+  createTaskButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
+    borderColor: 'rgba(0,0,0,0.15)',
+    gap: Spacing.xs,
+  },
+  createTaskButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
   },
   eventCard: {
     borderRadius: BorderRadius.md,

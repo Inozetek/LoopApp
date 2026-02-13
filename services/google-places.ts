@@ -31,6 +31,9 @@ export async function searchNearbyActivities(
   }
 
   try {
+    // Import rate limiter for controlled API access
+    const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
+
     // New Places API (New) uses POST with JSON body
     const requestBody: any = {
       includedTypes: type ? [type] : ['restaurant', 'cafe', 'bar', 'museum', 'park', 'gym'],
@@ -50,15 +53,17 @@ export async function searchNearbyActivities(
       requestBody.textQuery = keyword;
     }
 
-    const response = await fetch(`${PLACES_API_BASE}:searchNearby`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.photos,places.currentOpeningHours,places.editorialSummary,places.reviews',
-      },
-      body: JSON.stringify(requestBody),
-    });
+    const response = await rateLimitedPlacesRequest(() =>
+      fetch(`${PLACES_API_BASE}:searchNearby`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.photos,places.currentOpeningHours,places.editorialSummary,places.reviews',
+        },
+        body: JSON.stringify(requestBody),
+      })
+    );
 
     const data = await response.json();
 
@@ -80,21 +85,32 @@ export async function searchNearbyActivities(
  * Get detailed information about a specific place using new Places API
  */
 export async function getPlaceDetails(placeId: string): Promise<GooglePlaceDetails | null> {
+  // COST CONTROL: Block API calls if disabled (use cache only)
+  if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    console.warn('🚫 Google Places API disabled (cost control) - getPlaceDetails blocked. Use cached data.');
+    return null;
+  }
+
   if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'your_key_here') {
     console.log('📍 API key not configured');
     return null;
   }
 
   try {
-    // New Places API (New) format
-    const response = await fetch(`${PLACES_API_BASE}/${placeId}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-        'X-Goog-FieldMask': 'id,displayName,formattedAddress,internationalPhoneNumber,websiteUri,rating,userRatingCount,priceLevel,location,photos,currentOpeningHours,types,reviews,editorialSummary',
-      },
-    });
+    // Import rate limiter for controlled API access
+    const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
+
+    // New Places API (New) format with rate limiting
+    const response = await rateLimitedPlacesRequest(() =>
+      fetch(`${PLACES_API_BASE}/${placeId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+          'X-Goog-FieldMask': 'id,displayName,formattedAddress,internationalPhoneNumber,websiteUri,rating,userRatingCount,priceLevel,location,photos,currentOpeningHours,types,reviews,editorialSummary',
+        },
+      })
+    );
 
     const data = await response.json();
 
@@ -143,9 +159,21 @@ export async function getPlaceDetails(placeId: string): Promise<GooglePlaceDetai
 }
 
 /**
- * Get URL for a place photo (supports both old and new API formats)
+ * Get URL for a place photo (supports multiple formats)
+ * - Full URL (new API v1 or Ticketmaster): Return as-is
+ * - places/... format: Convert to new API URL
+ * - Legacy reference: Convert to old API URL
  */
 export function getPlacePhotoUrl(photoReference: string, maxWidth: number = 800): string {
+  if (!photoReference) {
+    return `https://via.placeholder.com/${maxWidth}x${Math.floor(maxWidth * 0.6)}`;
+  }
+
+  // Already a full URL - return as-is (new API v1 returns full URLs, Ticketmaster too)
+  if (photoReference.startsWith('http://') || photoReference.startsWith('https://')) {
+    return photoReference;
+  }
+
   if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'your_key_here') {
     // Return placeholder image
     return `https://via.placeholder.com/${maxWidth}x${Math.floor(maxWidth * 0.6)}`;
@@ -354,6 +382,12 @@ export interface PlaceReview {
  * Uses the Google Places API (New) to get up to 5 most recent reviews
  */
 export async function getPlaceReviews(placeId: string): Promise<PlaceReview[]> {
+  // COST CONTROL: Block API calls if disabled (use cache only)
+  if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    console.warn('🚫 Google Places API disabled (cost control) - getPlaceReviews blocked.');
+    return [];
+  }
+
   if (!GOOGLE_PLACES_API_KEY || GOOGLE_PLACES_API_KEY === 'your_key_here') {
     console.error('❌ No Google Places API key found for reviews');
     return [];
@@ -362,16 +396,21 @@ export async function getPlaceReviews(placeId: string): Promise<PlaceReview[]> {
   try {
     console.log(`📝 Fetching reviews for place: ${placeId}`);
 
-    const response = await fetch(
-      `${PLACES_API_BASE}/${placeId}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
-          'X-Goog-FieldMask': 'reviews', // Only request reviews field to minimize cost
-        },
-      }
+    // Import rate limiter for controlled API access
+    const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
+
+    const response = await rateLimitedPlacesRequest(() =>
+      fetch(
+        `${PLACES_API_BASE}/${placeId}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
+            'X-Goog-FieldMask': 'reviews', // Only request reviews field to minimize cost
+          },
+        }
+      )
     );
 
     if (!response.ok) {

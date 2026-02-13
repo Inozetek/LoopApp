@@ -11,23 +11,25 @@ const tintColorDark = '#00A0E3'; // Darker Neon Cyan (same in dark mode for cons
 export const Colors = {
   light: {
     text: '#11181C',
-    background: '#fff',
+    textSecondary: '#2C3338',      // Very dark gray for headers (slightly lighter than text)
+    background: '#F5F5F5',         // Slightly darker white like eBay
     tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
+    icon: '#3A3F44',               // Darker gray for navbar icons (was #687076)
+    tabIconDefault: '#3A3F44',     // Darker gray for inactive tabs (was #687076)
     tabIconSelected: tintColorLight,
     card: '#ffffff',
     border: '#e0e0e0',
   },
   dark: {
     text: '#ECEDEE',
-    background: '#151718',
+    textSecondary: '#C8CACC',      // Slightly dimmer than pure white for headers
+    background: '#0D0D0D',         // Darker background for more navbar contrast (was #151718)
     tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
+    icon: '#FFFFFF',               // White icons like eBay (was #6B7075)
+    tabIconDefault: '#FFFFFF',     // White inactive tabs like eBay (was #6B7075)
     tabIconSelected: tintColorDark,
-    card: '#1f2123',
-    border: '#2f3133',
+    card: '#161618',               // Match tab bar for cohesive dark mode (was #1A1A1A)
+    border: '#2A2A2C',             // Darker, subtler border (was #2f3133)
   },
 };
 

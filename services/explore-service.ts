@@ -28,9 +28,39 @@ function recommendationToExploreItem(rec: ScoredRecommendation): ExploreItem {
   const place = rec.place;
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
   const photoRef = place?.photos?.[0]?.photo_reference;
-  const imageUrl = photoRef
-    ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photoRef}&key=${apiKey}`
-    : null;
+
+  // Handle all photo reference formats:
+  // - Full URL (Ticketmaster, already resolved): starts with http/https
+  // - New Google Places API v1: starts with "places/" - needs /media?... suffix
+  // - Old Google Places API: raw reference string - needs full URL construction
+  let imageUrl: string | null = null;
+  if (photoRef) {
+    if (photoRef.startsWith('http://') || photoRef.startsWith('https://')) {
+      // Already a full URL (Ticketmaster, etc.)
+      imageUrl = photoRef;
+    } else if (photoRef.startsWith('places/')) {
+      // New Google Places API v1 format - construct media URL
+      imageUrl = `https://places.googleapis.com/v1/${photoRef}/media?maxWidthPx=400&key=${apiKey}`;
+    } else {
+      // Old API format - construct legacy URL
+      imageUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=${photoRef}&key=${apiKey}`;
+    }
+  }
+
+  // Also check for photoUrl directly on the recommendation (from scoring)
+  if (!imageUrl && (rec as any).photoUrl) {
+    imageUrl = (rec as any).photoUrl;
+  }
+
+  // Debug logging for image issues
+  if (!imageUrl) {
+    console.log(`[Explore] ⚠️ No image for ${place?.name}:`, {
+      hasPhotos: !!place?.photos,
+      photosLength: place?.photos?.length || 0,
+      hasPhotoRef: !!photoRef,
+      hasRecPhotoUrl: !!(rec as any).photoUrl,
+    });
+  }
 
   // Format category from types
   const types = place?.types || [];

@@ -6,8 +6,8 @@
  * Features: Swipe-down gesture to open dashboard, notification badge, blinking arrow hint
  */
 
-import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Alert } from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Alert } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -31,6 +31,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
+import { FilterBarsIcon } from '@/components/icons/filter-bars-icon';
+import { AnimatedMenuButton } from '@/components/animated-menu-button';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -41,10 +43,18 @@ interface LoopHeaderProps {
   onProfilePress?: () => void;
   showSettingsButton?: boolean;
   onSettingsPress?: () => void;
-  // New: Notification bell (left side)
+  // New: Menu button (left side) - hamburger icon for main menu
+  showMenuButton?: boolean;
+  onMenuPress?: () => void;
+  isMenuOpen?: boolean; // For hamburger-to-chevron morphing animation
+  // Notification bell (left side, alternative to menu)
   showNotificationBell?: boolean;
   onNotificationPress?: () => void;
-  // New: Plus/Add button (right side)
+  // Filter button (right side) - iOS 26 Liquid Glass style
+  showFilterButton?: boolean;
+  onFilterPress?: (position: { x: number; y: number }) => void; // Returns button position for popover anchor
+  isFilterActive?: boolean; // Controls rotation state
+  // Legacy: Plus/Add button (right side) - deprecated, use showFilterButton
   showAddButton?: boolean;
   onAddPress?: () => void;
   rightAction?: React.ReactNode;
@@ -59,10 +69,16 @@ export function LoopHeader({
   onBackPress,
   showProfileButton = false,
   onProfilePress,
-  showSettingsButton = false, // Changed default to false
+  showSettingsButton = false,
   onSettingsPress,
+  showMenuButton = false,
+  onMenuPress,
+  isMenuOpen = false,
   showNotificationBell = false,
   onNotificationPress,
+  showFilterButton = false,
+  onFilterPress,
+  isFilterActive = false,
   showAddButton = false,
   onAddPress,
   rightAction,
@@ -87,6 +103,25 @@ export function LoopHeader({
 
   // Shimmer animation for border glow effect
   const shimmerTranslate = useSharedValue(-SCREEN_WIDTH);
+
+  // Filter icon rotation animation (iOS 2026 style)
+  const filterRotation = useSharedValue(0);
+
+  // Update filter rotation when isFilterActive changes
+  useEffect(() => {
+    filterRotation.value = withSpring(isFilterActive ? 180 : 0, {
+      damping: 15,
+      stiffness: 150,
+    });
+  }, [isFilterActive]);
+
+  // Filter icon animated style
+  const filterIconStyle = useAnimatedStyle(() => ({
+    transform: [{ rotate: `${filterRotation.value}deg` }],
+  }));
+
+  // Ref for filter button to measure position for popover anchor
+  const filterButtonRef = useRef<View>(null);
 
   useEffect(() => {
     // Function to start the blinking animation
@@ -266,6 +301,13 @@ export function LoopHeader({
           >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
+        ) : showMenuButton ? (
+          <AnimatedMenuButton
+            isOpen={isMenuOpen}
+            onPress={() => onMenuPress?.()}
+            color={colors.text}
+            size={26}
+          />
         ) : showNotificationBell ? (
           <TouchableOpacity
             onPress={() => {
@@ -306,7 +348,7 @@ export function LoopHeader({
             activeOpacity={0.7}
             style={styles.logoTouchable}
           >
-            <LoopLogoVariant size={22} />
+            <LoopLogoVariant size={22} flat />
 
             {/* Notification Badge */}
             {notificationCount > 0 && (
@@ -331,6 +373,30 @@ export function LoopHeader({
       <View style={styles.rightSection}>
         {rightAction ? (
           rightAction
+        ) : showFilterButton ? (
+          <TouchableOpacity
+            ref={filterButtonRef as any}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              // Measure button position for popover anchor
+              if (filterButtonRef.current) {
+                filterButtonRef.current.measureInWindow((x, y, width, height) => {
+                  // Fallback to reasonable default if measurement returns 0
+                  const anchorX = x > 0 ? x + width : SCREEN_WIDTH - 40;
+                  const anchorY = y > 0 ? y + height : 100;
+                  onFilterPress?.({ x: anchorX, y: anchorY });
+                });
+              } else {
+                // Fallback if ref is not available
+                onFilterPress?.({ x: SCREEN_WIDTH - 40, y: 100 });
+              }
+            }}
+            style={styles.iconButton}
+          >
+            <Animated.View style={filterIconStyle}>
+              <FilterBarsIcon size={26} color={colors.text} />
+            </Animated.View>
+          </TouchableOpacity>
         ) : showAddButton ? (
           <TouchableOpacity
             onPress={() => {
@@ -396,6 +462,10 @@ const styles = StyleSheet.create({
     position: 'relative',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  logo: {
+    height: 32,
+    width: 80,
   },
   logoText: {
     fontSize: 24,

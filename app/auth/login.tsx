@@ -9,336 +9,433 @@ import {
   Platform,
   Alert,
   ActivityIndicator,
-  Image,
   ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link, router } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import { Link } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/auth-context';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
+import { LoopLogoVariant } from '@/components/loop-logo-variant';
+
+// Always-dark theme
+const theme = {
+  bg: '#000000',
+  text: '#ffffff',
+  textMuted: 'rgba(255,255,255,0.50)',
+  textSubtle: 'rgba(255,255,255,0.25)',
+  border: 'rgba(255,255,255,0.12)',
+  borderSubtle: 'rgba(255,255,255,0.06)',
+  accent: '#10a37f',
+};
 
 export default function LoginScreen() {
-  const { signIn, signInWithGoogle, signInWithFacebook, resetPassword, loading } = useAuth();
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const {
+    signIn,
+    signInWithGoogle,
+    signInWithApple,
+    signInWithFacebook,
+    resetPassword,
+    loading,
+    isAppleSignInAvailable,
+  } = useAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   async function handleSignIn() {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     setIsLoading(true);
     const { error } = await signIn(email, password);
     setIsLoading(false);
-
     if (error) {
       Alert.alert('Sign In Failed', error.message);
     }
-    // Navigation is handled automatically by _layout.tsx based on auth state
   }
 
   async function handleGoogleSignIn() {
     setIsLoading(true);
     const { error } = await signInWithGoogle();
     setIsLoading(false);
-
-    if (error) {
+    if (error && !error.message.includes('cancelled')) {
       Alert.alert('Google Sign In Failed', error.message);
     }
   }
 
   async function handleFacebookSignIn() {
     setIsLoading(true);
-    const { error, facebookToken } = await signInWithFacebook();
+    const { error } = await signInWithFacebook();
     setIsLoading(false);
-
-    if (error) {
+    if (error && !error.message.includes('cancelled')) {
       Alert.alert('Facebook Sign In Failed', error.message);
-    } else if (facebookToken) {
-      Alert.alert(
-        'Success!',
-        'We\'ve imported your interests from Facebook to personalize your experience.'
-      );
     }
-    // Navigation is handled automatically by _layout.tsx based on auth state
+  }
+
+  async function handleAppleSignIn() {
+    setIsLoading(true);
+    const { error } = await signInWithApple();
+    setIsLoading(false);
+    if (error && !error.message.includes('cancelled')) {
+      Alert.alert('Apple Sign In Failed', error.message);
+    }
   }
 
   function handleForgotPassword() {
     if (!email.trim()) {
-      Alert.alert(
-        'Email Required',
-        'Please enter your email address to reset your password.',
-        [{ text: 'OK' }]
-      );
+      Alert.alert('Email Required', 'Please enter your email address to reset your password.');
       return;
     }
-
-    Alert.alert(
-      'Reset Password',
-      `Send password reset instructions to ${email}?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Send',
-          onPress: async () => {
-            setIsLoading(true);
-            const { error } = await resetPassword(email);
-            setIsLoading(false);
-
-            if (error) {
-              Alert.alert(
-                'Error',
-                'Failed to send password reset email. Please check your email address and try again.',
-                [{ text: 'OK' }]
-              );
-            } else {
-              Alert.alert(
-                'Check Your Email',
-                `We've sent password reset instructions to ${email}. Please check your inbox and follow the link to reset your password.`,
-                [{ text: 'OK' }]
-              );
-            }
-          },
+    Alert.alert('Reset Password', `Send password reset instructions to ${email}?`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Send',
+        onPress: async () => {
+          setIsLoading(true);
+          const { error } = await resetPassword(email);
+          setIsLoading(false);
+          if (error) {
+            Alert.alert('Error', 'Failed to send password reset email.');
+          } else {
+            Alert.alert('Check Your Email', `We've sent password reset instructions to ${email}.`);
+          }
         },
-      ]
-    );
+      },
+    ]);
   }
 
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
-        <ActivityIndicator size="large" color={colors.tint} />
-      </ThemedView>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="small" color={theme.text} />
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar style="light" />
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <ThemedView style={styles.container}>
-        <View style={styles.content}>
-          <View style={styles.logoContainer}>
-            <Image
-              source={require('@/assets/images/loop-logo6.png')}
-              style={styles.logo}
-              resizeMode="contain"
-            />
-            <ThemedText style={[styles.subtitle, { color: colors.icon, opacity: 0.5 }]}>
-              Loop
-            </ThemedText>
-          </View>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.content}>
+              {/* Logo */}
+              <View style={styles.header}>
+                <LoopLogoVariant size={36} />
+              </View>
 
-          <View style={styles.form}>
-            <TextInput
-              style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-              placeholder="Email"
-              placeholderTextColor={colors.icon}
-              value={email}
-              onChangeText={setEmail}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              editable={!isLoading}
-            />
+              {/* Welcome text */}
+              <Text style={[styles.welcomeText, { color: theme.text }]}>
+                welcome back
+              </Text>
 
-            <TextInput
-              style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-              placeholder="Password"
-              placeholderTextColor={colors.icon}
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry
-              editable={!isLoading}
-            />
-
-            <TouchableOpacity
-              onPress={handleForgotPassword}
-              disabled={isLoading}
-              style={styles.forgotPasswordContainer}
-            >
-              <ThemedText style={[styles.forgotPasswordText, { color: colors.tint }]}>
-                Forgot Password?
-              </ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, { backgroundColor: colors.tint }]}
-              onPress={handleSignIn}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Sign In</Text>
-              )}
-            </TouchableOpacity>
-
-            <View style={styles.divider}>
-              <View style={[styles.dividerLine, { backgroundColor: colors.icon }]} />
-              <ThemedText style={styles.dividerText}>OR</ThemedText>
-              <View style={[styles.dividerLine, { backgroundColor: colors.icon }]} />
-            </View>
-
-            <TouchableOpacity
-              style={[styles.googleButton, { borderColor: colors.icon }]}
-              onPress={handleGoogleSignIn}
-              disabled={isLoading}
-            >
-              <ThemedText style={styles.googleButtonText}>Continue with Google</ThemedText>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.facebookButton, { backgroundColor: '#1877F2' }]}
-              onPress={handleFacebookSignIn}
-              disabled={isLoading}
-            >
-              <Text style={styles.facebookButtonText}>Continue with Facebook</Text>
-            </TouchableOpacity>
-
-            <View style={styles.footer}>
-              <ThemedText style={styles.footerText}>Don't have an account? </ThemedText>
-              <Link href="/auth/signup" asChild>
-                <TouchableOpacity>
-                  <ThemedText style={[styles.footerLink, { color: colors.tint }]}>
-                    Sign Up
-                  </ThemedText>
+              {/* Auth Buttons - Ghost style */}
+              <View style={styles.authButtons}>
+                {/* Google */}
+                <TouchableOpacity
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
+                  onPress={handleGoogleSignIn}
+                  disabled={isLoading}
+                  activeOpacity={0.6}
+                >
+                  <View style={styles.buttonInner}>
+                    <View style={[styles.iconCircle, { backgroundColor: '#4285F4' }]}>
+                      <Text style={styles.iconText}>G</Text>
+                    </View>
+                    <Text style={[styles.buttonText, { color: theme.text }]}>
+                      continue with google
+                    </Text>
+                  </View>
                 </TouchableOpacity>
-              </Link>
+
+                {/* Facebook */}
+                <TouchableOpacity
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
+                  onPress={handleFacebookSignIn}
+                  disabled={isLoading}
+                  activeOpacity={0.6}
+                >
+                  <View style={styles.buttonInner}>
+                    <View style={[styles.iconCircle, { backgroundColor: '#1877F2' }]}>
+                      <Ionicons name="logo-facebook" size={14} color="#fff" />
+                    </View>
+                    <Text style={[styles.buttonText, { color: theme.text }]}>
+                      continue with facebook
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Apple */}
+                {Platform.OS === 'ios' && isAppleSignInAvailable && (
+                  <TouchableOpacity
+                    style={[styles.ghostButton, { borderColor: theme.border }]}
+                    onPress={handleAppleSignIn}
+                    disabled={isLoading}
+                    activeOpacity={0.6}
+                  >
+                    <View style={styles.buttonInner}>
+                      <View style={[styles.iconCircle, { backgroundColor: '#ffffff' }]}>
+                        <Ionicons name="logo-apple" size={14} color="#000000" />
+                      </View>
+                      <Text style={[styles.buttonText, { color: theme.text }]}>
+                        continue with apple
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={[styles.dividerLine, { backgroundColor: theme.borderSubtle }]} />
+                <TouchableOpacity
+                  onPress={() => setShowEmailForm(!showEmailForm)}
+                  hitSlop={{ top: 12, bottom: 12, left: 20, right: 20 }}
+                >
+                  <Text style={[styles.dividerText, { color: theme.textSubtle }]}>
+                    {showEmailForm ? 'hide' : 'or'}
+                  </Text>
+                </TouchableOpacity>
+                <View style={[styles.dividerLine, { backgroundColor: theme.borderSubtle }]} />
+              </View>
+
+              {/* Email Form */}
+              {showEmailForm ? (
+                <View style={styles.emailForm}>
+                  <TextInput
+                    style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
+                    placeholder="email"
+                    placeholderTextColor={theme.textSubtle}
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    editable={!isLoading}
+                  />
+                  <TextInput
+                    style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
+                    placeholder="password"
+                    placeholderTextColor={theme.textSubtle}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    onPress={handleForgotPassword}
+                    disabled={isLoading}
+                    style={styles.forgotLink}
+                  >
+                    <Text style={[styles.forgotText, { color: theme.accent }]}>
+                      forgot password?
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.primaryButton, { backgroundColor: theme.accent }]}
+                    onPress={handleSignIn}
+                    disabled={isLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>continue</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
+                  onPress={() => setShowEmailForm(true)}
+                  activeOpacity={0.6}
+                >
+                  <Text style={[styles.buttonText, { color: theme.text }]}>
+                    continue with email
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {/* Footer */}
+              <View style={styles.footer}>
+                <Text style={[styles.footerText, { color: theme.textMuted }]}>
+                  don&apos;t have an account?{' '}
+                </Text>
+                <Link href="/auth/signup" asChild>
+                  <TouchableOpacity>
+                    <Text style={[styles.footerLink, { color: theme.accent }]}>sign up</Text>
+                  </TouchableOpacity>
+                </Link>
+              </View>
             </View>
-          </View>
-          </View>
-          </ThemedView>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+            {/* Terms - Bottom */}
+            <Text style={[styles.terms, { color: theme.textSubtle }]}>
+              by continuing, you agree to our terms and privacy policy
+            </Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
   },
-  container: {
+  keyboardView: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
   },
   content: {
     flex: 1,
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
+    maxWidth: 360,
+    width: '100%',
+    alignSelf: 'center',
   },
-  logoContainer: {
+
+  // Header
+  header: {
     alignItems: 'center',
-    marginTop: 16,
-    marginBottom: 40,
+    marginBottom: 48,
   },
-  logo: {
-    width: 140,
-    height: 140,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
+
+  // Welcome
+  welcomeText: {
     fontSize: 24,
     fontWeight: '300',
     textAlign: 'center',
-    marginTop: 12,
-    letterSpacing: 2,
+    marginBottom: 32,
   },
-  form: {
-    gap: 16,
+
+  // Auth Buttons
+  authButtons: {
+    gap: 12,
   },
-  input: {
+  ghostButton: {
     height: 52,
+    borderRadius: 8,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-  },
-  forgotPasswordContainer: {
-    alignSelf: 'flex-end',
-    marginTop: -8,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  button: {
-    height: 52,
-    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+  },
+  buttonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '400',
   },
+
+  // Divider
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 8,
+    marginVertical: 24,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   dividerText: {
-    marginHorizontal: 16,
-    opacity: 0.5,
+    paddingHorizontal: 16,
+    fontSize: 13,
+    fontWeight: '300',
   },
-  googleButton: {
-    height: 52,
-    borderRadius: 12,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  // Email Form
+  emailForm: {
+    gap: 16,
   },
-  googleButtonText: {
+  input: {
+    height: 48,
+    borderBottomWidth: 1,
+    paddingHorizontal: 0,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '300',
+    backgroundColor: 'transparent',
   },
-  facebookButton: {
-    height: 52,
-    borderRadius: 12,
+  forgotLink: {
+    alignSelf: 'flex-start',
+  },
+  forgotText: {
+    fontSize: 13,
+    fontWeight: '400',
+  },
+  primaryButton: {
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
-  facebookButtonText: {
+  primaryButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
   },
+
+  // Footer
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 32,
   },
   footerText: {
     fontSize: 14,
+    fontWeight: '300',
   },
   footerLink: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
+  },
+
+  // Terms
+  terms: {
+    fontSize: 12,
+    fontWeight: '300',
+    textAlign: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    lineHeight: 18,
   },
 });

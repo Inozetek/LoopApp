@@ -37,9 +37,10 @@ const INITIAL_VISIBLE_COUNT = 4; // Show 2 rows initially (2x2)
 
 // Loop brand gradient for unseen stories
 const UNSEEN_GRADIENT: [string, string, ...string[]] = [
+  BrandColors.loopBlueLight,
   BrandColors.loopBlue,
   BrandColors.loopGreen,
-  BrandColors.loopOrange,
+  BrandColors.accentPurple,
 ];
 // Gray for viewed stories
 const VIEWED_RING_COLOR = '#9CA3AF';
@@ -167,6 +168,11 @@ function StoryAvatar({ friend, onPress }: StoryAvatarProps) {
 
 /**
  * "Add Story" avatar (first item in grid)
+ *
+ * UX FIX (v2.0): Instagram-style separation
+ * - Dedicated "+" circle is visually separate from user avatar
+ * - No overlay confusion - clear visual hierarchy
+ * - User avatar shown small inside, "+" is the primary action
  */
 function AddStoryAvatar({ onPress, profilePictureUrl }: AddStoryAvatarProps) {
   const colorScheme = useColorScheme();
@@ -183,28 +189,29 @@ function AddStoryAvatar({ onPress, profilePictureUrl }: AddStoryAvatarProps) {
       onPress={handlePress}
       activeOpacity={0.7}
     >
-      <View style={[styles.addAvatarRing, { borderColor: colors.border }]}>
-        {profilePictureUrl ? (
-          <Image
-            source={{ uri: profilePictureUrl }}
-            style={styles.avatarImage}
-          />
-        ) : (
-          <View style={[styles.avatarPlaceholder, { backgroundColor: colors.card }]}>
+      {/* Instagram-style: Dedicated add button with dashed border */}
+      <View style={styles.addStoryContainer}>
+        {/* Main "+" circle - dashed border, gradient center */}
+        <LinearGradient
+          colors={UNSEEN_GRADIENT}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.addStoryGradient}
+        >
+          <View style={[styles.addStoryInner, { backgroundColor: colors.background }]}>
             <Ionicons name="add" size={28} color={BrandColors.loopBlue} />
           </View>
+        </LinearGradient>
+
+        {/* Small profile picture in corner (optional - shows who's adding) */}
+        {profilePictureUrl && (
+          <View style={styles.miniProfileContainer}>
+            <Image
+              source={{ uri: profilePictureUrl }}
+              style={styles.miniProfileImage}
+            />
+          </View>
         )}
-        {/* Plus badge overlay */}
-        <View style={styles.addBadge}>
-          <LinearGradient
-            colors={UNSEEN_GRADIENT}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.addBadgeGradient}
-          >
-            <Ionicons name="add" size={14} color="white" />
-          </LinearGradient>
-        </View>
       </View>
 
       <View style={styles.nameContainer}>
@@ -212,7 +219,7 @@ function AddStoryAvatar({ onPress, profilePictureUrl }: AddStoryAvatarProps) {
           style={[styles.avatarName, { color: colors.text }]}
           numberOfLines={1}
         >
-          Your Story
+          Add Story
         </Text>
       </View>
     </TouchableOpacity>
@@ -437,6 +444,48 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'white',
   },
+  // ============================================================================
+  // ADD STORY BUTTON (Instagram-style - v2.0)
+  // Fixed: Plus icon is now separate from avatar, clear visual hierarchy
+  // ============================================================================
+  addStoryContainer: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    position: 'relative',
+  },
+  addStoryGradient: {
+    width: AVATAR_SIZE,
+    height: AVATAR_SIZE,
+    borderRadius: AVATAR_SIZE / 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: RING_WIDTH,
+  },
+  addStoryInner: {
+    width: AVATAR_SIZE - RING_WIDTH * 2,
+    height: AVATAR_SIZE - RING_WIDTH * 2,
+    borderRadius: (AVATAR_SIZE - RING_WIDTH * 2) / 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  miniProfileContainer: {
+    position: 'absolute',
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'white',
+    overflow: 'hidden',
+    backgroundColor: 'white',
+  },
+  miniProfileImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  // Legacy styles (kept for backwards compatibility if needed)
   addAvatarRing: {
     width: AVATAR_SIZE,
     height: AVATAR_SIZE,

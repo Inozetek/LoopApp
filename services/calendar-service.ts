@@ -27,6 +27,13 @@ export interface SyncResult {
   errors: string[];
 }
 
+export interface CalendarEventPreview extends CalendarEvent {
+  hasLocation: boolean;
+  canGeocode: boolean;
+  selected: boolean;
+  calendarName?: string;
+}
+
 /**
  * Geocode an address to lat/lng using Google Geocoding API
  * Returns null if geocoding fails
@@ -209,6 +216,145 @@ export async function fetchCalendarEvents(
   } catch (error) {
     console.error('❌ Error fetching calendar events:', error);
     throw error;
+  }
+}
+
+/**
+ * Fetch calendar events for preview before syncing
+ * Allows user to select which events to import
+ *
+ * @param daysAhead - Number of days ahead to fetch (default: 30)
+ * @returns Promise with array of calendar events for preview
+ */
+export async function fetchCalendarEventsForPreview(
+  daysAhead: number = 30
+): Promise<CalendarEventPreview[]> {
+  try {
+    console.log('📅 Fetching calendar events for preview...');
+
+    const calendars = await getCalendars();
+    const calendarMap = new Map(calendars.map(c => [c.id, c.title]));
+
+    const startDate = new Date();
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + daysAhead);
+
+    const events = await fetchCalendarEvents(startDate, endDate);
+
+    // Map events to preview format with selection state
+    const previewEvents: CalendarEventPreview[] = events.map((event) => ({
+      ...event,
+      hasLocation: Boolean(event.location && event.location.trim().length > 0),
+      canGeocode: true, // We'll verify this during actual sync
+      selected: Boolean(event.location && event.location.trim().length > 0), // Pre-select events with location
+      calendarName: calendarMap.get(event.calendarId) || 'Unknown Calendar',
+    }));
+
+    // Sort by start date
+    previewEvents.sort((a, b) => a.startDate.getTime() - b.startDate.getTime());
+
+    console.log(`✅ Found ${previewEvents.length} events for preview`);
+    console.log(`📍 ${previewEvents.filter(e => e.hasLocation).length} events have location data`);
+
+    return previewEvents;
+  } catch (error) {
+    console.error('❌ Error fetching calendar events for preview:', error);
+    throw error;
+  }
+}
+
+/**
+ * Sync selected calendar events to Supabase database
+ *
+ * @param userId - User ID to sync events for
+ * @param selectedEvents - Array of events to sync (pre-selected by user)
+ * @returns Promise with sync result
+ */
+export async function syncSelectedEventsToDatabase(
+  userId: string,
+  selectedEvents: CalendarEvent[]
+): Promise<SyncResult> {
+  const errors: string[] = [];
+  let eventsSynced = 0;
+
+  try {
+    console.log(`🔄 Syncing ${selectedEvents.length} selected events...`);
+
+    // Filter to events with location
+    const eventsWithLocation = selectedEvents.filter(
+      (event) => event.location && event.location.trim().length > 0
+    );
+
+    console.log(`📍 ${eventsWithLocation.length} events have location data`);
+
+    // Delete existing external calendar events for this user that match these events
+    const externalIds = eventsWithLocation.map(e => e.id);
+    if (externalIds.length > 0) {
+      await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('user_id', userId)
+        .in('external_event_id', externalIds);
+    }
+
+    // Import selected events
+    for (const event of eventsWithLocation) {
+      try {
+        const geocoded = await geocodeAddress(event.location || '');
+
+        if (!geocoded) {
+          console.log(`⚠️ Skipping "${event.title}" - couldn't geocode location`);
+          errors.push(`Couldn't geocode: ${event.title}`);
+          continue;
+        }
+
+        const { error: insertError } = await supabase
+          .from('calendar_events')
+          .insert({
+            user_id: userId,
+            title: event.title,
+            description: event.notes || null,
+            category: 'personal',
+            location: {
+              type: 'Point',
+              coordinates: [geocoded.lng, geocoded.lat],
+            },
+            address: event.location || '',
+            start_time: event.startDate.toISOString(),
+            end_time: event.endDate.toISOString(),
+            all_day: event.allDay,
+            source: Platform.OS === 'ios' ? 'apple_calendar' : 'google_calendar',
+            external_calendar_id: event.calendarId,
+            external_event_id: event.id,
+            status: 'scheduled',
+          });
+
+        if (insertError) {
+          console.error(`❌ Error inserting event "${event.title}":`, insertError);
+          errors.push(`Failed to sync: ${event.title}`);
+        } else {
+          eventsSynced++;
+        }
+      } catch (error) {
+        console.error(`❌ Error processing event "${event.title}":`, error);
+        errors.push(`Failed to process: ${event.title}`);
+      }
+    }
+
+    console.log(`✅ Sync complete: ${eventsSynced}/${eventsWithLocation.length} events synced`);
+
+    return {
+      success: errors.length === 0,
+      eventsSynced,
+      errors,
+    };
+  } catch (error) {
+    console.error('❌ Sync failed:', error);
+    return {
+      success: false,
+      eventsSynced,
+      errors: [...errors, error instanceof Error ? error.message : 'Unknown error'],
+    };
   }
 }
 

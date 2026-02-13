@@ -9,7 +9,10 @@ import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { ThemeContextProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
+import { TabNotificationsProvider } from '@/contexts/tab-notifications-context';
+import { MenuAnimationProvider } from '@/contexts/menu-animation-context';
 import { Colors } from '@/constants/theme';
 import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
 import { initializeErrorLogging } from '@/utils/error-logger';
@@ -100,6 +103,7 @@ function RootLayoutNav() {
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="auth" options={{ headerShown: false }} />
+      <Stack.Screen name="settings" options={{ headerShown: false }} />
       <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
     </Stack>
   );
@@ -128,12 +132,18 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <AuthProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <RootLayoutNav />
-          <StatusBar style="auto" />
-        </ThemeProvider>
-      </AuthProvider>
+      <ThemeContextProvider>
+        <AuthProvider>
+          <TabNotificationsProvider>
+            <MenuAnimationProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <RootLayoutNav />
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </MenuAnimationProvider>
+          </TabNotificationsProvider>
+        </AuthProvider>
+      </ThemeContextProvider>
     </GestureHandlerRootView>
   );
 }

@@ -1,45 +1,54 @@
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { View, Platform } from 'react-native';
 
-import { HapticTab } from '@/components/haptic-tab';
+import { EbayStyleTabBar } from '@/components/ebay-style-tab-bar';
 import { GradientIcon } from '@/components/gradient-icon';
 import { AnimatedTabIcon } from '@/components/animated-tab-icon';
-import { Colors } from '@/constants/theme';
-import { BrandColors } from '@/constants/brand';
+import { AppBadgingIcon } from '@/components/icons/app-badging-icon';
+import { ModeCommentIcon } from '@/components/icons/mode-comment-icon';
+import { AccountCircleIcon } from '@/components/icons/account-circle-icon';
+import { SearchIcon } from '@/components/icons/search-icon';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useTabNotifications } from '@/contexts/tab-notifications-context';
 import { useAuth } from '@/contexts/auth-context';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const { hasNewRecommendations, notifications } = useTabNotifications();
   const { user } = useAuth();
-  const isBusiness = user?.account_type === 'business';
+
+  // Get user's first name for Profile tab
+  const firstName = user?.name?.split(' ')[0] || 'Profile';
+
+  // Icon color based on theme - white for both active/inactive in dark mode like eBay
+  const iconColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const inactiveIconColor = colorScheme === 'dark' ? '#FFFFFF' : '#48484A';
 
   return (
     <Tabs
+      tabBar={(props) => <EbayStyleTabBar {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: colors.tint,
-        tabBarInactiveTintColor: colors.icon,
-        tabBarShowLabel: false, // Icons only - no text labels
-        tabBarStyle: {
-          backgroundColor: colors.background,
-          borderTopColor: colors.icon + '20',
-        },
+        tabBarActiveTintColor: iconColor,
+        tabBarInactiveTintColor: inactiveIconColor,
+        tabBarShowLabel: true,
         headerShown: false,
-        tabBarButton: HapticTab,
       }}>
-      {/* === Personal Tabs === */}
-      {/* Tab 1: Calendar - Schedule, Loop route view */}
+      {/* === Main Tabs (All Users) === */}
+      {/* Tab 1: My Loop - Schedule, Loop route view */}
       <Tabs.Screen
         name="calendar"
         options={{
-          href: isBusiness ? null : undefined,
-          tabBarIcon: ({ color, focused }) => (
+          title: 'My Loop',
+          tabBarIcon: ({ color, focused, size }) => (
             <AnimatedTabIcon
-              name="calendar"
-              size={26}
-              color={focused ? BrandColors.loopBlue : color}
+              size={size}
+              color={color}
               focused={focused}
+              badge={notifications.calendar}
+              customIcon={({ size: iconSize, color: iconColor }) => (
+                <AppBadgingIcon size={iconSize} color={iconColor} filled={focused} />
+              )}
             />
           ),
         }}
@@ -48,37 +57,53 @@ export default function TabLayout() {
       <Tabs.Screen
         name="explore"
         options={{
-          href: isBusiness ? null : undefined,
-          tabBarIcon: ({ color, focused }) => (
+          title: 'Search',
+          tabBarIcon: ({ color, focused, size }) => (
             <AnimatedTabIcon
-              name="magnifyingglass"
-              size={26}
-              color={focused ? BrandColors.loopBlue : color}
+              size={size}
+              color={color}
               focused={focused}
+              badge={notifications.explore}
+              customIcon={({ size: iconSize, color: iconColor }) => (
+                <SearchIcon size={iconSize} color={iconColor} filled={focused} />
+              )}
             />
           ),
         }}
       />
-      {/* Tab 3: Daily - AI-curated recommendations (center position - special gradient) */}
+      {/* Tab 3: Daily - AI-curated recommendations (center position) */}
       <Tabs.Screen
         name="index"
         options={{
-          href: isBusiness ? null : undefined,
-          tabBarIcon: ({ focused }) => <GradientIcon name="sparkles" size={30} focused={focused} />,
+          title: 'For You',
+          tabBarIcon: ({ focused, size }) => (
+            <GradientIcon
+              name="sparkles"
+              size={Platform.OS === 'android' ? (size || 24) : (size ? size + 3 : 33)}
+              focused={focused}
+              showBadge={hasNewRecommendations}
+              badgeCount={notifications.recommendations}
+            />
+          ),
         }}
       />
-      {/* Tab 4: Friends - Friends' Loops, coordinate, group planning */}
+      {/* Tab 4: Social - Friends' Loops, coordinate, group planning */}
       <Tabs.Screen
         name="friends"
         options={{
-          href: isBusiness ? null : undefined,
-          tabBarIcon: ({ color, focused }) => (
-            <AnimatedTabIcon
-              name="person.2.fill"
-              size={26}
-              color={focused ? BrandColors.loopBlue : color}
-              focused={focused}
-            />
+          title: 'Social',
+          tabBarIcon: ({ color, focused, size }) => (
+            <View style={{ marginTop: 2 }}>
+              <AnimatedTabIcon
+                size={size ? size - 4 : 26}
+                color={color}
+                focused={focused}
+                badge={notifications.friends}
+                customIcon={({ size: iconSize, color: iconColor }) => (
+                  <ModeCommentIcon size={iconSize} color={iconColor} filled={focused} />
+                )}
+              />
+            </View>
           ),
         }}
       />
@@ -86,84 +111,61 @@ export default function TabLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          href: isBusiness ? null : undefined,
-          tabBarIcon: ({ color, focused }) => (
+          title: firstName,
+          tabBarIcon: ({ color, focused, size }) => (
             <AnimatedTabIcon
-              name="person.fill"
-              size={24}
-              color={focused ? BrandColors.loopBlue : color}
+              size={size}
+              color={color}
               focused={focused}
+              badge={notifications.profile}
+              customIcon={({ size: iconSize, color: iconColor }) => (
+                <AccountCircleIcon size={iconSize} color={iconColor} filled={focused} />
+              )}
             />
           ),
         }}
       />
 
-      {/* === Business Tabs === */}
-      {/* Business Tab 1: Dashboard - Overview metrics */}
+      {/* === Hidden Screens (accessible via navigation/menu) === */}
+      {/* Business Dashboard - accessed from Main Menu */}
       <Tabs.Screen
         name="dashboard"
         options={{
-          href: isBusiness ? undefined : null,
-          tabBarIcon: ({ color, focused }) => (
-            <AnimatedTabIcon
-              name="house.fill"
-              size={26}
-              color={focused ? BrandColors.loopBlue : color}
-              focused={focused}
-            />
-          ),
+          href: null, // Hidden from tab bar - accessed via Main Menu
         }}
       />
-      {/* Business Tab 2: Listing - Manage business listing */}
+      {/* Business Listing - accessed from Main Menu */}
       <Tabs.Screen
         name="listing"
         options={{
-          href: isBusiness ? undefined : null,
-          tabBarIcon: ({ color, focused }) => (
-            <AnimatedTabIcon
-              name="pencil"
-              size={26}
-              color={focused ? BrandColors.loopGreen : color}
-              focused={focused}
-            />
-          ),
+          href: null, // Hidden from tab bar - accessed via Main Menu
         }}
       />
-      {/* Business Tab 3: Analytics - Detailed analytics */}
+      {/* Business Analytics - accessed from Main Menu */}
       <Tabs.Screen
         name="analytics"
         options={{
-          href: isBusiness ? undefined : null,
-          tabBarIcon: ({ color, focused }) => (
-            <AnimatedTabIcon
-              name="chart.bar.fill"
-              size={26}
-              color={focused ? BrandColors.loopOrange : color}
-              focused={focused}
-            />
-          ),
+          href: null, // Hidden from tab bar - accessed via Main Menu
         }}
       />
-
-      {/* Hidden screens (accessible from navigation) */}
+      {/* Settings - accessed from Main Menu */}
       <Tabs.Screen
         name="settings"
         options={{
-          href: isBusiness ? undefined : null,
-          tabBarIcon: ({ color, focused }) => (
-            <AnimatedTabIcon
-              name="gearshape.fill"
-              size={24}
-              color={focused ? BrandColors.loopBlue : color}
-              focused={focused}
-            />
-          ),
+          href: null, // Hidden from tab bar - accessed via Main Menu
         }}
       />
       <Tabs.Screen
         name="locations"
         options={{
           href: null, // Hide from tab bar - accessed from Profile/Settings
+        }}
+      />
+      {/* Business Dashboard - accessed from Main Menu (non-business users) */}
+      <Tabs.Screen
+        name="business-dashboard"
+        options={{
+          href: null, // Hidden from tab bar - accessed via Main Menu
         }}
       />
     </Tabs>

@@ -10,10 +10,32 @@
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
+      "usesAppleSignIn": true,
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Loop needs your location to show nearby activities and calculate distances.",
-        "NSLocationAlwaysUsageDescription": "Loop needs your location to provide recommendations based on your routine and commute."
-      }
+        "NSLocationAlwaysUsageDescription": "Loop needs your location to provide recommendations based on your routine and commute.",
+        "CADisableMinimumFrameDurationOnPhone": true,
+        "NSUserTrackingUsageDescription": "This identifier will be used to deliver personalized ads to you.",
+        "SKAdNetworkItems": [
+          {
+            "SKAdNetworkIdentifier": "v9wttpbfk9.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "n38lu8286q.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "v9wttpbfk9.skadnetwork"
+          },
+          {
+            "SKAdNetworkIdentifier": "n38lu8286q.skadnetwork"
+          }
+        ],
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "config": {
+        "googleMapsApiKey": "AIzaSyA5S_CE0OF_OnaWBG1efC73k7c47jgbaTI"
+      },
+      "bundleIdentifier": "com.ncasey92.LoopApp"
     },
     "android": {
       "adaptiveIcon": {
@@ -26,8 +48,16 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
-      ]
+        "ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyA5S_CE0OF_OnaWBG1efC73k7c47jgbaTI"
+        }
+      },
+      "package": "com.ncasey92.loopapp"
     },
     "web": {
       "output": "static",
@@ -54,11 +84,25 @@
         }
       ],
       "expo-font",
-      "expo-facebook"
+      "expo-apple-authentication",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.32013726509-5mjj8tod9bpn812ovhv9bj3ru8ggn7rh"
+        }
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0268111f-c9d2-46ec-99c8-777b1393294b"
+      }
     }
   }
 }

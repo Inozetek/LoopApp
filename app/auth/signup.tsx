@@ -10,55 +10,63 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
-  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { StatusBar } from 'expo-status-bar';
 import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/auth-context';
-import { ThemedView } from '@/components/themed-view';
-import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
-import { BrandColors } from '@/constants/brand';
+import { LoopLogoVariant } from '@/components/loop-logo-variant';
+
+// Always-dark theme
+const theme = {
+  bg: '#000000',
+  text: '#ffffff',
+  textMuted: 'rgba(255,255,255,0.50)',
+  textSubtle: 'rgba(255,255,255,0.25)',
+  border: 'rgba(255,255,255,0.12)',
+  borderSubtle: 'rgba(255,255,255,0.06)',
+  accent: '#10a37f',
+};
 
 export default function SignupScreen() {
-  const { signUp, signInWithGoogle, signInWithFacebook, loading } = useAuth();
-  const colorScheme = useColorScheme();
-  const colors = Colors[colorScheme ?? 'light'];
+  const {
+    signUp,
+    signInWithGoogle,
+    signInWithApple,
+    signInWithFacebook,
+    loading,
+    isAppleSignInAvailable,
+  } = useAuth();
 
-  const [accountType, setAccountType] = useState<'personal' | 'business'>('personal');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [referralCode, setReferralCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showEmailForm, setShowEmailForm] = useState(false);
 
   async function handleSignUp() {
     if (!email || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
       return;
     }
-
     if (password !== confirmPassword) {
       Alert.alert('Error', 'Passwords do not match');
       return;
     }
-
     if (password.length < 6) {
       Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
 
     setIsLoading(true);
-    const { error, user } = await signUp(email, password);
+    const { error } = await signUp(email, password);
     setIsLoading(false);
 
     if (error) {
       Alert.alert('Sign Up Failed', error.message);
     } else {
-      // Navigate to onboarding with accountType
-      router.replace({ pathname: '/auth/onboarding', params: { accountType } });
+      router.replace('/auth/onboarding');
     }
   }
 
@@ -66,342 +74,350 @@ export default function SignupScreen() {
     setIsLoading(true);
     const { error } = await signInWithGoogle();
     setIsLoading(false);
-
-    if (error) {
+    if (error && !error.message.includes('cancelled')) {
       Alert.alert('Google Sign Up Failed', error.message);
     }
   }
 
   async function handleFacebookSignUp() {
     setIsLoading(true);
-    const { error, facebookToken } = await signInWithFacebook();
+    const { error } = await signInWithFacebook();
     setIsLoading(false);
-
-    if (error) {
+    if (error && !error.message.includes('cancelled')) {
       Alert.alert('Facebook Sign Up Failed', error.message);
-    } else if (facebookToken) {
-      Alert.alert(
-        'Success!',
-        'We\'ve imported your interests from Facebook to personalize your experience.'
-      );
-      // Navigation will be handled by auth state change
-      router.replace('/auth/onboarding');
+    }
+  }
+
+  async function handleAppleSignUp() {
+    setIsLoading(true);
+    const { error } = await signInWithApple();
+    setIsLoading(false);
+    if (error && !error.message.includes('cancelled')) {
+      Alert.alert('Apple Sign Up Failed', error.message);
     }
   }
 
   if (loading) {
     return (
-      <ThemedView style={styles.container}>
-        <ActivityIndicator size="large" color={colors.tint} />
-      </ThemedView>
+      <View style={[styles.loadingContainer, { backgroundColor: theme.bg }]}>
+        <ActivityIndicator size="small" color={theme.text} />
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      >
-        <ScrollView
-          contentContainerStyle={{ flexGrow: 1 }}
-          keyboardShouldPersistTaps="handled"
+    <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      <StatusBar style="light" />
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          style={styles.keyboardView}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <ThemedView style={styles.container}>
-          <View style={styles.content}>
-            <View style={styles.logoContainer}>
-              <Image
-                source={require('@/assets/images/loop-logo6.png')}
-                style={styles.logo}
-                resizeMode="contain"
-              />
-              <ThemedText style={styles.subtitle}>
-                Join Loop and never miss out on great experiences
-              </ThemedText>
-            </View>
-
-            {/* Account Type Selection */}
-            <View style={styles.accountTypeContainer}>
-              <ThemedText style={styles.accountTypeTitle}>How will you use Loop?</ThemedText>
-              <View style={styles.accountTypeRow}>
-                <TouchableOpacity
-                  style={[
-                    styles.accountTypeCard,
-                    {
-                      borderColor: accountType === 'personal' ? BrandColors.loopBlue : colors.icon,
-                      backgroundColor: accountType === 'personal' ? BrandColors.loopBlue + '10' : 'transparent',
-                    },
-                  ]}
-                  onPress={() => setAccountType('personal')}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="person" size={28} color={accountType === 'personal' ? BrandColors.loopBlue : colors.icon} />
-                  <Text style={[styles.accountTypeLabel, { color: accountType === 'personal' ? BrandColors.loopBlue : colors.text }]}>
-                    Personal
-                  </Text>
-                  <Text style={[styles.accountTypeDesc, { color: colors.icon }]}>
-                    Discover activities
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.accountTypeCard,
-                    {
-                      borderColor: accountType === 'business' ? BrandColors.loopGreen : colors.icon,
-                      backgroundColor: accountType === 'business' ? BrandColors.loopGreen + '10' : 'transparent',
-                    },
-                  ]}
-                  onPress={() => setAccountType('business')}
-                  disabled={isLoading}
-                >
-                  <Ionicons name="storefront" size={28} color={accountType === 'business' ? BrandColors.loopGreen : colors.icon} />
-                  <Text style={[styles.accountTypeLabel, { color: accountType === 'business' ? BrandColors.loopGreen : colors.text }]}>
-                    Business
-                  </Text>
-                  <Text style={[styles.accountTypeDesc, { color: colors.icon }]}>
-                    Promote your venue
-                  </Text>
-                </TouchableOpacity>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <View style={styles.content}>
+              {/* Logo */}
+              <View style={styles.header}>
+                <LoopLogoVariant size={36} />
               </View>
-            </View>
 
-            <View style={styles.form}>
-              <TextInput
-                style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                placeholder="Email"
-                placeholderTextColor={colors.icon}
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                editable={!isLoading}
-              />
+              {/* Welcome text */}
+              <Text style={[styles.welcomeText, { color: theme.text }]}>
+                create your account
+              </Text>
 
-              <TextInput
-                style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                placeholder="Password (min 6 characters)"
-                placeholderTextColor={colors.icon}
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-                editable={!isLoading}
-              />
+              {/* Auth Buttons - Ghost style */}
+              <View style={styles.authButtons}>
+                {/* Google */}
+                <TouchableOpacity
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
+                  onPress={handleGoogleSignUp}
+                  disabled={isLoading}
+                  activeOpacity={0.6}
+                >
+                  <View style={styles.buttonInner}>
+                    <View style={[styles.iconCircle, { backgroundColor: '#4285F4' }]}>
+                      <Text style={styles.iconText}>G</Text>
+                    </View>
+                    <Text style={[styles.buttonText, { color: theme.text }]}>
+                      continue with google
+                    </Text>
+                  </View>
+                </TouchableOpacity>
 
-              <TextInput
-                style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                placeholder="Confirm Password"
-                placeholderTextColor={colors.icon}
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                secureTextEntry
-                editable={!isLoading}
-              />
+                {/* Facebook */}
+                <TouchableOpacity
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
+                  onPress={handleFacebookSignUp}
+                  disabled={isLoading}
+                  activeOpacity={0.6}
+                >
+                  <View style={styles.buttonInner}>
+                    <View style={[styles.iconCircle, { backgroundColor: '#1877F2' }]}>
+                      <Ionicons name="logo-facebook" size={14} color="#fff" />
+                    </View>
+                    <Text style={[styles.buttonText, { color: theme.text }]}>
+                      continue with facebook
+                    </Text>
+                  </View>
+                </TouchableOpacity>
 
-              <TextInput
-                style={[styles.input, { borderColor: colors.icon, color: colors.text }]}
-                placeholder="Referral Code (Optional)"
-                placeholderTextColor={colors.icon}
-                value={referralCode}
-                onChangeText={(text) => setReferralCode(text.toUpperCase())}
-                autoCapitalize="characters"
-                maxLength={10}
-                editable={!isLoading}
-              />
-
-              <TouchableOpacity
-                style={[styles.button, { backgroundColor: colors.tint }]}
-                onPress={handleSignUp}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Create Account</Text>
+                {/* Apple */}
+                {Platform.OS === 'ios' && isAppleSignInAvailable && (
+                  <TouchableOpacity
+                    style={[styles.ghostButton, { borderColor: theme.border }]}
+                    onPress={handleAppleSignUp}
+                    disabled={isLoading}
+                    activeOpacity={0.6}
+                  >
+                    <View style={styles.buttonInner}>
+                      <View style={[styles.iconCircle, { backgroundColor: '#ffffff' }]}>
+                        <Ionicons name="logo-apple" size={14} color="#000000" />
+                      </View>
+                      <Text style={[styles.buttonText, { color: theme.text }]}>
+                        continue with apple
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
                 )}
-              </TouchableOpacity>
-
-              <View style={styles.divider}>
-                <View style={[styles.dividerLine, { backgroundColor: colors.icon }]} />
-                <ThemedText style={styles.dividerText}>OR</ThemedText>
-                <View style={[styles.dividerLine, { backgroundColor: colors.icon }]} />
               </View>
 
-              <TouchableOpacity
-                style={[styles.googleButton, { borderColor: colors.icon }]}
-                onPress={handleGoogleSignUp}
-                disabled={isLoading}
-              >
-                <ThemedText style={styles.googleButtonText}>Continue with Google</ThemedText>
-              </TouchableOpacity>
+              {/* Divider */}
+              <View style={styles.divider}>
+                <View style={[styles.dividerLine, { backgroundColor: theme.borderSubtle }]} />
+                <TouchableOpacity
+                  onPress={() => setShowEmailForm(!showEmailForm)}
+                  hitSlop={{ top: 12, bottom: 12, left: 20, right: 20 }}
+                >
+                  <Text style={[styles.dividerText, { color: theme.textSubtle }]}>
+                    {showEmailForm ? 'hide' : 'or'}
+                  </Text>
+                </TouchableOpacity>
+                <View style={[styles.dividerLine, { backgroundColor: theme.borderSubtle }]} />
+              </View>
 
-              <TouchableOpacity
-                style={[styles.facebookButton, { backgroundColor: '#1877F2' }]}
-                onPress={handleFacebookSignUp}
-                disabled={isLoading}
-              >
-                <Text style={styles.facebookButtonText}>Continue with Facebook</Text>
-              </TouchableOpacity>
+              {/* Email Form */}
+              {showEmailForm ? (
+                <View style={styles.emailForm}>
+                  <TextInput
+                    style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
+                    placeholder="email"
+                    placeholderTextColor={theme.textSubtle}
+                    value={email}
+                    onChangeText={setEmail}
+                    autoCapitalize="none"
+                    keyboardType="email-address"
+                    editable={!isLoading}
+                  />
+                  <TextInput
+                    style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
+                    placeholder="password (min 6 characters)"
+                    placeholderTextColor={theme.textSubtle}
+                    value={password}
+                    onChangeText={setPassword}
+                    secureTextEntry
+                    editable={!isLoading}
+                  />
+                  <TextInput
+                    style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
+                    placeholder="confirm password"
+                    placeholderTextColor={theme.textSubtle}
+                    value={confirmPassword}
+                    onChangeText={setConfirmPassword}
+                    secureTextEntry
+                    editable={!isLoading}
+                  />
+                  <TouchableOpacity
+                    style={[styles.primaryButton, { backgroundColor: theme.accent }]}
+                    onPress={handleSignUp}
+                    disabled={isLoading}
+                    activeOpacity={0.8}
+                  >
+                    {isLoading ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.primaryButtonText}>create account</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                <TouchableOpacity
+                  style={[styles.ghostButton, { borderColor: theme.border }]}
+                  onPress={() => setShowEmailForm(true)}
+                  activeOpacity={0.6}
+                >
+                  <Text style={[styles.buttonText, { color: theme.text }]}>
+                    sign up with email
+                  </Text>
+                </TouchableOpacity>
+              )}
 
-              <ThemedText style={styles.terms}>
-                By signing up, you agree to our Terms of Service and Privacy Policy
-              </ThemedText>
-
+              {/* Footer */}
               <View style={styles.footer}>
-                <ThemedText style={styles.footerText}>Already have an account? </ThemedText>
+                <Text style={[styles.footerText, { color: theme.textMuted }]}>
+                  already have an account?{' '}
+                </Text>
                 <Link href="/auth/login" asChild>
                   <TouchableOpacity>
-                    <ThemedText style={[styles.footerLink, { color: colors.tint }]}>
-                      Sign In
-                    </ThemedText>
+                    <Text style={[styles.footerLink, { color: theme.accent }]}>sign in</Text>
                   </TouchableOpacity>
                 </Link>
               </View>
             </View>
-          </View>
-          </ThemedView>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+
+            {/* Terms - Bottom */}
+            <Text style={[styles.terms, { color: theme.textSubtle }]}>
+              by continuing, you agree to our terms and privacy policy
+            </Text>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   safeArea: {
     flex: 1,
   },
-  container: {
+  keyboardView: {
     flex: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'space-between',
   },
   content: {
     flex: 1,
     justifyContent: 'center',
-    padding: 24,
+    paddingHorizontal: 24,
+    maxWidth: 360,
+    width: '100%',
+    alignSelf: 'center',
   },
-  logoContainer: {
+
+  // Header
+  header: {
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 48,
   },
-  logo: {
-    width: 120,
-    height: 120,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
+
+  // Welcome
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: '300',
     textAlign: 'center',
     marginBottom: 32,
-    opacity: 0.7,
   },
-  form: {
-    gap: 16,
+
+  // Auth Buttons
+  authButtons: {
+    gap: 12,
   },
-  input: {
+  ghostButton: {
     height: 52,
+    borderRadius: 8,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    fontSize: 16,
-  },
-  button: {
-    height: 52,
-    borderRadius: 12,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+  },
+  buttonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  iconCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
   },
   buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '400',
   },
+
+  // Divider
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 8,
+    marginVertical: 24,
   },
   dividerLine: {
     flex: 1,
     height: 1,
   },
   dividerText: {
-    marginHorizontal: 16,
-    opacity: 0.5,
+    paddingHorizontal: 16,
+    fontSize: 13,
+    fontWeight: '300',
   },
-  googleButton: {
-    height: 52,
-    borderRadius: 12,
-    borderWidth: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  // Email Form
+  emailForm: {
+    gap: 16,
   },
-  googleButtonText: {
+  input: {
+    height: 48,
+    borderBottomWidth: 1,
+    paddingHorizontal: 0,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '300',
+    backgroundColor: 'transparent',
   },
-  facebookButton: {
-    height: 52,
-    borderRadius: 12,
+  primaryButton: {
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
-  facebookButtonText: {
+  primaryButtonText: {
     color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15,
+    fontWeight: '500',
   },
-  terms: {
-    fontSize: 12,
-    textAlign: 'center',
-    opacity: 0.6,
-    marginTop: 8,
-  },
+
+  // Footer
   footer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    marginTop: 16,
+    marginTop: 32,
   },
   footerText: {
     fontSize: 14,
+    fontWeight: '300',
   },
   footerLink: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  accountTypeContainer: {
-    marginBottom: 16,
-  },
-  accountTypeTitle: {
-    fontSize: 14,
-    fontWeight: '600',
+
+  // Terms
+  terms: {
+    fontSize: 12,
+    fontWeight: '300',
     textAlign: 'center',
-    marginBottom: 12,
-  },
-  accountTypeRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  accountTypeCard: {
-    flex: 1,
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    gap: 4,
-  },
-  accountTypeLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-  },
-  accountTypeDesc: {
-    fontSize: 11,
-    textAlign: 'center',
+    paddingHorizontal: 24,
+    paddingBottom: 24,
+    lineHeight: 18,
   },
 });

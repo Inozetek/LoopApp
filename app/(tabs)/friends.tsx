@@ -18,7 +18,6 @@ import { supabase } from '@/lib/supabase';
 import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { ProfileSettingsModal } from '@/components/profile-settings-modal';
 import { GroupPlanningModal } from '@/components/group-planning-modal';
 import { FriendCardSkeleton } from '@/components/skeleton-loader';
 import { SuccessAnimation } from '@/components/success-animation';
@@ -27,8 +26,15 @@ import { FriendsHeader } from '@/components/friends-header';
 import { StoriesGridSection } from '@/components/stories-grid-section';
 import { MomentViewer } from '@/components/moment-viewer';
 import { MomentCaptureModal } from '@/components/moment-capture-modal';
+import { FriendLoopModal } from '@/components/friend-loop-modal';
+import { GroupInvitationsSection } from '@/components/group-invitations-section';
+import { FriendGroupManagementModal } from '@/components/friend-group-management-modal';
 import { FriendWithMoments } from '@/types/moment';
 import { getFriendMoments, getMockFriendMoments } from '@/services/moments-service';
+import {
+  FriendGroup,
+  getFriendGroups,
+} from '@/services/friend-groups-service';
 
 interface Friend {
   id: string;
@@ -61,7 +67,6 @@ export default function FriendsScreen() {
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
   const [loading, setLoading] = useState(false);
   const [showAddFriendModal, setShowAddFriendModal] = useState(false);
-  const [showProfileSettings, setShowProfileSettings] = useState(false);
   const [showGroupPlanning, setShowGroupPlanning] = useState(false);
   const [searchEmail, setSearchEmail] = useState('');
   const [searching, setSearching] = useState(false);
@@ -73,11 +78,33 @@ export default function FriendsScreen() {
   const [viewingStoryFriendId, setViewingStoryFriendId] = useState<string | null>(null);
   const [momentsLoading, setMomentsLoading] = useState(false);
 
+  // Friend Loop view state
+  const [selectedFriend, setSelectedFriend] = useState<Friend | null>(null);
+  const [showFriendLoop, setShowFriendLoop] = useState(false);
+
+  // Friend Groups state
+  const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [showGroupManagement, setShowGroupManagement] = useState(false);
+  const [managingGroup, setManagingGroup] = useState<FriendGroup | null>(null);
+
   useEffect(() => {
     loadFriends();
     loadFriendRequests();
     loadFriendMoments();
+    loadFriendGroups();
   }, []);
+
+  const loadFriendGroups = async () => {
+    if (!user) return;
+    if (user.id === 'demo-user-123') return; // No groups for demo user
+    try {
+      const groups = await getFriendGroups(user.id);
+      setFriendGroups(groups);
+    } catch (error) {
+      console.error('Error loading friend groups:', error);
+    }
+  };
 
   const loadFriends = async () => {
     if (!user) return;
@@ -405,22 +432,40 @@ export default function FriendsScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (!friend.can_view_loop) {
-      Alert.alert('Private', `${friend.name} hasn't shared their Loop with you yet`);
+      Alert.alert('Private', `${friend.name} has not shared their Loop with you yet`);
       return;
     }
 
-    // For MVP, show simple info alert
-    // Phase 2: Navigate to friend's Loop screen
-    Alert.alert(
-      `${friend.name}'s Loop`,
-      `Loop Score: ${friend.loop_score}\n\nFull Loop view coming in Phase 2!\n\nWill show:\n• Today's activities\n• Upcoming events\n• Activity history\n• Shared interests`,
-      [{ text: 'OK' }]
-    );
+    // Open the Friend Loop modal
+    setSelectedFriend(friend);
+    setShowFriendLoop(true);
   };
 
-  const openAddFriendModal = () => {
+  const closeFriendLoop = () => {
+    setShowFriendLoop(false);
+    setSelectedFriend(null);
+  };
+
+  const openSocialActionSheet = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setShowAddFriendModal(true);
+    Alert.alert(
+      'Social Activity',
+      'What would you like to do?',
+      [
+        {
+          text: 'Plan Group Activity',
+          onPress: () => setShowGroupPlanning(true),
+        },
+        {
+          text: 'Add Friend',
+          onPress: () => setShowAddFriendModal(true),
+        },
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+      ]
+    );
   };
 
   const closeAddFriendModal = () => {
@@ -535,15 +580,15 @@ export default function FriendsScreen() {
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
         {/* Header */}
         <FriendsHeader
-          onSettingsPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowProfileSettings(true);
-          }}
-          onAddPress={openAddFriendModal}
+          onAddPress={openSocialActionSheet}
           notificationCount={friendRequests.length}
         />
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={{ paddingBottom: 100 }}
+        showsVerticalScrollIndicator={false}
+      >
         {/* Stories Grid Section */}
         <StoriesGridSection
           friends={friendsWithMoments}
@@ -551,6 +596,91 @@ export default function FriendsScreen() {
           onViewStory={handleViewStory}
           currentUserProfilePicture={user?.profile_picture_url || undefined}
         />
+
+        {/* Group Chips Bar */}
+        {friendGroups.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.groupChipsContainer}
+            style={styles.groupChipsBar}
+          >
+            <TouchableOpacity
+              style={[
+                styles.groupChip,
+                {
+                  backgroundColor: selectedGroupId === null
+                    ? BrandColors.loopBlue
+                    : isDark ? '#2f3133' : '#f0f0f0',
+                },
+              ]}
+              onPress={() => setSelectedGroupId(null)}
+            >
+              <Text
+                style={[
+                  styles.groupChipText,
+                  { color: selectedGroupId === null ? '#fff' : Colors[colorScheme ?? 'light'].text },
+                ]}
+              >
+                All Friends
+              </Text>
+            </TouchableOpacity>
+
+            {friendGroups.map((group) => (
+              <TouchableOpacity
+                key={group.id}
+                style={[
+                  styles.groupChip,
+                  {
+                    backgroundColor: selectedGroupId === group.id
+                      ? BrandColors.loopBlue
+                      : isDark ? '#2f3133' : '#f0f0f0',
+                  },
+                ]}
+                onPress={() => setSelectedGroupId(selectedGroupId === group.id ? null : group.id)}
+                onLongPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setManagingGroup(group);
+                  setShowGroupManagement(true);
+                }}
+              >
+                <Text
+                  style={[
+                    styles.groupChipText,
+                    { color: selectedGroupId === group.id ? '#fff' : Colors[colorScheme ?? 'light'].text },
+                  ]}
+                >
+                  {group.emoji ? `${group.emoji} ` : ''}{group.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              style={[styles.groupChip, { backgroundColor: isDark ? '#2f3133' : '#f0f0f0' }]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setManagingGroup(null);
+                setShowGroupManagement(true);
+              }}
+            >
+              <Ionicons name="add" size={16} color={BrandColors.loopBlue} />
+              <Text style={[styles.groupChipText, { color: BrandColors.loopBlue, marginLeft: 4 }]}>
+                New Group
+              </Text>
+            </TouchableOpacity>
+          </ScrollView>
+        )}
+
+        {/* Group Invitations Section (RSVP Management) */}
+        {user && (
+          <GroupInvitationsSection
+            userId={user.id}
+            onRefresh={() => {
+              loadFriends();
+              loadFriendMoments();
+            }}
+          />
+        )}
 
         {/* Friend Requests Section */}
         {friendRequests.length > 0 && (
@@ -585,27 +715,42 @@ export default function FriendsScreen() {
             )}
           </View>
 
-          {loading ? (
-            // Show skeleton loaders while loading
-            <>
-              <FriendCardSkeleton />
-              <FriendCardSkeleton />
-              <FriendCardSkeleton />
-              <FriendCardSkeleton />
-            </>
-          ) : friends.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={64} color={Colors[colorScheme ?? 'light'].icon} />
-              <Text style={[Typography.bodyLarge, styles.emptyText, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                No friends yet
-              </Text>
-              <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center' }]}>
-                Tap the + button to add friends
-              </Text>
-            </View>
-          ) : (
-            friends.map((friend) => <View key={friend.id}>{renderFriend({ item: friend })}</View>)
-          )}
+          {(() => {
+            // Filter friends by selected group
+            const filteredFriends = selectedGroupId
+              ? friends.filter((f) => {
+                  const group = friendGroups.find((g) => g.id === selectedGroupId);
+                  return group?.members.some((m) => m.friend_user_id === f.id);
+                })
+              : friends;
+
+            if (loading) {
+              return (
+                <>
+                  <FriendCardSkeleton />
+                  <FriendCardSkeleton />
+                  <FriendCardSkeleton />
+                  <FriendCardSkeleton />
+                </>
+              );
+            }
+            if (filteredFriends.length === 0) {
+              return (
+                <View style={styles.emptyState}>
+                  <Ionicons name="people-outline" size={64} color={Colors[colorScheme ?? 'light'].icon} />
+                  <Text style={[Typography.bodyLarge, styles.emptyText, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                    {selectedGroupId ? 'No friends in this group' : 'No friends yet'}
+                  </Text>
+                  <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center' }]}>
+                    {selectedGroupId ? 'Long-press the group chip to manage members' : 'Tap the + button to add friends'}
+                  </Text>
+                </View>
+              );
+            }
+            return filteredFriends.map((friend) => (
+              <View key={friend.id}>{renderFriend({ item: friend })}</View>
+            ));
+          })()}
         </View>
 
         {/* Loop Score Leaderboard (if friends exist) */}
@@ -694,7 +839,7 @@ export default function FriendsScreen() {
               <View style={styles.helpText}>
                 <Ionicons name="information-circle-outline" size={16} color={Colors[colorScheme ?? 'light'].icon} />
                 <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 8 }]}>
-                  Enter your friend's email address to send them a friend request
+                  Enter your friend&apos;s email address to send them a friend request
                 </Text>
               </View>
             </View>
@@ -716,21 +861,6 @@ export default function FriendsScreen() {
             Plan Activity
           </Text>
         </TouchableOpacity>
-      )}
-
-      {/* Profile Settings Modal */}
-      {user && (
-        <ProfileSettingsModal
-          visible={showProfileSettings}
-          onClose={() => {
-            setShowProfileSettings(false);
-            loadFriends(); // Reload in case name changed
-          }}
-          userId={user.id}
-          userName={user.name || user.email?.split('@')[0] || 'User'}
-          userEmail={user.email || ''}
-          userLoopScore={user.loop_score || 0}
-        />
       )}
 
       {/* Group Planning Modal */}
@@ -786,6 +916,33 @@ export default function FriendsScreen() {
           onSuccess={loadFriendMoments}
         />
       )}
+
+      {/* Friend Loop Modal */}
+      {selectedFriend && (
+        <FriendLoopModal
+          visible={showFriendLoop}
+          onClose={closeFriendLoop}
+          friend={selectedFriend}
+        />
+      )}
+
+      {/* Friend Group Management Modal */}
+      <FriendGroupManagementModal
+        visible={showGroupManagement}
+        onClose={() => {
+          setShowGroupManagement(false);
+          setManagingGroup(null);
+        }}
+        group={managingGroup}
+        friends={friends.map((f) => ({
+          id: f.id,
+          name: f.name,
+          email: f.email,
+          profile_picture_url: f.profile_picture_url,
+        }))}
+        userId={user?.id || ''}
+        onSaved={loadFriendGroups}
+      />
       </View>
     </SwipeableLayout>
   );
@@ -964,6 +1121,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingTop: Spacing.sm,
+  },
+  groupChipsBar: {
+    marginBottom: Spacing.md,
+    maxHeight: 44,
+  },
+  groupChipsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  groupChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+  },
+  groupChipText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   fab: {
     position: 'absolute',

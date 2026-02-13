@@ -1,9 +1,11 @@
 /**
- * Activity Card - Instagram-Style Image-First Design
- * Beautiful visual feed with hero images and minimal circular CTA
+ * Activity Card - Instagram-Style Social Card Redesign
+ * Features: Hero images, social action bar (like/comment/share/loop), trending badges
+ * Phase 2: Group RSVP, friend activity indicators, urgency badges
+ * Research-backed: Grok AI aesthetic, Instagram engagement patterns, Outlook RSVP
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -14,19 +16,44 @@ import {
   Image,
   Dimensions,
   FlatList,
-  Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Activity, Recommendation, UnifiedActivity, EventMetadata } from '@/types/activity';
+import { useRouter } from 'expo-router';
+import { Recommendation, EventMetadata } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, ScoreBarColors, MatchScoreColors, Shadows } from '@/constants/brand';
+import { useAuth } from '@/contexts/auth-context';
+import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, Shadows } from '@/constants/brand';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LinearGradient } from 'expo-linear-gradient';
+import { StackedAvatars, AvatarUser } from '@/components/stacked-avatars';
+import { UrgencyHeader } from '@/components/countdown-badge';
+import { OutlookAvatarStack, GroupParticipant, RSVPStatus } from '@/components/rsvp-participant';
+import {
+  toggleLike,
+  checkIfLiked,
+  getPlaceRating,
+  type LikeResult,
+  type FriendWhoLiked,
+} from '@/services/likes-service';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
-const CARD_WIDTH = SCREEN_WIDTH - (Spacing.md * 2);
+const CARD_MARGIN = 8; // Minimal margins for near edge-to-edge cards
+const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
 const IMAGE_HEIGHT = 400; // 60% of typical card
+
+/**
+ * Generate a consistent hash from a string (for mock data)
+ */
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash);
+}
 
 /**
  * Instagram-Style Photo Carousel Component
@@ -93,143 +120,33 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
   );
 }
 
+// StackedScoreBar removed in redesign - replaced with cleaner Instagram-style social bar
+
+// Match score label removed in redesign - trending badge and social proof replace it
+
 /**
- * Stacked Score Bar Component
- * Shows all 6 scoring components in ONE segmented bar with proper percentage distribution
- * Based on CLAUDE.md algorithm: Base (40), Location (20), Time (15), Feedback (15), Collaborative (10)
+ * Format count for social display (e.g., 1.2K, 5K)
  */
-interface StackedScoreBarProps {
-  scoreBreakdown: {
-    baseScore: number;
-    locationScore: number;
-    timeScore: number;
-    feedbackScore: number;
-    collaborativeScore: number;
-    sponsorBoost: number;
-  };
+function formatCount(count: number): string {
+  if (count >= 1000) {
+    return (count / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return count.toString();
 }
 
-function StackedScoreBar({ scoreBreakdown }: StackedScoreBarProps) {
-  // Calculate total ACTUAL score (sum of all components that have points)
-  const totalActualScore =
-    scoreBreakdown.baseScore +
-    scoreBreakdown.locationScore +
-    scoreBreakdown.timeScore +
-    scoreBreakdown.feedbackScore +
-    scoreBreakdown.collaborativeScore;
+// Friend activity data for showing social proof
+interface FriendActivityData {
+  friendsWhoVisited: AvatarUser[];
+  friendsWithInLoop: AvatarUser[];
+}
 
-  // Calculate percentage of ACTUAL total for each component (fills 100% width)
-  const basePercent = totalActualScore > 0 ? (scoreBreakdown.baseScore / totalActualScore) * 100 : 0;
-  const locationPercent = totalActualScore > 0 ? (scoreBreakdown.locationScore / totalActualScore) * 100 : 0;
-  const timePercent = totalActualScore > 0 ? (scoreBreakdown.timeScore / totalActualScore) * 100 : 0;
-  const feedbackPercent = totalActualScore > 0 ? (scoreBreakdown.feedbackScore / totalActualScore) * 100 : 0;
-  const collaborativePercent = totalActualScore > 0 ? (scoreBreakdown.collaborativeScore / totalActualScore) * 100 : 0;
-
-  return (
-    <View style={styles.stackedBar}>
-      {/* Single bar with colored segments */}
-      <View style={styles.stackedBarContainer}>
-        {/* Interest/Base segment - 40 points max */}
-        {basePercent > 0 && (
-          <View
-            style={[
-              styles.stackedBarSegment,
-              {
-                width: `${basePercent}%`,
-                backgroundColor: ScoreBarColors.interest,
-              }
-            ]}
-          />
-        )}
-
-        {/* Location segment - 20 points max */}
-        {locationPercent > 0 && (
-          <View
-            style={[
-              styles.stackedBarSegment,
-              {
-                width: `${locationPercent}%`,
-                backgroundColor: ScoreBarColors.location,
-              }
-            ]}
-          />
-        )}
-
-        {/* Timing segment - 15 points max */}
-        {timePercent > 0 && (
-          <View
-            style={[
-              styles.stackedBarSegment,
-              {
-                width: `${timePercent}%`,
-                backgroundColor: ScoreBarColors.time,
-              }
-            ]}
-          />
-        )}
-
-        {/* Feedback segment - 15 points max */}
-        {feedbackPercent > 0 && (
-          <View
-            style={[
-              styles.stackedBarSegment,
-              {
-                width: `${feedbackPercent}%`,
-                backgroundColor: ScoreBarColors.feedback,
-              }
-            ]}
-          />
-        )}
-
-        {/* Collaborative segment - 10 points max */}
-        {collaborativePercent > 0 && (
-          <View
-            style={[
-              styles.stackedBarSegment,
-              {
-                width: `${collaborativePercent}%`,
-                backgroundColor: ScoreBarColors.social,
-              }
-            ]}
-          />
-        )}
-      </View>
-
-      {/* Compact Legend - Only show components with >0 score */}
-      <View style={styles.stackedBarLegend}>
-        {basePercent > 0 && (
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.interest }]} />
-            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Interest</Text>
-          </View>
-        )}
-        {locationPercent > 0 && (
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.location }]} />
-            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Location</Text>
-          </View>
-        )}
-        {timePercent > 0 && (
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.time }]} />
-            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Time</Text>
-          </View>
-        )}
-        {feedbackPercent > 0 && (
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.feedback }]} />
-            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Feedback</Text>
-          </View>
-        )}
-        {collaborativePercent > 0 && (
-          <View style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: ScoreBarColors.social }]} />
-            <Text style={[styles.legendText, { color: colors.textSecondary }]}>Social</Text>
-          </View>
-        )}
-      </View>
-    </View>
-  );
+// Group plan data for RSVP cards
+interface GroupPlanData {
+  planId: string;
+  participants: GroupParticipant[];
+  suggestedTime: string;
+  deadline?: Date;
+  userStatus: RSVPStatus;
 }
 
 interface ActivityCardIntelligentProps {
@@ -237,8 +154,23 @@ interface ActivityCardIntelligentProps {
   onAddToCalendar: () => void;
   onSeeDetails: () => void;
   onNotInterested?: () => void;
+  onLike?: () => void;
+  onComment?: () => void;
+  onShare?: () => void;
+  likesCount?: number;      // Mock for MVP - derived from ID if not provided
+  commentsCount?: number;   // Mock for MVP - derived from ID if not provided
   index: number;
   isRemoving?: boolean; // Trigger slide-out animation when added to calendar
+
+  // Phase 2: Group & Social Features
+  friendActivity?: FriendActivityData;
+  groupPlan?: GroupPlanData;
+  onAcceptRSVP?: () => void;
+  onDeclineRSVP?: () => void;
+  onMaybeRSVP?: () => void;
+
+  // Pending invitation state (for pulsing border)
+  hasPendingInvitation?: boolean;
 }
 
 function ActivityCardIntelligentComponent({
@@ -246,11 +178,25 @@ function ActivityCardIntelligentComponent({
   onAddToCalendar,
   onSeeDetails,
   onNotInterested,
+  onLike,
+  onComment,
+  onShare,
+  likesCount,
+  commentsCount,
   index,
   isRemoving = false,
+  // Phase 2: Group & Social Features
+  friendActivity,
+  groupPlan,
+  onAcceptRSVP,
+  onDeclineRSVP,
+  onMaybeRSVP,
+  hasPendingInvitation = false,
 }: ActivityCardIntelligentProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
+  const router = useRouter();
+  const { user } = useAuth();
 
   // Use flat Recommendation structure
   const score = recommendation.scoreBreakdown || {
@@ -259,7 +205,7 @@ function ActivityCardIntelligentComponent({
     timeScore: 0,
     feedbackScore: 0,
     collaborativeScore: 0,
-    sponsorBoost: 0, // Fixed typo: was sponsoredBoost
+    sponsorBoost: 0,
     finalScore: recommendation.score || 0,
   };
 
@@ -271,7 +217,182 @@ function ActivityCardIntelligentComponent({
   const exitSlideAnim = useRef(new Animated.Value(0)).current;
   const exitFadeAnim = useRef(new Animated.Value(1)).current;
 
+  // Animation - pulsing border for pending invitations
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+
   const [imageError, setImageError] = useState(false);
+
+  // Real like state (persisted)
+  const [likeState, setLikeState] = useState<{
+    isLiked: boolean;
+    totalLikes: number;
+    friendsWhoLiked: FriendWhoLiked[];
+    isLoading: boolean;
+  }>({
+    isLiked: false,
+    totalLikes: 0,
+    friendsWhoLiked: [],
+    isLoading: true,
+  });
+
+  // Get place ID for likes (prefer Google Place ID)
+  const placeId = recommendation.activity?.googlePlaceId ||
+    (recommendation as any).google_place_id ||
+    recommendation.id;
+
+  // Load like state on mount
+  useEffect(() => {
+    if (!user?.id || !placeId) {
+      setLikeState(prev => ({ ...prev, isLoading: false }));
+      return;
+    }
+
+    const loadLikeState = async () => {
+      try {
+        const rating = await getPlaceRating(user.id, placeId);
+        setLikeState({
+          isLiked: rating.isLiked,
+          totalLikes: rating.totalLikes,
+          friendsWhoLiked: rating.friendsWhoLiked,
+          isLoading: false,
+        });
+      } catch (error) {
+        console.error('Error loading like state:', error);
+        setLikeState(prev => ({ ...prev, isLoading: false }));
+      }
+    };
+
+    loadLikeState();
+  }, [user?.id, placeId]);
+
+  // Handle like toggle with persistence
+  const handleLikeToggle = useCallback(async () => {
+    if (!user?.id || !placeId) return;
+
+    // Optimistic update
+    const previousState = { ...likeState };
+    setLikeState(prev => ({
+      ...prev,
+      isLiked: !prev.isLiked,
+      totalLikes: prev.isLiked ? prev.totalLikes - 1 : prev.totalLikes + 1,
+    }));
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    try {
+      const result = await toggleLike({
+        userId: user.id,
+        placeId,
+        placeName: recommendation.title,
+        placeCategory: recommendation.category,
+        placeAddress: recommendation.location,
+        recommendationId: recommendation.id,
+        source: 'feed',
+      });
+
+      // Update with server state
+      setLikeState({
+        isLiked: result.isLiked,
+        totalLikes: result.totalLikes,
+        friendsWhoLiked: result.friendsWhoLiked,
+        isLoading: false,
+      });
+
+      // Call parent callback if provided
+      onLike?.();
+    } catch (error) {
+      // Revert on error
+      console.error('Error toggling like:', error);
+      setLikeState(previousState);
+    }
+  }, [user?.id, placeId, likeState, recommendation, onLike]);
+
+  // Navigate to likers list
+  const handleOpenLikersList = useCallback(() => {
+    if (likeState.totalLikes === 0) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    router.push({
+      pathname: '/likers-list',
+      params: {
+        placeId,
+        placeName: recommendation.title,
+      },
+    });
+  }, [placeId, recommendation.title, likeState.totalLikes, router]);
+
+  // Fallback to mock counts if not loaded
+  const idHash = recommendation.id ? hashString(recommendation.id) : 0;
+  const displayLikes = likeState.isLoading ? ((idHash % 200) + 50) : likeState.totalLikes;
+  const mockComments = commentsCount ?? (((idHash >> 8) % 50) + 5);
+
+  // Pulsing border animation for pending invitations
+  useEffect(() => {
+    if (hasPendingInvitation) {
+      const pulseAnimation = Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 1500,
+            useNativeDriver: false,
+            easing: Easing.inOut(Easing.ease),
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 0,
+            duration: 1500,
+            useNativeDriver: false,
+            easing: Easing.inOut(Easing.ease),
+          }),
+        ])
+      );
+      pulseAnimation.start();
+      return () => pulseAnimation.stop();
+    }
+  }, [hasPendingInvitation, pulseAnim]);
+
+  // Interpolate pulsing border color
+  const pulseBorderColor = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['transparent', BrandColors.loopGreen],
+  });
+
+  // Check if activity is trending (high engagement)
+  const isTrending = (recommendation.activity?.reviewsCount ?? 0) > 300 &&
+    (recommendation.rating ?? 0) >= 4.3;
+
+  // Calculate AI match percentage (for subtle badge)
+  const matchScore = score.finalScore || recommendation.score || 0;
+  const matchPercentage = Math.min(99, Math.round((matchScore / 100) * 100));
+  const isStrongMatch = matchPercentage >= 85;
+
+  // Phase 2: Check card type for conditional rendering
+  const isGroupPlan = Boolean(groupPlan);
+  const hasFriendActivity = friendActivity &&
+    (friendActivity.friendsWhoVisited.length > 0 || friendActivity.friendsWithInLoop.length > 0);
+  const hasUrgentDeadline = groupPlan?.deadline && new Date(groupPlan.deadline) > new Date();
+  const userHasAccepted = groupPlan?.userStatus === 'accepted';
+
+  // Get friend activity text
+  const getFriendActivityText = () => {
+    if (!friendActivity) return '';
+    const { friendsWhoVisited, friendsWithInLoop } = friendActivity;
+
+    if (friendsWhoVisited.length > 0) {
+      if (friendsWhoVisited.length === 1) {
+        return `${friendsWhoVisited[0].name.split(' ')[0]} visited here`;
+      }
+      return `${friendsWhoVisited.length} friends visited`;
+    }
+
+    if (friendsWithInLoop.length > 0) {
+      if (friendsWithInLoop.length === 1) {
+        return `${friendsWithInLoop[0].name.split(' ')[0]} has this in their Loop`;
+      }
+      return `${friendsWithInLoop.length} friends have this looped`;
+    }
+
+    return '';
+  };
 
   // Entrance animation
   useEffect(() => {
@@ -322,18 +443,63 @@ function ActivityCardIntelligentComponent({
     return distanceStr;
   };
 
-  // Score breakdown for AI explanation (simplified)
+  // AI Explanation - Use server-generated explanation if available, otherwise build smart fallback
   const getAIExplanation = () => {
-    const reasons = [];
-    if (score.baseScore >= 30) reasons.push('Matches your interests');
-    if (score.locationScore >= 15) reasons.push('Very close by');
-    if (score.timeScore >= 12) reasons.push('Perfect timing');
-
-    if (reasons.length === 0) {
-      return recommendation.aiExplanation || 'Recommended for you';
+    // Prefer server-generated explanation if it's substantive
+    if (recommendation.aiExplanation &&
+        recommendation.aiExplanation.length > 20 &&
+        !recommendation.aiExplanation.includes('Recommended for you')) {
+      return recommendation.aiExplanation;
     }
 
-    return reasons.join(' • ');
+    // Build smart explanation from score breakdown
+    const parts: string[] = [];
+
+    // Interest match (most important - what makes this relevant to user)
+    if (score.baseScore >= 35) {
+      parts.push(`Perfect for your ${recommendation.category?.toLowerCase() || 'interests'} craving`);
+    } else if (score.baseScore >= 25) {
+      parts.push(`Great ${recommendation.category?.toLowerCase() || 'spot'} pick`);
+    }
+
+    // Rating boost (social proof)
+    if (recommendation.rating >= 4.5) {
+      const reviewCount = recommendation.activity?.reviewsCount;
+      if (reviewCount && reviewCount >= 100) {
+        parts.push(`${recommendation.rating}★ favorite with ${reviewCount}+ reviews`);
+      } else {
+        parts.push(`highly rated ${recommendation.rating}★`);
+      }
+    } else if (recommendation.rating >= 4.0) {
+      parts.push(`solid ${recommendation.rating}★ rating`);
+    }
+
+    // Location context
+    if (score.locationScore >= 18) {
+      parts.push('right on your route');
+    } else if (score.locationScore >= 15) {
+      parts.push('nearby and convenient');
+    } else if (score.locationScore >= 10) {
+      parts.push('easy to get to');
+    }
+
+    // Time context
+    if (score.timeScore >= 12) {
+      const hour = new Date().getHours();
+      if (hour < 12) parts.push('perfect morning spot');
+      else if (hour < 17) parts.push('great afternoon choice');
+      else parts.push('ideal for tonight');
+    }
+
+    // Combine parts intelligently
+    if (parts.length === 0) {
+      return recommendation.aiExplanation || 'Trending in your area';
+    } else if (parts.length === 1) {
+      return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    } else {
+      // Join first 2 parts with dash
+      return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + ' — ' + parts[1];
+    }
   };
 
   // Check if this is an event (has event_metadata)
@@ -363,23 +529,40 @@ function ActivityCardIntelligentComponent({
     return `${month} ${day} • ${time}`;
   };
 
-  // Fallback image if no imageUrl provided
-  const imageSource = !imageError && recommendation.imageUrl
-    ? { uri: recommendation.imageUrl }
-    : require('@/assets/images/empty-wallet-fallback.jpg'); // Empty wallet meme for missing images
+  // Check if we should show image or placeholder
+  const hasValidImage = !imageError && recommendation.imageUrl;
+
+  // Get category icon for placeholder
+  const getCategoryIcon = (): keyof typeof Ionicons.glyphMap => {
+    const category = recommendation.category?.toLowerCase() || '';
+    if (category.includes('restaurant') || category.includes('food') || category.includes('dining')) return 'restaurant';
+    if (category.includes('cafe') || category.includes('coffee')) return 'cafe';
+    if (category.includes('bar') || category.includes('nightlife')) return 'wine';
+    if (category.includes('music') || category.includes('concert')) return 'musical-notes';
+    if (category.includes('sport') || category.includes('fitness') || category.includes('gym')) return 'fitness';
+    if (category.includes('park') || category.includes('outdoor') || category.includes('nature')) return 'leaf';
+    if (category.includes('shopping') || category.includes('store')) return 'cart';
+    if (category.includes('movie') || category.includes('theater') || category.includes('entertainment')) return 'film';
+    if (category.includes('museum') || category.includes('art') || category.includes('gallery')) return 'color-palette';
+    if (category.includes('spa') || category.includes('wellness')) return 'flower';
+    return 'location';
+  };
 
   // Determine border color based on score (visual hierarchy)
   // Strong matches get a blue LED glow (deep ocean blue) for visual emphasis
+  // Group plans user accepted get glow border
   const finalScore = score.finalScore || recommendation.score || 0;
   const getBorderColor = () => {
-    if (finalScore >= 60) {
-      return BrandColors.strongMatchGlow; // Top Match - blue LED glow (deep ocean blue)
+    if (userHasAccepted) {
+      return BrandColors.loopBlue; // User accepted group plan - cyan glow
+    } else if (finalScore >= 60) {
+      return BrandColors.strongMatchGlow; // Top Match - blue LED glow
     } else {
       return colors.border; // All other recommendations - subtle gray
     }
   };
 
-  const isTopMatch = finalScore >= 60;
+  // Note: isTopMatch previously used for badge, now only for border color via finalScore check
 
   return (
     <Animated.View
@@ -394,14 +577,34 @@ function ActivityCardIntelligentComponent({
         },
       ]}
     >
-      <View style={[
+      {/* Gradient border for dark mode - eBay-style polish */}
+      {colorScheme === 'dark' && !hasPendingInvitation && !userHasAccepted && !isStrongMatch && (
+        <View style={styles.cardGradientBorder}>
+          <LinearGradient
+            colors={['transparent', '#58595B', '#58595B', '#58595B', 'transparent']}
+            locations={[0, 0.03, 0.5, 0.97, 1]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.cardGradientBorderInner}
+          />
+        </View>
+      )}
+      <Animated.View style={[
         styles.card,
         {
           backgroundColor: colors.card,
-          borderWidth: 1,
-          borderColor: getBorderColor(),
-        }
+          borderWidth: hasPendingInvitation ? 2.5 : (userHasAccepted ? 2 : (isStrongMatch ? 1.5 : (colorScheme === 'dark' ? 0 : 1))),
+          borderColor: hasPendingInvitation ? pulseBorderColor : getBorderColor(),
+        },
+        // Subtle glow effect for strong AI matches
+        isStrongMatch && !userHasAccepted && !hasPendingInvitation && styles.strongMatchGlow,
+        // Pulsing glow for pending invitations
+        hasPendingInvitation && styles.pendingInvitationGlow,
       ]}>
+        {/* Urgency Header INSIDE card (for time-sensitive group plans) - matches card radius */}
+        {hasUrgentDeadline && groupPlan?.deadline && (
+          <UrgencyHeader deadline={groupPlan.deadline} prefix="Respond" />
+        )}
         {/* HERO IMAGE (60% of card) - Carousel if 2+ photos, single image otherwise */}
         <View style={styles.imageContainer}>
           {recommendation.photos && recommendation.photos.length >= 2 ? (
@@ -411,7 +614,7 @@ function ActivityCardIntelligentComponent({
               imageError={imageError}
               onImageError={() => setImageError(true)}
             />
-          ) : (
+          ) : hasValidImage ? (
             // Single image (default) - wrapped in Pressable
             <Pressable
               onPress={onSeeDetails}
@@ -419,11 +622,29 @@ function ActivityCardIntelligentComponent({
               style={styles.imagePressable}
             >
               <Image
-                source={imageSource}
+                source={{ uri: recommendation.imageUrl }}
                 style={styles.image}
                 resizeMode="cover"
                 onError={() => setImageError(true)}
               />
+            </Pressable>
+          ) : (
+            // Gradient placeholder when no image available
+            <Pressable
+              onPress={onSeeDetails}
+              onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              style={styles.imagePressable}
+            >
+              <LinearGradient
+                colors={[BrandColors.loopBlue, BrandColors.loopGreen]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.placeholderGradient}
+              >
+                <View style={styles.placeholderIconContainer}>
+                  <Ionicons name={getCategoryIcon()} size={64} color="rgba(255, 255, 255, 0.8)" />
+                </View>
+              </LinearGradient>
             </Pressable>
           )}
 
@@ -447,6 +668,21 @@ function ActivityCardIntelligentComponent({
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
+            {/* AI Match Badge (subtle, for strong matches) */}
+            {isStrongMatch && !isEvent && (
+              <View style={styles.aiMatchBadge}>
+                <LinearGradient
+                  colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.aiMatchGradient}
+                >
+                  <IconSymbol name="sparkles" size={10} color="#FFFFFF" />
+                  <Text style={styles.aiMatchText}>{matchPercentage}%</Text>
+                </LinearGradient>
+              </View>
+            )}
+
             {/* Event Badge (for Ticketmaster events) */}
             {isEvent && eventMetadata && eventMetadata.start_time && (
               <View style={styles.eventBadge}>
@@ -464,10 +700,11 @@ function ActivityCardIntelligentComponent({
               </View>
             )}
 
-            {/* Top Match Badge (Score >= 60) */}
-            {isTopMatch && !isEvent && (
-              <View style={styles.topMatchBadge}>
-                <Text style={styles.topMatchText}>🎯 Top Match</Text>
+            {/* Trending Badge (high engagement activities) */}
+            {isTrending && !isEvent && !isStrongMatch && (
+              <View style={styles.trendingBadge}>
+                <Ionicons name="flame" size={12} color="#FFFFFF" />
+                <Text style={styles.trendingText}>Trending</Text>
               </View>
             )}
 
@@ -507,48 +744,60 @@ function ActivityCardIntelligentComponent({
             {recommendation.title}
           </Text>
 
-          {/* Metadata Row */}
+          {/* Metadata Row - Simplified (price + distance only) */}
           <View style={styles.metadata}>
-            {/* Rating stars */}
-            {recommendation.rating > 0 && (
-              <>
-                <View style={{ flexDirection: 'row', gap: 2 }}>
-                  {[...Array(5)].map((_, i) => (
-                    <IconSymbol
-                      key={i}
-                      name={i < Math.floor(recommendation.rating) ? 'star.fill' : 'star'}
-                      size={12}
-                      color={BrandColors.star}
-                    />
-                  ))}
-                </View>
-                <Text style={[styles.metaText, { color: colors.textSecondary, fontSize: 12 }]}>
-                  ({recommendation.activity?.reviewsCount || 0})
-                </Text>
-                <View style={styles.metaDivider} />
-              </>
-            )}
             <Text style={[styles.metaText, { color: colors.text }]}>
               {getPriceDisplay(recommendation.priceRange)}
             </Text>
-            <View style={styles.metaDivider} />
+            <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>
               {getDistanceText(recommendation.distance)}
             </Text>
+            {/* Show group plan time if applicable */}
+            {isGroupPlan && groupPlan?.suggestedTime && (
+              <>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
+                <Text style={[styles.metaText, { color: colors.primary }]}>
+                  {groupPlan.suggestedTime}
+                </Text>
+              </>
+            )}
           </View>
 
-          {/* AI Explanation (One Line) */}
+          {/* Friend Activity Row (Phase 2) */}
+          {hasFriendActivity && friendActivity && (
+            <View style={styles.friendActivity}>
+              <StackedAvatars
+                users={friendActivity.friendsWhoVisited.length > 0
+                  ? friendActivity.friendsWhoVisited
+                  : friendActivity.friendsWithInLoop}
+                maxVisible={3}
+                size="small"
+              />
+              <Text style={[styles.friendActivityText, { color: colors.textSecondary }]}>
+                {getFriendActivityText()}
+              </Text>
+            </View>
+          )}
+
+          {/* Group Participants - Outlook-style compact avatar stack */}
+          {isGroupPlan && groupPlan && (
+            <View style={styles.groupAvatarSection}>
+              <OutlookAvatarStack
+                participants={groupPlan.participants}
+                maxVisible={5}
+                size={36}
+              />
+            </View>
+          )}
+
+          {/* AI Explanation - Clean, natural language */}
           <View style={styles.aiExplanation}>
             <IconSymbol name="sparkles" size={14} color={colors.primary} />
             <Text style={[styles.aiText, { color: colors.textSecondary }]} numberOfLines={2}>
               {getAIExplanation()}
             </Text>
           </View>
-
-          {/* Stacked Score Bar */}
-          {recommendation.scoreBreakdown && (
-            <StackedScoreBar scoreBreakdown={recommendation.scoreBreakdown} />
-          )}
 
           {/* Event Description (for events only) */}
           {isEvent && recommendation.description && typeof recommendation.description === 'string' && recommendation.description.trim() !== '' && (
@@ -559,45 +808,153 @@ function ActivityCardIntelligentComponent({
               {recommendation.description.trim()}
             </Text>
           )}
+
+          {/* Instagram-style "Liked by" display */}
+          {!likeState.isLoading && (likeState.friendsWhoLiked.length > 0 || likeState.totalLikes > 0) && (
+            <Pressable
+              style={styles.likedByContainer}
+              onPress={handleOpenLikersList}
+              disabled={likeState.totalLikes === 0}
+            >
+              {likeState.friendsWhoLiked.length > 0 ? (
+                <View style={styles.likedByRow}>
+                  {/* Friend avatar */}
+                  <Image
+                    source={{ uri: likeState.friendsWhoLiked[0].profilePictureUrl || 'https://i.pravatar.cc/40' }}
+                    style={styles.likedByAvatar}
+                  />
+                  <Text style={[styles.likedByText, { color: colors.textSecondary }]}>
+                    Liked by{' '}
+                    <Text style={{ fontWeight: '600', color: colors.text }}>
+                      {likeState.friendsWhoLiked[0].name.split(' ')[0]}
+                    </Text>
+                    {likeState.totalLikes > 1 && (
+                      <Text> and{' '}
+                        <Text style={{ fontWeight: '600', color: colors.text }}>
+                          {likeState.totalLikes - 1} {likeState.totalLikes === 2 ? 'other' : 'others'}
+                        </Text>
+                      </Text>
+                    )}
+                  </Text>
+                </View>
+              ) : likeState.totalLikes > 0 ? (
+                <Text style={[styles.likedByText, { color: colors.textSecondary }]}>
+                  <Text style={{ fontWeight: '600', color: colors.text }}>{formatCount(likeState.totalLikes)}</Text> likes
+                </Text>
+              ) : null}
+            </Pressable>
+          )}
         </Pressable>
 
-        {/* AI MATCH SCORE TILE (Top right of card) */}
-        {(() => {
-          const score = recommendation.score ?? 0;
-          if (score <= 0) return null;
-          const tier = score >= 85 ? MatchScoreColors.excellent
-            : score >= 75 ? MatchScoreColors.good
-            : score >= 60 ? MatchScoreColors.fair
-            : score >= 35 ? MatchScoreColors.average
-            : MatchScoreColors.low;
-          return (
-            <View style={[
-              styles.matchScoreTile,
-              { backgroundColor: tier.bg }
-            ]}>
-              <Text style={[styles.matchScoreNumber, { color: tier.color }]}>
-                {Math.round(score)}
-              </Text>
-              <Text style={[styles.matchScoreLabel, { color: tier.color }]}>
-                MATCH
-              </Text>
-            </View>
-          );
-        })()}
-
-        {/* CTA BUTTONS (bottom right corner) */}
-        <View style={styles.ctaButtonsContainer}>
-          {/* Circular Add to Calendar Button */}
+        {/* UNIFIED SOCIAL ACTION BAR - Now includes inline RSVP for group plans */}
+        <View style={[styles.socialActionBar, { borderTopColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)' }]}>
+          {/* Like Button */}
           <Pressable
-            style={[styles.circularButton, { backgroundColor: colors.primary }]}
-            onPress={onAddToCalendar}
-            onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-            disabled={isRemoving}
+            style={styles.actionButton}
+            onPress={handleLikeToggle}
           >
-            <IconSymbol name="plus.circle.fill" size={30} color="#FFFFFF" />
+            <Ionicons
+              name={likeState.isLiked ? 'heart' : 'heart-outline'}
+              size={24}
+              color={likeState.isLiked ? BrandColors.like : colors.text}
+            />
+            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
+              {formatCount(displayLikes)}
+            </Text>
           </Pressable>
+
+          {/* Comment Button */}
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onComment?.();
+            }}
+          >
+            <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
+            <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
+              {formatCount(mockComments)}
+            </Text>
+          </Pressable>
+
+          {/* Share Button */}
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onShare?.();
+            }}
+          >
+            <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
+            <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>
+              Share
+            </Text>
+          </Pressable>
+
+          {/* Primary Action - contextual based on card type */}
+          {isGroupPlan && groupPlan?.userStatus === 'pending' ? (
+            <>
+              {/* Primary RSVP "Yes" action */}
+              <Pressable
+                style={[styles.actionButton, styles.rsvpPrimaryAction]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onAcceptRSVP?.();
+                }}
+              >
+                <Ionicons name="checkmark-circle" size={24} color={BrandColors.success} />
+                <Text style={[styles.actionLabel, { color: BrandColors.success, fontWeight: '600' }]}>
+                  Yes
+                </Text>
+              </Pressable>
+
+              {/* Overflow menu for No/Maybe */}
+              <Pressable
+                style={styles.actionButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  // Show overflow menu with Decline/Maybe options
+                  // For now, cycle: tap once = Maybe, double tap = Decline
+                  onMaybeRSVP?.();
+                }}
+                onLongPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onDeclineRSVP?.();
+                }}
+              >
+                <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
+              </Pressable>
+            </>
+          ) : (
+            /* Standard Loop action for non-group or already responded */
+            <Pressable
+              style={[styles.actionButton, styles.primaryAction]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                onAddToCalendar();
+              }}
+              disabled={isRemoving || userHasAccepted}
+            >
+              <Ionicons
+                name={userHasAccepted ? 'checkmark-circle' : 'add-circle'}
+                size={24}
+                color={userHasAccepted ? BrandColors.success : colors.primary}
+              />
+              <Text style={[styles.actionLabel, {
+                color: userHasAccepted ? BrandColors.success : colors.primary,
+                fontWeight: '600'
+              }]}>
+                {userHasAccepted ? 'Going' : 'Loop'}
+              </Text>
+            </Pressable>
+          )}
         </View>
-      </View>
+
+        {/* Accepted Group Plan Glow Effect */}
+        {userHasAccepted && (
+          <View style={styles.acceptedGlow} pointerEvents="none" />
+        )}
+      </Animated.View>
     </Animated.View>
   );
 }
@@ -606,22 +963,61 @@ function ActivityCardIntelligentComponent({
 export const ActivityCardIntelligent = React.memo(
   ActivityCardIntelligentComponent,
   (prevProps, nextProps) => {
-    // Only re-render if recommendation ID, index, or removing state changes
+    // Only re-render if recommendation ID, index, removing state, or pending invitation changes
     // Handlers are assumed stable (will be memoized in parent)
     return prevProps.recommendation.id === nextProps.recommendation.id &&
            prevProps.index === nextProps.index &&
-           prevProps.isRemoving === nextProps.isRemoving;
+           prevProps.isRemoving === nextProps.isRemoving &&
+           prevProps.hasPendingInvitation === nextProps.hasPendingInvitation;
   }
 );
 
 const styles = StyleSheet.create({
   container: {
     marginBottom: Spacing.md,
+    marginHorizontal: CARD_MARGIN, // Wider cards with reduced margins
+    position: 'relative',
   },
   card: {
-    borderRadius: BorderRadius.lg,
+    borderRadius: BorderRadius.xl, // Larger radius for modern feel
     overflow: 'hidden',
-    ...Shadows.md,
+    // Refined shadows for eBay-style polish
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08, // Subtle shadow (was 0.1)
+    shadowRadius: 12, // Softer spread (was 8)
+    elevation: 4,
+  },
+  // Gradient border container for dark mode
+  cardGradientBorder: {
+    position: 'absolute',
+    top: -0.5,
+    left: -0.5,
+    right: -0.5,
+    bottom: -0.5,
+    borderRadius: BorderRadius.xl + 0.5,
+    overflow: 'hidden',
+    zIndex: -1,
+  },
+  cardGradientBorderInner: {
+    flex: 1,
+    borderRadius: BorderRadius.xl + 0.5,
+  },
+  // Subtle glow for strong AI matches
+  strongMatchGlow: {
+    shadowColor: BrandColors.loopBlue,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  // Pulsing glow for pending invitations
+  pendingInvitationGlow: {
+    shadowColor: BrandColors.loopGreen,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
 
   // IMAGE SECTION (60%)
@@ -637,6 +1033,20 @@ const styles = StyleSheet.create({
   image: {
     width: '100%',
     height: '100%',
+  },
+  placeholderGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   imageGradient: {
     position: 'absolute',
@@ -668,17 +1078,38 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: Spacing.xs,
   },
-  topMatchBadge: {
-    backgroundColor: BrandColors.success,
+  // AI Match Badge (subtle, futuristic)
+  aiMatchBadge: {
+    borderRadius: BorderRadius.full,
+    overflow: 'hidden',
+  },
+  aiMatchGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 4,
+  },
+  aiMatchText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  // Trending Badge (replaces Top Match badge)
+  trendingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: BrandColors.loopOrange,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
+    gap: 4,
   },
-  topMatchText: {
-    color: '#fff',
-    fontSize: 11, // Small badge text
-    fontWeight: '700',
-    letterSpacing: 0.3,
+  trendingText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
   },
   openNowBadge: {
     flexDirection: 'row',
@@ -765,10 +1196,10 @@ const styles = StyleSheet.create({
   // CONTENT SECTION (30%)
   content: {
     padding: Spacing.md,
-    paddingTop: Spacing.sm, // Less top padding since tile takes space
-    paddingBottom: Spacing.lg, // Extra space for circular button
-    paddingRight: 68, // Prevent text from overlapping tile
-    minHeight: 90, // Ensure minimum height to prevent crowding with tile
+    paddingTop: Spacing.md,
+    paddingBottom: Spacing.sm, // Reduced - social bar handles bottom padding
+    paddingRight: Spacing.md,
+    minHeight: 80,
   },
   title: {
     marginBottom: Spacing.xs,
@@ -784,17 +1215,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  metaDivider: {
-    width: 2,
-    height: 2,
-    borderRadius: 1,
-    backgroundColor: BrandColors.veryLightGray,
+  metaDot: {
+    fontSize: 12,
+    marginHorizontal: 6,
   },
   aiExplanation: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: Spacing.xs,
     marginBottom: Spacing.sm, // Extra safety margin to avoid button overlap
+    flexWrap: 'wrap',
   },
   aiText: {
     fontSize: 13,
@@ -810,78 +1240,98 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.xs,
   },
 
-  // AI MATCH SCORE TILE (Soft tinted background style - matches screenshots)
-  matchScoreTile: {
-    position: 'absolute',
-    top: IMAGE_HEIGHT + Spacing.sm,
-    right: Spacing.md,
-    width: 60,
-    height: 60,
-    borderRadius: BorderRadius.lg,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 4,
-  },
-  matchScoreNumber: {
-    fontSize: 26,
-    fontWeight: '700',
-    letterSpacing: -0.5,
-    includeFontPadding: false,
-    textAlignVertical: 'center',
-  },
-  matchScoreLabel: {
-    fontSize: 9,
-    fontWeight: '600',
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginTop: -2,
-    opacity: 0.9,
-  },
-
-  // CTA BUTTONS CONTAINER
-  ctaButtonsContainer: {
-    position: 'absolute',
-    bottom: Spacing.md,
-    right: Spacing.md,
+  // INSTAGRAM-STYLE "LIKED BY" DISPLAY
+  likedByContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
-    zIndex: 100, // Ensure buttons are above all other card elements
-    elevation: 100, // Android elevation
+    marginTop: Spacing.xs,
+    marginBottom: Spacing.sm,
+    paddingTop: Spacing.xs,
   },
-
-  // BUY TICKETS BUTTON
-  ticketButton: {
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  likedByRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-    elevation: 5,
+    gap: Spacing.sm,
   },
-  ticketButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '600',
+  likedByAvatar: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#E5E5E5',
+  },
+  likedByText: {
+    fontSize: 13,
+    lineHeight: 18,
   },
 
-  // CIRCULAR CTA BUTTON (10%)
-  circularButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+  // SOCIAL ACTION BAR (Instagram-style)
+  socialActionBar: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-around',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderTopWidth: 1,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  actionCount: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  actionLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  primaryAction: {
+    backgroundColor: 'rgba(0, 166, 217, 0.1)', // loopBlue at 10%
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+  },
+
+  // PHASE 2: Friend Activity Row
+  friendActivity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.sm,
+  },
+  friendActivityText: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+
+  // PHASE 2: Group Avatar Section (Outlook-style compact)
+  groupAvatarSection: {
+    marginBottom: Spacing.sm,
+  },
+
+  // PHASE 2: Inline RSVP Primary Action (in social bar)
+  rsvpPrimaryAction: {
+    backgroundColor: 'rgba(34, 197, 94, 0.1)', // success green at 10%
+    borderRadius: BorderRadius.full,
+    paddingHorizontal: 12,
+  },
+
+  // PHASE 2: Accepted Group Glow Effect
+  acceptedGlow: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: BorderRadius.xl,
+    borderWidth: 2,
+    borderColor: BrandColors.loopBlue,
     shadowColor: BrandColors.loopBlue,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 6,
   },
 
   // INSTAGRAM-STYLE CAROUSEL
@@ -916,38 +1366,4 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
 
-  // STACKED SCORE BAR (Compact version)
-  stackedBar: {
-    marginTop: Spacing.xs, // Reduced from sm
-  },
-  stackedBarContainer: {
-    flexDirection: 'row',
-    height: 6, // Reduced from 8
-    backgroundColor: '#E5E7EB',
-    borderRadius: 3, // Reduced from 4
-    overflow: 'hidden',
-  },
-  stackedBarSegment: {
-    height: '100%',
-  },
-  stackedBarLegend: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-    gap: Spacing.sm, // Reduced from md
-    marginTop: 6, // Reduced spacing
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3, // Reduced from 4
-  },
-  legendDot: {
-    width: 6, // Reduced from 8
-    height: 6, // Reduced from 8
-    borderRadius: 3, // Reduced from 4
-  },
-  legendText: {
-    fontSize: 10,
-    fontWeight: '600',
-  },
 });

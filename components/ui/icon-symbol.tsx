@@ -23,6 +23,8 @@ const MAPPING = {
   'safari': 'explore',
   'magnifyingglass': 'search',
   'sparkles': 'auto-awesome',
+  'square.grid.2x2.fill': 'dashboard',
+  'arrow.triangle.merge': 'join-right',
   'person.2.fill': 'people',
   'person.fill': 'person',
   // Business tab icons

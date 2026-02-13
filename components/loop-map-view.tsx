@@ -442,6 +442,55 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
     return CategoryColors[category.toLowerCase()] || BrandColors.loopBlue;
   };
 
+  // Calculate initial region - prioritize: current location > next task > first task > home
+  // IMPORTANT: This useMemo must be called before any early returns to comply with React hooks rules
+  const initialFocusPoint = useMemo(() => {
+    // Priority 1: Current location if available
+    if (currentLocation?.latitude && currentLocation?.longitude) {
+      return {
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        source: 'current',
+      };
+    }
+    // Priority 2: Next upcoming task
+    if (nextTaskInfo?.coords) {
+      return {
+        latitude: nextTaskInfo.coords.latitude,
+        longitude: nextTaskInfo.coords.longitude,
+        source: 'nextTask',
+      };
+    }
+    // Priority 3: First task
+    if (validTaskCoords.length > 0) {
+      return {
+        latitude: validTaskCoords[0].latitude,
+        longitude: validTaskCoords[0].longitude,
+        source: 'firstTask',
+      };
+    }
+    // Fallback to home
+    return {
+      latitude: defaultHome.latitude,
+      longitude: defaultHome.longitude,
+      source: 'home',
+    };
+  }, [currentLocation, nextTaskInfo, validTaskCoords, defaultHome]);
+
+  // Build "next task" route coordinates for animated line
+  // IMPORTANT: This useMemo must be called before any early returns to comply with React hooks rules
+  const nextTaskRouteCoords = useMemo(() => {
+    if (!nextTaskInfo?.coords) return null;
+
+    const startPoint = currentLocation || (hasRealHome ? defaultHome : null);
+    if (!startPoint) return null;
+
+    return [
+      { latitude: startPoint.latitude, longitude: startPoint.longitude },
+      { latitude: nextTaskInfo.coords.latitude, longitude: nextTaskInfo.coords.longitude },
+    ];
+  }, [nextTaskInfo, currentLocation, hasRealHome, defaultHome]);
+
   // No tasks scheduled
   if (tasks.length === 0) {
     return (
@@ -546,53 +595,6 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
   // Note: Apple Maps is kept as fallback if Google Maps fails to load
   const mapProvider = GOOGLE_MAPS_API_KEY ? PROVIDER_GOOGLE : undefined;
 
-  // Calculate initial region - prioritize: current location > next task > first task > home
-  const initialFocusPoint = useMemo(() => {
-    // Priority 1: Current location if available
-    if (currentLocation?.latitude && currentLocation?.longitude) {
-      return {
-        latitude: currentLocation.latitude,
-        longitude: currentLocation.longitude,
-        source: 'current',
-      };
-    }
-    // Priority 2: Next upcoming task
-    if (nextTaskInfo?.coords) {
-      return {
-        latitude: nextTaskInfo.coords.latitude,
-        longitude: nextTaskInfo.coords.longitude,
-        source: 'nextTask',
-      };
-    }
-    // Priority 3: First task
-    if (validTaskCoords.length > 0) {
-      return {
-        latitude: validTaskCoords[0].latitude,
-        longitude: validTaskCoords[0].longitude,
-        source: 'firstTask',
-      };
-    }
-    // Fallback to home
-    return {
-      latitude: defaultHome.latitude,
-      longitude: defaultHome.longitude,
-      source: 'home',
-    };
-  }, [currentLocation, nextTaskInfo, validTaskCoords, defaultHome]);
-
-  // Build "next task" route coordinates for animated line
-  const nextTaskRouteCoords = useMemo(() => {
-    if (!nextTaskInfo?.coords) return null;
-
-    const startPoint = currentLocation || (hasRealHome ? defaultHome : null);
-    if (!startPoint) return null;
-
-    return [
-      { latitude: startPoint.latitude, longitude: startPoint.longitude },
-      { latitude: nextTaskInfo.coords.latitude, longitude: nextTaskInfo.coords.longitude },
-    ];
-  }, [nextTaskInfo, currentLocation, hasRealHome, defaultHome]);
-
   return (
     <View style={styles.container} onLayout={handleLayout}>
       {!containerReady ? (
@@ -622,69 +624,69 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
             mapType="standard"
             customMapStyle={mapProvider === PROVIDER_GOOGLE ? getMapStyle(colorScheme ?? null) : undefined}
           >
-            {/* COMPLETED routes - Light cyan fill with darker cyan border */}
-            {/* Border layer (darker brand blue) */}
+            {/* COMPLETED routes - Bold Google Maps blue with navy border */}
+            {/* Border layer (dark navy) */}
             {routeSegments.completed.map((segment, index) => (
               <Polyline
                 key={`completed-border-${index}`}
                 coordinates={segment}
-                strokeColor={BrandColors.loopBlueDark}
+                strokeColor={BrandColors.routeCompletedBorder}
                 strokeWidth={7}
                 lineCap="round"
                 lineJoin="round"
               />
             ))}
-            {/* Main layer (light brand cyan) */}
+            {/* Fill layer (Google Maps blue) */}
             {routeSegments.completed.map((segment, index) => (
               <Polyline
                 key={`completed-${index}`}
                 coordinates={segment}
-                strokeColor={BrandColors.loopBlueLight}
+                strokeColor={BrandColors.routeCompleted}
                 strokeWidth={5}
                 lineCap="round"
                 lineJoin="round"
               />
             ))}
 
-            {/* FUTURE routes - light muted with subtle border (not yet traveled) */}
-            {/* Border layer (muted brand blue) */}
+            {/* FUTURE routes - lighter blue with medium border (not yet traveled) */}
+            {/* Border layer (medium blue) */}
             {routeSegments.future.map((segment, index) => (
               <Polyline
                 key={`future-border-${index}`}
                 coordinates={segment}
-                strokeColor="rgba(0, 125, 163, 0.4)"
+                strokeColor={BrandColors.routeFutureBorder}
                 strokeWidth={6}
                 lineCap="round"
                 lineJoin="round"
               />
             ))}
-            {/* Main layer (very light brand cyan) */}
+            {/* Fill layer (light blue) */}
             {routeSegments.future.map((segment, index) => (
               <Polyline
                 key={`future-${index}`}
                 coordinates={segment}
-                strokeColor="rgba(46, 206, 255, 0.35)"
+                strokeColor={BrandColors.routeFuture}
                 strokeWidth={4}
                 lineCap="round"
                 lineJoin="round"
               />
             ))}
 
-            {/* IN-PROGRESS route - animated pulsing with darker border (current leg) */}
+            {/* IN-PROGRESS route - animated pulsing with navy border (current leg) */}
             {routeSegments.inProgress && (
               <>
-                {/* Border layer (dark brand blue) */}
+                {/* Border layer (dark navy, matches completed) */}
                 <Polyline
                   coordinates={routeSegments.inProgress}
-                  strokeColor={BrandColors.loopBlueDark}
+                  strokeColor={BrandColors.routeInProgressBorder}
                   strokeWidth={8}
                   lineCap="round"
                   lineJoin="round"
                 />
-                {/* Main animated layer (brand cyan pulsing) */}
+                {/* Fill layer (pulsing opacity 0.3-1.0 of Google Maps blue) */}
                 <Polyline
                   coordinates={routeSegments.inProgress}
-                  strokeColor={`rgba(0, 166, 217, ${inProgressOpacity})`}
+                  strokeColor={`rgba(26, 115, 232, ${inProgressOpacity})`}
                   strokeWidth={6}
                   lineCap="round"
                   lineJoin="round"

@@ -3,22 +3,22 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Typography, Spacing, BorderRadius } from '@/constants/brand';
+import { BrandColors, ThemeColors, Typography, Spacing, BorderRadius } from '@/constants/brand';
 
 export const CATEGORIES = [
-  { id: 'all', label: 'All Categories', icon: 'apps', color: '#007AFF' },
-  { id: 'dining', label: 'Dining', icon: 'restaurant', color: '#FF6B6B' },
-  { id: 'coffee', label: 'Coffee & Cafes', icon: 'cafe', color: '#D4A574' },
-  { id: 'nightlife', label: 'Bars & Nightlife', icon: 'beer', color: '#9B59B6' },
-  { id: 'entertainment', label: 'Entertainment', icon: 'game-controller', color: '#E74C3C' },
-  { id: 'culture', label: 'Arts & Culture', icon: 'color-palette', color: '#F39C12' },
-  { id: 'shopping', label: 'Shopping', icon: 'cart', color: '#3498DB' },
-  { id: 'fitness', label: 'Fitness & Wellness', icon: 'fitness', color: '#2ECC71' },
-  { id: 'outdoors', label: 'Parks & Outdoors', icon: 'leaf', color: '#27AE60' },
-  { id: 'events', label: 'Events & Venues', icon: 'calendar', color: '#E67E22' },
-  { id: 'family', label: 'Family & Kids', icon: 'people', color: '#FF69B4' },
-  { id: 'attractions', label: 'Tourist Attractions', icon: 'star', color: '#FFD700' },
-  { id: 'everyday', label: 'Everyday & Specialty', icon: 'storefront', color: '#95A5A6' },
+  { id: 'all', label: 'All Categories', icon: 'apps', color: BrandColors.loopBlue },
+  { id: 'dining', label: 'Dining', icon: 'restaurant', color: '#EF4444' },
+  { id: 'coffee', label: 'Coffee & Cafes', icon: 'cafe', color: BrandColors.loopOrange },
+  { id: 'nightlife', label: 'Bars & Nightlife', icon: 'beer', color: BrandColors.loopPurple },
+  { id: 'entertainment', label: 'Entertainment', icon: 'game-controller', color: BrandColors.loopBlue },
+  { id: 'culture', label: 'Arts & Culture', icon: 'color-palette', color: BrandColors.accentPurple },
+  { id: 'shopping', label: 'Shopping', icon: 'cart', color: BrandColors.loopPink },
+  { id: 'fitness', label: 'Fitness & Wellness', icon: 'fitness', color: BrandColors.loopGreen },
+  { id: 'outdoors', label: 'Parks & Outdoors', icon: 'leaf', color: BrandColors.loopTeal },
+  { id: 'events', label: 'Events & Venues', icon: 'calendar', color: BrandColors.loopOrangeDark },
+  { id: 'family', label: 'Family & Kids', icon: 'people', color: BrandColors.loopBlueLight },
+  { id: 'attractions', label: 'Tourist Attractions', icon: 'star', color: BrandColors.accentGold },
+  { id: 'everyday', label: 'Everyday & Specialty', icon: 'storefront', color: BrandColors.veryLightGray },
 ];
 
 interface CategorySelectorProps {

@@ -6,9 +6,14 @@
  * - Name, email, phone
  * - Selected interests
  * - Account settings
+ *
+ * UX ENHANCEMENT (v2.0) - TikTok-Style Updates:
+ * - Grouped interests by category (Food & Dining, Entertainment, etc.)
+ * - Improved profile picture upload experience with better visual feedback
+ * - Consistent phone field visual treatment
  */
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -18,19 +23,21 @@ import {
   TextInput,
   Image,
   Alert,
-  Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { ProfileHeader } from '@/components/profile-header';
+import ProfileStatsBar, { TraitPills, type FeedbackStats } from '@/components/profile-stats-bar';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
+import { getUserFeedbackStats } from '@/services/feedback-service';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
+import { generatePersonalitySummary, type PersonalityInput } from '@/utils/personality-generator';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -46,6 +53,45 @@ export default function ProfileScreen() {
     (user?.interests as string[]) || []
   );
   const [isSaving, setIsSaving] = useState(false);
+  const [feedbackStats, setFeedbackStats] = useState<FeedbackStats>({
+    totalFeedback: 0,
+    thumbsUpCount: 0,
+    thumbsDownCount: 0,
+    satisfactionRate: 0,
+  });
+
+  useEffect(() => {
+    if (user?.id) {
+      getUserFeedbackStats(user.id).then(setFeedbackStats).catch(() => {});
+    }
+  }, [user?.id]);
+
+  // Track whether edits have been made
+  const initialName = user?.name || '';
+  const initialPhone = user?.phone || '';
+  const initialPicture = user?.profile_picture_url || '';
+  const initialInterests = (user?.interests as string[]) || [];
+
+  const hasChanges = useMemo(() => {
+    if (name !== initialName) return true;
+    if (phone !== initialPhone) return true;
+    if (profilePicture !== initialPicture) return true;
+    if (selectedInterests.length !== initialInterests.length) return true;
+    if (selectedInterests.some((i) => !initialInterests.includes(i))) return true;
+    return false;
+  }, [name, phone, profilePicture, selectedInterests, initialName, initialPhone, initialPicture, initialInterests]);
+
+  // Personality summary
+  const personality = useMemo(() => {
+    const input: PersonalityInput = {
+      interests: (user?.interests as string[]) || [],
+      aiProfile: (user?.ai_profile as any) || null,
+      feedbackCount: feedbackStats.totalFeedback,
+      streakDays: user?.streak_days ?? 0,
+      loopScore: user?.loop_score ?? 0,
+    };
+    return generatePersonalitySummary(input);
+  }, [user?.interests, user?.ai_profile, feedbackStats.totalFeedback, user?.streak_days, user?.loop_score]);
 
   // Handle profile picture upload
   const handleProfilePictureUpload = async () => {
@@ -168,10 +214,22 @@ export default function ProfileScreen() {
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <ProfileHeader
-          username={user?.name || 'Profile'}
-          onSettingsPress={() => {
+          username={user?.email?.split('@')[0] || user?.name || 'Profile'}
+          onMenuPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.push('/(tabs)/settings');
+          }}
+          onUsernamePress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            Alert.alert(
+              user?.name || 'Account',
+              user?.email || '',
+              [
+                { text: 'Edit Profile', onPress: () => {} },
+                { text: 'Switch Account', style: 'default' },
+                { text: 'Cancel', style: 'cancel' },
+              ]
+            );
           }}
         />
 
@@ -180,38 +238,50 @@ export default function ProfileScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile Picture Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Profile Picture</Text>
-
-          <TouchableOpacity
-            style={styles.profilePictureContainer}
-            onPress={handleProfilePictureUpload}
-          >
-            {profilePicture ? (
-              <Image
-                source={{ uri: profilePicture }}
-                style={styles.profilePicture}
-              />
-            ) : (
-              <View style={[styles.profilePicturePlaceholder, { backgroundColor: colors.card }]}>
-                <Ionicons name="person" size={48} color={colors.textSecondary} />
-              </View>
-            )}
-
-            <View style={[styles.editBadge, { backgroundColor: BrandColors.loopBlue }]}>
-              <Ionicons name="camera" size={16} color="#FFFFFF" />
+        {/* Avatar */}
+        <TouchableOpacity
+          style={styles.avatarContainer}
+          onPress={handleProfilePictureUpload}
+        >
+          {profilePicture ? (
+            <Image
+              source={{ uri: profilePicture }}
+              style={styles.avatar}
+            />
+          ) : (
+            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.card }]}>
+              <Ionicons name="person" size={40} color={colors.textSecondary} />
             </View>
-          </TouchableOpacity>
+          )}
+          <View style={[styles.cameraBadge, { backgroundColor: BrandColors.loopBlue }]}>
+            <Ionicons name="camera" size={14} color="#FFFFFF" />
+          </View>
+        </TouchableOpacity>
 
-          <Text style={[styles.hint, { color: colors.textSecondary }]}>
-            Tap to upload a profile picture
-          </Text>
-        </View>
+        {/* Name + personality subtitle */}
+        <Text style={[styles.profileName, { color: colors.text }]}>
+          {user?.name || 'Your Name'}
+        </Text>
+        <Text style={[styles.profileSubtitle, { color: colors.textSecondary }]}>
+          {personality.subtitle}
+        </Text>
+
+        {/* Stats bar + trait pills */}
+        <ProfileStatsBar
+          loopScore={user?.loop_score ?? 0}
+          streakDays={user?.streak_days ?? 0}
+          feedbackStats={feedbackStats}
+        />
+        <TraitPills traits={personality.traits} />
+
+        <View style={{ height: Spacing.lg }} />
 
         {/* Personal Information Section */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Personal Information</Text>
+          <View style={styles.sectionTitleRow}>
+            <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Personal Information</Text>
+          </View>
 
           {/* Name */}
           <View style={styles.inputContainer}>
@@ -262,9 +332,29 @@ export default function ProfileScreen() {
               keyboardType="phone-pad"
             />
           </View>
+
+          {/* Locations Link */}
+          <TouchableOpacity
+            style={[styles.locationsCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/(tabs)/locations');
+            }}
+          >
+            <View style={[styles.locationsIconContainer, { backgroundColor: BrandColors.loopGreen + '20' }]}>
+              <Ionicons name="location" size={24} color={BrandColors.loopGreen} />
+            </View>
+            <View style={styles.locationsContent}>
+              <Text style={[styles.locationsTitle, { color: colors.text }]}>My Locations</Text>
+              <Text style={[styles.locationsSubtitle, { color: colors.textSecondary }]}>
+                {user?.home_address ? 'Home & work addresses set' : 'Set home and work addresses'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
+          </TouchableOpacity>
         </View>
 
-        {/* Interests Section */}
+        {/* Interests Section - TikTok-Style Grouped Categories */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
             Your Interests ({selectedInterests.length})
@@ -273,50 +363,114 @@ export default function ProfileScreen() {
             Select interests to get personalized recommendations
           </Text>
 
-          <View style={styles.interestsGrid}>
-            {ONBOARDING_INTERESTS.map((interest) => {
-              const isSelected = selectedInterests.includes(interest);
-              const group = INTEREST_GROUPS[interest];
-              return (
-                <TouchableOpacity
-                  key={interest}
-                  style={[
-                    styles.interestChip,
-                    {
-                      backgroundColor: isSelected ? BrandColors.loopBlue : colors.card,
-                      borderColor: isSelected ? BrandColors.loopBlue : colors.border,
-                    }
-                  ]}
-                  onPress={() => toggleInterest(interest)}
-                >
-                  <Text style={[
-                    styles.interestText,
-                    { color: isSelected ? '#FFFFFF' : colors.text }
-                  ]}>
-                    {group?.icon} {interest}
-                  </Text>
-                  {isSelected && (
-                    <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                  )}
-                </TouchableOpacity>
-              );
-            })}
-          </View>
+          {/* Group interests by type (Food, Entertainment, etc.) */}
+          {(() => {
+            // Define category groupings manually based on interest types
+            const categoryGroups: { name: string; icon: string; interests: string[] }[] = [
+              {
+                name: 'Food & Dining',
+                icon: '🍽️',
+                interests: ['Dining', 'Coffee & Cafes', 'Bars & Nightlife', 'Desserts & Treats'],
+              },
+              {
+                name: 'Entertainment',
+                icon: '🎭',
+                interests: ['Live Music', 'Movies & Cinema', 'Comedy & Theater', 'Gaming'],
+              },
+              {
+                name: 'Fitness & Wellness',
+                icon: '💪',
+                interests: ['Fitness & Gym', 'Outdoor Sports', 'Yoga & Mindfulness'],
+              },
+              {
+                name: 'Arts & Culture',
+                icon: '🎨',
+                interests: ['Museums & Art', 'Photography'],
+              },
+              {
+                name: 'Outdoors & Nature',
+                icon: '🌲',
+                interests: ['Parks & Nature', 'Hiking & Trails'],
+              },
+              {
+                name: 'Shopping & Services',
+                icon: '🛍️',
+                interests: ['Shopping', 'Beauty & Spa'],
+              },
+            ];
+
+            // Filter to only show groups that have at least one interest in ONBOARDING_INTERESTS
+            return categoryGroups
+              .filter(group => group.interests.some(i => ONBOARDING_INTERESTS.includes(i)))
+              .map((group) => {
+                const validInterests = group.interests.filter(i => ONBOARDING_INTERESTS.includes(i));
+                if (validInterests.length === 0) return null;
+
+                return (
+                  <View key={group.name} style={styles.interestCategory}>
+                    {/* Category Header */}
+                    <View style={styles.interestCategoryHeader}>
+                      <Text style={styles.interestCategoryIcon}>{group.icon}</Text>
+                      <Text style={[styles.interestCategoryTitle, { color: colors.text }]}>
+                        {group.name}
+                      </Text>
+                      <Text style={[styles.interestCategoryCount, { color: colors.textSecondary }]}>
+                        {validInterests.filter(i => selectedInterests.includes(i)).length}/{validInterests.length}
+                      </Text>
+                    </View>
+
+                    {/* Interests in this category */}
+                    <View style={styles.interestsGrid}>
+                      {validInterests.map((interest) => {
+                        const isSelected = selectedInterests.includes(interest);
+                        const interestGroup = INTEREST_GROUPS[interest];
+                        return (
+                          <TouchableOpacity
+                            key={interest}
+                            style={[
+                              styles.interestChip,
+                              {
+                                backgroundColor: isSelected ? BrandColors.loopBlue : colors.card,
+                                borderColor: isSelected ? BrandColors.loopBlue : colors.border,
+                              }
+                            ]}
+                            onPress={() => toggleInterest(interest)}
+                          >
+                            <Text style={styles.interestEmoji}>{interestGroup?.icon}</Text>
+                            <Text style={[
+                              styles.interestText,
+                              { color: isSelected ? '#FFFFFF' : colors.text }
+                            ]}>
+                              {interest}
+                            </Text>
+                            {isSelected && (
+                              <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
+                            )}
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  </View>
+                );
+              });
+          })()}
         </View>
 
-        {/* Save Button */}
-        <TouchableOpacity
-          style={[styles.saveButton, {
-            backgroundColor: BrandColors.loopBlue,
-            opacity: isSaving ? 0.6 : 1,
-          }]}
-          onPress={handleSave}
-          disabled={isSaving}
-        >
-          <Text style={styles.saveButtonText}>
-            {isSaving ? 'Saving...' : 'Save Changes'}
-          </Text>
-        </TouchableOpacity>
+        {/* Save Button — only visible when edits have been made */}
+        {hasChanges && (
+          <TouchableOpacity
+            style={[styles.saveButton, {
+              backgroundColor: BrandColors.loopBlue,
+              opacity: isSaving ? 0.6 : 1,
+            }]}
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            <Text style={styles.saveButtonText}>
+              {isSaving ? 'Saving...' : 'Save Changes'}
+            </Text>
+          </TouchableOpacity>
+        )}
       </ScrollView>
       </View>
     </SwipeableLayout>
@@ -332,44 +486,60 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.lg,
-    paddingBottom: Spacing.xl * 2,
+    paddingBottom: 100, // Account for tab bar + safe area
   },
   section: {
     marginBottom: Spacing.xl,
   },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginBottom: Spacing.md,
+  },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
-    marginBottom: Spacing.md,
   },
-  profilePictureContainer: {
+  avatarContainer: {
     alignSelf: 'center',
     position: 'relative',
     marginBottom: Spacing.sm,
   },
-  profilePicture: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  avatar: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
   },
-  profilePicturePlaceholder: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+  avatarPlaceholder: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  editBadge: {
+  cameraBadge: {
     position: 'absolute',
     bottom: 0,
     right: 0,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 30,
+    height: 30,
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 3,
+    borderWidth: 2.5,
     borderColor: '#FFFFFF',
+  },
+  profileName: {
+    fontSize: 20,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  profileSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: Spacing.md,
   },
   hint: {
     fontSize: 14,
@@ -391,23 +561,75 @@ const styles = StyleSheet.create({
     fontSize: 16,
     borderWidth: 1,
   },
+  locationsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginTop: Spacing.md,
+  },
+  locationsIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: Spacing.md,
+  },
+  locationsContent: {
+    flex: 1,
+  },
+  locationsTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  locationsSubtitle: {
+    fontSize: 14,
+    marginTop: 2,
+  },
+  // TikTok-Style Interest Categories (v2.0)
+  interestCategory: {
+    marginBottom: Spacing.lg,
+  },
+  interestCategoryHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+    gap: Spacing.xs,
+  },
+  interestCategoryIcon: {
+    fontSize: 18,
+  },
+  interestCategoryTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
+  interestCategoryCount: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
   interestsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
   },
   interestChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
+    gap: 4,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 6,
     borderRadius: BorderRadius.full,
-    borderWidth: 1.5,
+    borderWidth: 1,
+  },
+  interestEmoji: {
+    fontSize: 14,
   },
   interestText: {
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '500',
   },
   saveButton: {
     height: 56,

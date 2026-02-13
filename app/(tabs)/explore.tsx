@@ -148,26 +148,62 @@ export default function ExploreScreen() {
 
   // Load more (infinite scroll)
   const loadMoreContent = async () => {
-    if (isLoadingMoreRef.current) return;
-    if (!hasMoreRef.current) return;
-    if (loading) return;
-    if (searchQuery.length >= 2) return;
-    if (!user || !userLocation) return;
+    console.log('[Explore] loadMoreContent called', {
+      isLoadingMore: isLoadingMoreRef.current,
+      hasMore: hasMoreRef.current,
+      loading,
+      searchActive: searchQuery.length >= 2,
+      hasUser: !!user,
+      hasLocation: !!userLocation,
+      distanceTier: distanceTierRef.current,
+    });
+
+    if (isLoadingMoreRef.current) {
+      console.log('[Explore] Blocked: already loading');
+      return;
+    }
+    if (!hasMoreRef.current) {
+      console.log('[Explore] Blocked: no more content');
+      return;
+    }
+    if (loading) {
+      console.log('[Explore] Blocked: initial loading');
+      return;
+    }
+    if (searchQuery.length >= 2) {
+      console.log('[Explore] Blocked: search active');
+      return;
+    }
+    if (!user || !userLocation) {
+      console.log('[Explore] Blocked: no user or location');
+      return;
+    }
 
     const now = Date.now();
-    if (now - lastLoadMoreTime.current < 1000) return;
+    if (now - lastLoadMoreTime.current < 1000) {
+      console.log('[Explore] Blocked: throttled (less than 1s since last load)');
+      return;
+    }
 
     isLoadingMoreRef.current = true;
     lastLoadMoreTime.current = now;
     setLoadingMore(true);
 
     try {
+      console.log('[Explore] Fetching batch at tier', distanceTierRef.current);
       const batch = await fetchExploreBatch({
         user,
         userLocation,
         distanceTier: distanceTierRef.current,
         excludePlaceIds: excludePlaceIdsRef.current,
         batchSize: 30,
+      });
+
+      console.log('[Explore] Batch fetched:', {
+        itemCount: batch.items.length,
+        hasMore: batch.hasMore,
+        nextTier: batch.nextDistanceTier,
+        firstItemWithImage: batch.items.find(i => i.imageUrl)?.title || 'none',
       });
 
       // Update exclude IDs
@@ -262,20 +298,46 @@ export default function ExploreScreen() {
     return type.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
   }, []);
 
-  // Helper to get photo URL
+  // Helper to get photo URL (handles all API formats)
   const getPhotoUrl = useCallback((place: ScoredRecommendation['place'], maxWidth: number = 400) => {
     if (!place?.photos?.[0]?.photo_reference) return null;
+    const photoRef = place.photos[0].photo_reference;
     const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
-    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxWidth}&photo_reference=${place.photos[0].photo_reference}&key=${apiKey}`;
+
+    // Full URL (Ticketmaster, etc.)
+    if (photoRef.startsWith('http://') || photoRef.startsWith('https://')) {
+      return photoRef;
+    }
+
+    // New Google Places API v1 format - construct media URL
+    if (photoRef.startsWith('places/')) {
+      return `https://places.googleapis.com/v1/${photoRef}/media?maxWidthPx=${maxWidth}&key=${apiKey}`;
+    }
+
+    // Old API format - construct legacy URL
+    return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=${maxWidth}&photo_reference=${photoRef}&key=${apiKey}`;
   }, []);
 
   // Convert ScoredRecommendation to Recommendation for modal
   const convertToRecommendation = useCallback((scored: ScoredRecommendation): Recommendation => {
     const place = scored.place;
     const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
-    const photos = place?.photos?.map((p: any) =>
-      `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${p.photo_reference}&key=${apiKey}`
-    ) || [];
+
+    // Handle all API photo formats
+    const photos = place?.photos?.map((p: any) => {
+      const photoRef = p.photo_reference;
+      if (!photoRef) return '';
+      // Full URL (Ticketmaster, etc.)
+      if (photoRef.startsWith('http://') || photoRef.startsWith('https://')) {
+        return photoRef;
+      }
+      // New Google Places API v1 format
+      if (photoRef.startsWith('places/')) {
+        return `https://places.googleapis.com/v1/${photoRef}/media?maxWidthPx=800&key=${apiKey}`;
+      }
+      // Old API format
+      return `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photo_reference=${photoRef}&key=${apiKey}`;
+    }).filter(Boolean) || [];
 
     const activity: Activity = {
       id: place?.place_id || '',
@@ -342,12 +404,42 @@ export default function ExploreScreen() {
     setShowDetailsModal(true);
   }, []);
 
-  // End reached handler
+  // End reached handler - uses refs to avoid stale closure issues
   const handleEndReached = useCallback(() => {
-    if (!isLoadingMoreRef.current && hasMoreRef.current && searchQuery.length < 2) {
+    console.log('[Explore] onEndReached triggered', {
+      isLoadingMore: isLoadingMoreRef.current,
+      hasMore: hasMoreRef.current,
+      searchActive: searchQuery.length >= 2,
+    });
+
+    // Use refs exclusively for guards to avoid stale closures
+    if (isLoadingMoreRef.current) {
+      console.log('[Explore] Skipping: already loading');
+      return;
+    }
+    if (!hasMoreRef.current) {
+      console.log('[Explore] Skipping: no more content');
+      return;
+    }
+    if (searchQuery.length >= 2) {
+      console.log('[Explore] Skipping: search active');
+      return;
+    }
+
+    console.log('[Explore] Loading more content...');
+    loadMoreContent();
+  }, [searchQuery]); // Stable dependency - only searchQuery (not .length)
+
+  // Scroll event fallback for infinite scroll (backup trigger)
+  const handleScroll = useCallback((event: any) => {
+    const { layoutMeasurement, contentOffset, contentSize } = event.nativeEvent;
+    const isCloseToBottom = layoutMeasurement.height + contentOffset.y >= contentSize.height - 200;
+
+    if (isCloseToBottom && !isLoadingMoreRef.current && hasMoreRef.current && searchQuery.length < 2) {
+      console.log('[Explore] Scroll fallback triggered - loading more');
       loadMoreContent();
     }
-  }, [searchQuery.length]);
+  }, [searchQuery]);
 
   // Render a single tile
   const renderTile = (item: ExploreItem, isLarge: boolean) => {
@@ -532,6 +624,9 @@ export default function ExploreScreen() {
             showsVerticalScrollIndicator={false}
             onEndReached={handleEndReached}
             onEndReachedThreshold={0.3}
+            onScroll={handleScroll}
+            scrollEventThrottle={400}
+            onScrollBeginDrag={() => console.log('[Explore] User started scrolling')}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -598,7 +693,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   gridContent: {
-    paddingBottom: Spacing.xl,
+    paddingBottom: 100, // Account for tab bar + safe area
   },
   // Row layouts
   rowThreeSmall: {
