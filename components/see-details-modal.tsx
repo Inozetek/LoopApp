@@ -32,6 +32,7 @@ import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
 import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
 import { extractReviewTopics, type ReviewTopic } from '@/utils/review-topics';
 import { getMatchingPartners, openAffiliateLink, trackAffiliateClick, type MatchedPartner } from '@/services/affiliate-service';
+import { DragHandle } from '@/components/drag-handle';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -57,9 +58,10 @@ interface DetailedScoreGraphProps {
     feedbackScore: number;
     collaborativeScore: number;
   };
+  colors: typeof ThemeColors.light;
 }
 
-function DetailedScoreGraph({ scoreBreakdown }: DetailedScoreGraphProps) {
+function DetailedScoreGraph({ scoreBreakdown, colors }: DetailedScoreGraphProps) {
   const bars = [
     { label: 'Interest Match', value: scoreBreakdown.baseScore, max: 40, color: ScoreBarColors.interest },
     { label: 'Location', value: scoreBreakdown.locationScore, max: 20, color: ScoreBarColors.location },
@@ -77,9 +79,9 @@ function DetailedScoreGraph({ scoreBreakdown }: DetailedScoreGraphProps) {
   const maxPossible = 100;
 
   return (
-    <View style={styles.detailedGraph}>
+    <View style={[styles.detailedGraph, { backgroundColor: colors.card }]}>
       <View style={styles.graphHeader}>
-        <Text style={styles.graphTitle}>Match Score Breakdown</Text>
+        <Text style={[styles.graphTitle, { color: colors.text }]}>Match Score Breakdown</Text>
         <Text style={styles.graphTotal}>{Math.round(totalScore)}/100</Text>
       </View>
 
@@ -88,10 +90,10 @@ function DetailedScoreGraph({ scoreBreakdown }: DetailedScoreGraphProps) {
         return (
           <View key={index} style={styles.detailedBarContainer}>
             <View style={styles.barLabelRow}>
-              <Text style={styles.detailedBarLabel}>{bar.label}</Text>
-              <Text style={styles.barScore}>{bar.value}/{bar.max}</Text>
+              <Text style={[styles.detailedBarLabel, { color: colors.textSecondary }]}>{bar.label}</Text>
+              <Text style={[styles.barScore, { color: colors.textTertiary }]}>{bar.value}/{bar.max}</Text>
             </View>
-            <View style={styles.detailedBarBackground}>
+            <View style={[styles.detailedBarBackground, { backgroundColor: colors.border }]}>
               <View
                 style={[
                   styles.detailedBarFill,
@@ -574,10 +576,73 @@ export function SeeDetailsModal({
                 </Text>
               </View>
 
+              {/* Group Reasoning Section */}
+              {recommendation.groupContext && recommendation.groupContext.memberMatches.length > 0 && (
+                <View style={styles.section}>
+                  <View style={styles.aiHeader}>
+                    <Ionicons name="people" size={18} color={colors.primary} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                      Why this works for your group
+                    </Text>
+                  </View>
+                  <View style={styles.groupMembersContainer}>
+                    {recommendation.groupContext.memberMatches.map((member) => {
+                      const hasMatch = member.matchedInterests.length > 0;
+                      const isFarthest = member.name === recommendation.groupContext!.farthestMemberName;
+                      return (
+                        <View key={member.userId} style={styles.groupMemberRow}>
+                          <View style={styles.groupMemberLeft}>
+                            <View style={[styles.groupMemberAvatar, { backgroundColor: BrandColors.loopBlue }]}>
+                              <Text style={styles.groupMemberAvatarText}>
+                                {member.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                              </Text>
+                            </View>
+                            <View style={styles.groupMemberInfo}>
+                              <Text style={[styles.groupMemberName, { color: colors.text }]}>
+                                {member.name.split(' ')[0]}
+                              </Text>
+                              {member.matchedInterests.length > 0 ? (
+                                <View style={styles.groupInterestChips}>
+                                  {member.matchedInterests.slice(0, 3).map((interest) => (
+                                    <View key={interest} style={[styles.groupInterestChip, { backgroundColor: BrandColors.loopGreen + '20' }]}>
+                                      <Text style={[styles.groupInterestChipText, { color: BrandColors.loopGreen }]}>
+                                        {interest}
+                                      </Text>
+                                    </View>
+                                  ))}
+                                </View>
+                              ) : (
+                                <Text style={[styles.groupMemberDistance, { color: colors.textSecondary }]}>
+                                  No matching interests
+                                </Text>
+                              )}
+                              <Text style={[styles.groupMemberDistance, { color: colors.textSecondary }]}>
+                                {member.distanceMiles.toFixed(1)} mi away{isFarthest ? ' (farthest)' : ''}
+                              </Text>
+                            </View>
+                          </View>
+                          {hasMatch && (
+                            <Ionicons name="checkmark-circle" size={22} color={BrandColors.loopGreen} />
+                          )}
+                        </View>
+                      );
+                    })}
+                  </View>
+                  {recommendation.groupContext.interestMatchScore > 0 && (
+                    <View style={styles.groupScoreRow}>
+                      <Ionicons name="analytics" size={16} color={colors.primary} />
+                      <Text style={[styles.groupScoreText, { color: colors.textSecondary }]}>
+                        Interest Match: {recommendation.groupContext.interestMatchScore}/40
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              )}
+
               {/* Detailed Score Breakdown */}
               {recommendation.scoreBreakdown && (
                 <View style={styles.section}>
-                  <DetailedScoreGraph scoreBreakdown={recommendation.scoreBreakdown} />
+                  <DetailedScoreGraph scoreBreakdown={recommendation.scoreBreakdown} colors={colors} />
                 </View>
               )}
 
@@ -945,16 +1010,34 @@ export function SeeDetailsModal({
             </View>
           </ScrollView>
 
-          {/* Add to Loop Button (Fixed Bottom) */}
+          {/* Drag Handle - floats over hero image */}
+          <View style={styles.dragHandleOverlay}>
+            <DragHandle onClose={handleClose} />
+          </View>
+
+          {/* Footer Button */}
           <View style={[styles.footer, { backgroundColor: colors.card }]}>
-            <Pressable
-              style={[styles.addButton, { backgroundColor: colors.primary }]}
-              onPress={handleAddToCalendar}
-              onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
-            >
-              <IconSymbol name="plus.circle.fill" size={24} color="#FFFFFF" />
-              <Text style={styles.addButtonText}>Add to Loop</Text>
-            </Pressable>
+            {recommendation.groupContext?.onChoose ? (
+              <Pressable
+                style={[styles.addButton, { backgroundColor: BrandColors.loopGreen }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  recommendation.groupContext!.onChoose!();
+                }}
+              >
+                <Ionicons name="people" size={24} color="#FFFFFF" />
+                <Text style={styles.addButtonText}>Choose for Group</Text>
+              </Pressable>
+            ) : (
+              <Pressable
+                style={[styles.addButton, { backgroundColor: colors.primary }]}
+                onPress={handleAddToCalendar}
+                onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+              >
+                <IconSymbol name="plus.circle.fill" size={24} color="#FFFFFF" />
+                <Text style={styles.addButtonText}>Add to Loop</Text>
+              </Pressable>
+            )}
           </View>
         </View>
       </Animated.View>
@@ -985,6 +1068,14 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 8,
+  },
+  dragHandleOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 5,
+    alignItems: 'center',
   },
   closeButton: {
     position: 'absolute',
@@ -1229,7 +1320,6 @@ const styles = StyleSheet.create({
   detailedGraph: {
     padding: Spacing.md,
     borderRadius: BorderRadius.md,
-    backgroundColor: '#F9FAFB',
   },
   graphHeader: {
     flexDirection: 'row',
@@ -1240,7 +1330,6 @@ const styles = StyleSheet.create({
   graphTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#1F2937',
   },
   graphTotal: {
     fontSize: 20,
@@ -1259,16 +1348,13 @@ const styles = StyleSheet.create({
   detailedBarLabel: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#4B5563',
   },
   barScore: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#6B7280',
   },
   detailedBarBackground: {
     height: 8,
-    backgroundColor: '#E5E7EB',
     borderRadius: 4,
     overflow: 'hidden',
   },
@@ -1418,5 +1504,72 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 17,
     fontWeight: '700',
+  },
+  // Group Reasoning styles
+  groupMembersContainer: {
+    marginTop: Spacing.sm,
+    gap: Spacing.md,
+  },
+  groupMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  groupMemberLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: Spacing.sm,
+  },
+  groupMemberAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  groupMemberAvatarText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  groupMemberInfo: {
+    flex: 1,
+  },
+  groupMemberName: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  groupInterestChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 4,
+    marginTop: 2,
+  },
+  groupInterestChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  groupInterestChipText: {
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  groupMemberDistance: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  groupScoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: Spacing.md,
+    paddingTop: Spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: 'rgba(0,0,0,0.1)',
+  },
+  groupScoreText: {
+    fontSize: 13,
+    fontWeight: '500',
   },
 });
