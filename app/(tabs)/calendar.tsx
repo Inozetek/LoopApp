@@ -38,6 +38,7 @@ import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { BrandColors, CategoryColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
@@ -289,6 +290,11 @@ export default function CalendarScreen() {
     // Auto-prompting based on time alone is problematic because we can't verify
     // the user actually went to the location.
   }, [selectedDate]);
+
+  // Load free time slots on mount so they're available before a sync
+  useEffect(() => {
+    loadFreeTime();
+  }, [user]);
 
   // Smart default end time based on category
   useEffect(() => {
@@ -888,6 +894,71 @@ export default function CalendarScreen() {
     return undefined;
   }, [user?.home_location]);
 
+  // Free time slots for the currently selected day
+  const selectedDayFreeSlots = useMemo(() => {
+    if (freeTimeSlots.length === 0) return [];
+    const dayStart = new Date(`${selectedDate}T00:00:00`);
+    const dayEnd = new Date(`${selectedDate}T23:59:59`);
+    return freeTimeSlots.filter((slot) => {
+      const slotStart = new Date(slot.start);
+      return slotStart >= dayStart && slotStart <= dayEnd;
+    });
+  }, [freeTimeSlots, selectedDate]);
+
+  // Total free time for the selected day (in minutes)
+  const dailyFreeMinutes = useMemo(() => {
+    return selectedDayFreeSlots.reduce((sum, slot) => sum + slot.durationMinutes, 0);
+  }, [selectedDayFreeSlots]);
+
+  // Build merged timeline: events + free time slots sorted by start time
+  const mergedTimeline = useMemo(() => {
+    type TimelineItem =
+      | { type: 'event'; data: CalendarEvent }
+      | { type: 'free'; data: { start: Date; end: Date; durationMinutes: number } };
+
+    const items: TimelineItem[] = [];
+    events.forEach((e) => items.push({ type: 'event', data: e }));
+    selectedDayFreeSlots.forEach((slot) => items.push({ type: 'free', data: slot }));
+
+    items.sort((a, b) => {
+      const aTime = a.type === 'event'
+        ? new Date(a.data.start_time).getTime()
+        : (a.data as { start: Date }).start.getTime();
+      const bTime = b.type === 'event'
+        ? new Date(b.data.start_time).getTime()
+        : (b.data as { start: Date }).start.getTime();
+      return aTime - bTime;
+    });
+
+    return items;
+  }, [events, selectedDayFreeSlots]);
+
+  // Calendar sync onboarding prompt state
+  const [showSyncPrompt, setShowSyncPrompt] = useState(false);
+
+  useEffect(() => {
+    const checkSyncPrompt = async () => {
+      if (!user || user.id === 'demo-user-123') return;
+      const dismissed = await AsyncStorage.getItem('loop_sync_prompt_dismissed');
+      if (dismissed) return;
+      // Check if user has any synced calendar events
+      const { count } = await supabase
+        .from('calendar_events')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', user.id)
+        .in('source', ['google_calendar', 'apple_calendar']);
+      if ((count ?? 0) === 0) {
+        setShowSyncPrompt(true);
+      }
+    };
+    checkSyncPrompt();
+  }, [user]);
+
+  const dismissSyncPrompt = async () => {
+    setShowSyncPrompt(false);
+    await AsyncStorage.setItem('loop_sync_prompt_dismissed', 'true');
+  };
+
   return (
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
@@ -947,6 +1018,56 @@ export default function CalendarScreen() {
           )}
         </View>
 
+        {/* Free time summary banner */}
+        {dailyFreeMinutes > 0 && !loading && (
+          <View style={[styles.freeTimeBanner, { backgroundColor: `${BrandColors.loopGreen}12` }]}>
+            <Ionicons name="time-outline" size={16} color={BrandColors.loopGreen} />
+            <Text style={[Typography.bodySmall, { color: BrandColors.loopGreen, marginLeft: 6 }]}>
+              {dailyFreeMinutes >= 60
+                ? `${Math.floor(dailyFreeMinutes / 60)}h ${dailyFreeMinutes % 60 > 0 ? `${dailyFreeMinutes % 60}m` : ''}`
+                : `${dailyFreeMinutes}m`}{' '}
+              of free time today
+            </Text>
+          </View>
+        )}
+
+        {/* Calendar sync onboarding prompt */}
+        {showSyncPrompt && !loading && (
+          <View style={[styles.syncPromptCard, { backgroundColor: isDark ? '#1a2332' : '#EFF6FF', borderColor: BrandColors.loopBlue + '30' }]}>
+            <View style={styles.syncPromptContent}>
+              <View style={[styles.syncPromptIcon, { backgroundColor: BrandColors.loopBlue + '1A' }]}>
+                <Ionicons name="calendar" size={24} color={BrandColors.loopBlue} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[Typography.titleMedium, { color: colors.text }]}>
+                  Connect your calendar
+                </Text>
+                <Text style={[Typography.bodySmall, { color: colors.icon, marginTop: 2 }]}>
+                  Import events to find free time for activities
+                </Text>
+              </View>
+            </View>
+            <View style={styles.syncPromptActions}>
+              <TouchableOpacity
+                style={[styles.syncPromptButton, { backgroundColor: BrandColors.loopBlue }]}
+                onPress={() => {
+                  dismissSyncPrompt();
+                  handleSyncCalendar();
+                }}
+              >
+                <Ionicons name="link-outline" size={16} color="#ffffff" />
+                <Text style={[Typography.labelMedium, { color: '#ffffff', marginLeft: 6 }]}>Connect</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={dismissSyncPrompt}
+                style={styles.syncPromptDismiss}
+              >
+                <Text style={[Typography.labelMedium, { color: colors.icon }]}>Not now</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {loading ? (
           // Show skeleton loaders while loading
           <>
@@ -954,7 +1075,7 @@ export default function CalendarScreen() {
             <CalendarEventSkeleton />
             <CalendarEventSkeleton />
           </>
-        ) : events.length === 0 ? (
+        ) : mergedTimeline.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="calendar-outline" size={64} color={Colors[colorScheme ?? 'light'].icon} />
             <Text style={[Typography.bodyLarge, styles.emptyText, { color: Colors[colorScheme ?? 'light'].icon }]}>
@@ -976,7 +1097,48 @@ export default function CalendarScreen() {
           </View>
         ) : (
           <Animated.View style={{ opacity: fadeAnim }}>
-            {events.map((event) => (
+            {mergedTimeline.map((item, idx) => {
+              if (item.type === 'free') {
+                const slot = item.data as { start: Date; end: Date; durationMinutes: number };
+                const startStr = new Date(slot.start).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                const endStr = new Date(slot.end).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                const durationLabel = slot.durationMinutes >= 60
+                  ? `${Math.floor(slot.durationMinutes / 60)}h ${slot.durationMinutes % 60 > 0 ? `${slot.durationMinutes % 60}m` : ''}`
+                  : `${slot.durationMinutes}m`;
+
+                return (
+                  <View
+                    key={`free-${idx}`}
+                    style={[styles.freeTimeCard, { borderColor: BrandColors.loopGreen + '40' }]}
+                  >
+                    <View style={styles.freeTimeCardContent}>
+                      <View style={[styles.freeTimeIconContainer, { backgroundColor: BrandColors.loopGreen + '1A' }]}>
+                        <Ionicons name="sunny-outline" size={20} color={BrandColors.loopGreen} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[Typography.labelMedium, { color: BrandColors.loopGreen }]}>
+                          {durationLabel} free
+                        </Text>
+                        <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                          {startStr} - {endStr}
+                        </Text>
+                      </View>
+                      <TouchableOpacity
+                        style={[styles.freeTimeSuggestButton, { backgroundColor: BrandColors.loopGreen + '1A' }]}
+                        onPress={() => {
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          router.push('/(tabs)');
+                        }}
+                      >
+                        <Text style={[Typography.labelSmall, { color: BrandColors.loopGreen }]}>Get suggestions</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              }
+
+              const event = item.data as CalendarEvent;
+              return (
               <Swipeable
                 key={event.id}
                 renderRightActions={() => renderRightActions(event.id)}
@@ -1056,7 +1218,8 @@ export default function CalendarScreen() {
               )}
             </TouchableOpacity>
           </Swipeable>
-          ))}
+              );
+            })}
           </Animated.View>
         )}
 
@@ -2022,6 +2185,73 @@ const styles = StyleSheet.create({
   },
   eventsHeader: {
     marginBottom: Spacing.md,
+  },
+  freeTimeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    marginBottom: Spacing.md,
+  },
+  freeTimeCard: {
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+  },
+  freeTimeCardContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  freeTimeIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  freeTimeSuggestButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: BorderRadius.md,
+  },
+  syncPromptCard: {
+    borderRadius: BorderRadius.md,
+    padding: Spacing.md,
+    marginBottom: Spacing.md,
+    borderWidth: 1,
+  },
+  syncPromptContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Spacing.sm,
+  },
+  syncPromptIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  syncPromptActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+  },
+  syncPromptButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: BorderRadius.md,
+  },
+  syncPromptDismiss: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
   },
   emptyState: {
     alignItems: 'center',

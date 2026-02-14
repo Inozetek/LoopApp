@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { parseLocation } from '@/utils/location-parser';
 
 interface GroupInvitation {
   id: string;
@@ -32,6 +33,7 @@ interface GroupInvitation {
     description?: string;
     suggested_time: string;
     meeting_address?: string;
+    meeting_location?: { latitude: number; longitude: number } | null;
     creator_id: string;
     creator_name?: string;
   };
@@ -94,7 +96,7 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
         return;
       }
 
-      // Fetch real invitations
+      // Fetch real invitations with meeting_location and creator name
       const { data, error } = await supabase
         .from('plan_participants')
         .select(`
@@ -108,7 +110,9 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
             description,
             suggested_time,
             meeting_address,
-            creator_id
+            meeting_location,
+            creator_id,
+            users!group_plans_creator_id_fkey ( name )
           )
         `)
         .eq('user_id', userId)
@@ -128,22 +132,32 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
         throw error;
       }
 
-      // Transform data
-      const invitationsList: GroupInvitation[] = (data || []).map((item: any) => ({
-        id: item.id,
-        plan_id: item.plan_id,
-        rsvp_status: item.rsvp_status,
-        invited_at: item.invited_at,
-        plan: {
-          id: item.group_plans?.id || item.plan_id,
-          title: item.group_plans?.title || 'Group Activity',
-          description: item.group_plans?.description,
-          suggested_time: item.group_plans?.suggested_time || new Date().toISOString(),
-          meeting_address: item.group_plans?.meeting_address,
-          creator_id: item.group_plans?.creator_id || '',
-          creator_name: undefined, // Would need a join with users table
-        },
-      }));
+      // Transform data — parse meeting_location and resolve creator name
+      const invitationsList: GroupInvitation[] = (data || []).map((item: any) => {
+        const plan = item.group_plans;
+        // Creator name from the joined users table (may be nested object or array)
+        const creatorUser = plan?.users;
+        const creatorName = Array.isArray(creatorUser)
+          ? creatorUser[0]?.name
+          : creatorUser?.name;
+
+        return {
+          id: item.id,
+          plan_id: item.plan_id,
+          rsvp_status: item.rsvp_status,
+          invited_at: item.invited_at,
+          plan: {
+            id: plan?.id || item.plan_id,
+            title: plan?.title || 'Group Activity',
+            description: plan?.description,
+            suggested_time: plan?.suggested_time || new Date().toISOString(),
+            meeting_address: plan?.meeting_address,
+            meeting_location: parseLocation(plan?.meeting_location),
+            creator_id: plan?.creator_id || '',
+            creator_name: creatorName || 'A friend',
+          },
+        };
+      });
 
       setInvitations(invitationsList);
     } catch (error) {
@@ -197,15 +211,19 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
           // Default duration: 2 hours
           const endTime = new Date(startTime.getTime() + 2 * 60 * 60 * 1000);
 
+          // Use meeting_location from the plan, fallback to 0,0 only as last resort
+          const loc = plan.meeting_location;
+          const locationWKT = loc
+            ? `POINT(${loc.longitude} ${loc.latitude})`
+            : `POINT(0 0)`;
+
           try {
             await supabase.from('calendar_events').insert({
               user_id: userId,
               title: plan.title || 'Group Activity',
               description: plan.description || `Group plan with friends`,
               category: 'social',
-              location: plan.meeting_address
-                ? `POINT(0 0)` // Placeholder; real coords would come from the plan
-                : `POINT(0 0)`,
+              location: locationWKT,
               address: plan.meeting_address || 'TBD',
               start_time: startTime.toISOString(),
               end_time: endTime.toISOString(),

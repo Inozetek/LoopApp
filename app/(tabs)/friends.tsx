@@ -28,6 +28,7 @@ import { MomentViewer } from '@/components/moment-viewer';
 import { MomentCaptureModal } from '@/components/moment-capture-modal';
 import { FriendLoopModal } from '@/components/friend-loop-modal';
 import { GroupInvitationsSection } from '@/components/group-invitations-section';
+import { MyGroupPlansSection } from '@/components/my-group-plans-section';
 import { FriendGroupManagementModal } from '@/components/friend-group-management-modal';
 import { FriendWithMoments } from '@/types/moment';
 import { getFriendMoments, getMockFriendMoments } from '@/services/moments-service';
@@ -669,6 +670,17 @@ export default function FriendsScreen() {
               </Text>
             </TouchableOpacity>
           </ScrollView>
+        )}
+
+        {/* My Group Plans (creator view with RSVP status + confirm/cancel) */}
+        {user && (
+          <MyGroupPlansSection
+            userId={user.id}
+            onRefresh={() => {
+              loadFriends();
+              loadFriendMoments();
+            }}
+          />
         )}
 
         {/* Group Invitations Section (RSVP Management) */}

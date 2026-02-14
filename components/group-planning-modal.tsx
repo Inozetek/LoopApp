@@ -19,9 +19,11 @@ import {
   TextInput,
   Alert,
   FlatList,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -32,6 +34,7 @@ import { calculateGroupMidpoint } from '@/services/loop-service';
 import { searchNearbyPlaces, generateGroupRecommendations, PlaceLocation } from '@/services/recommendations';
 import { getPlacePhotoUrl } from '@/services/google-places';
 import { FriendGroup, getFriendGroups, getFriendsEligibleForGroupRecs } from '@/services/friend-groups-service';
+import { GroupSuggestionsMap } from '@/components/group-suggestions-map';
 
 interface Friend {
   id: string;
@@ -81,6 +84,21 @@ export function GroupPlanningModal({
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [groupMidpoint, setGroupMidpoint] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  // Date/time picker state — defaults to tomorrow at 6 PM
+  const [planDate, setPlanDate] = useState<Date>(() => {
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(18, 0, 0, 0);
+    return tomorrow;
+  });
+  const [planTime, setPlanTime] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(18, 0, 0, 0);
+    return d;
+  });
+  const [showPlanDatePicker, setShowPlanDatePicker] = useState(false);
+  const [showPlanTimePicker, setShowPlanTimePicker] = useState(false);
+
   // Step 0: Group selection
   const [friendGroups, setFriendGroups] = useState<FriendGroup[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
@@ -100,6 +118,15 @@ export function GroupPlanningModal({
       setGroupMidpoint(null);
       setSelectedGroupId(null);
       setShowGroupSelection(true);
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(18, 0, 0, 0);
+      setPlanDate(tomorrow);
+      const defaultTime = new Date();
+      defaultTime.setHours(18, 0, 0, 0);
+      setPlanTime(defaultTime);
+      setShowPlanDatePicker(false);
+      setShowPlanTimePicker(false);
     }
   }, [visible]);
 
@@ -315,6 +342,8 @@ export function GroupPlanningModal({
             ? getPlacePhotoUrl(place.photos[0].photo_reference, 800)
             : 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800',
           address: place.formatted_address || place.vicinity,
+          latitude: place.geometry.location.lat,
+          longitude: place.geometry.location.lng,
         }));
 
         console.log(`[GroupPlanning] Found ${realSuggestions.length} real places`);
@@ -489,6 +518,10 @@ export function GroupPlanningModal({
       // Use the calculated group midpoint, or fallback to Dallas
       const meetingPoint = groupMidpoint || { latitude: 32.7767, longitude: -96.7970 };
 
+      // Combine selected date + time into suggested_time
+      const suggestedTime = new Date(planDate);
+      suggestedTime.setHours(planTime.getHours(), planTime.getMinutes(), 0, 0);
+
       // Create group plan with the calculated midpoint
       const { data: planData, error: planError } = await supabase
         .from('group_plans')
@@ -497,7 +530,7 @@ export function GroupPlanningModal({
           activity_id: null, // Will link to activities table in Phase 2
           title: activity.name,
           description: activity.description,
-          suggested_time: new Date(Date.now() + 86400000).toISOString(), // Tomorrow
+          suggested_time: suggestedTime.toISOString(),
           duration_minutes: 120,
           meeting_location: `POINT(${meetingPoint.longitude} ${meetingPoint.latitude})`, // Calculated midpoint
           meeting_address: activity.name,
@@ -699,6 +732,62 @@ export function GroupPlanningModal({
                   )}
                 </View>
 
+                {/* When? Date & Time Picker */}
+                <View style={[styles.card, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+                  <Text style={[Typography.titleLarge, { color: colors.text, marginBottom: 8 }]}>
+                    When?
+                  </Text>
+                  <Text style={[Typography.bodySmall, { color: colors.icon, marginBottom: 12 }]}>
+                    Pick a date and time for the activity
+                  </Text>
+
+                  <View style={styles.dateTimeRow}>
+                    <TouchableOpacity
+                      style={[styles.dateTimePickerButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5', borderColor: colors.border }]}
+                      onPress={() => setShowPlanDatePicker(true)}
+                    >
+                      <Ionicons name="calendar-outline" size={18} color={BrandColors.loopBlue} />
+                      <Text style={[Typography.bodyMedium, { color: colors.text, marginLeft: 8 }]}>
+                        {planDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={[styles.dateTimePickerButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5', borderColor: colors.border }]}
+                      onPress={() => setShowPlanTimePicker(true)}
+                    >
+                      <Ionicons name="time-outline" size={18} color={BrandColors.loopBlue} />
+                      <Text style={[Typography.bodyMedium, { color: colors.text, marginLeft: 8 }]}>
+                        {planTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {showPlanDatePicker && (
+                    <DateTimePicker
+                      value={planDate}
+                      mode="date"
+                      display="default"
+                      minimumDate={new Date()}
+                      onChange={(_event, date) => {
+                        setShowPlanDatePicker(Platform.OS === 'ios');
+                        if (date) setPlanDate(date);
+                      }}
+                    />
+                  )}
+                  {showPlanTimePicker && (
+                    <DateTimePicker
+                      value={planTime}
+                      mode="time"
+                      display="default"
+                      onChange={(_event, time) => {
+                        setShowPlanTimePicker(Platform.OS === 'ios');
+                        if (time) setPlanTime(time);
+                      }}
+                    />
+                  )}
+                </View>
+
                 {/* Tags/Constraints */}
                 <View style={[styles.card, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
                   <Text style={[Typography.titleLarge, { color: colors.text, marginBottom: 8 }]}>
@@ -804,6 +893,14 @@ export function GroupPlanningModal({
                 <Text style={[Typography.bodySmall, { color: colors.icon, marginBottom: 16 }]}>
                   Based on your group's preferences and location
                 </Text>
+
+                {/* Map preview showing midpoint + venues */}
+                {groupMidpoint && (
+                  <GroupSuggestionsMap
+                    midpoint={groupMidpoint}
+                    suggestions={suggestions}
+                  />
+                )}
 
                 {suggestions.map((activity) => (
                   <TouchableOpacity
@@ -927,6 +1024,19 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     borderWidth: 1,
     marginBottom: Spacing.sm,
+  },
+  dateTimeRow: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  dateTimePickerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
   },
   friendsList: {
     flexDirection: 'row',
