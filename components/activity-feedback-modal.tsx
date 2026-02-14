@@ -192,7 +192,7 @@ export function ActivityFeedbackModal({
                   </View>
 
                   <Text style={[styles.captureHint, { color: colors.textSecondary }]}>
-                    Your photo will appear in {place?.name || activityName}'s story!
+                    Your photo will appear in {place?.name || activityName}&apos;s story!
                   </Text>
                 </>
               ) : !showFollowUp ? (

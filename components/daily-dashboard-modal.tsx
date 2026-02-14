@@ -338,7 +338,7 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
         <View style={styles.sectionHeader}>
           <IconSymbol name="list.bullet" size={20} color={BrandColors.loopBlue} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Today's Loop
+            Today&apos;s Loop
           </Text>
         </View>
         {today_tasks && today_tasks.length > 0 ? (

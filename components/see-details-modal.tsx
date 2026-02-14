@@ -284,17 +284,30 @@ export function SeeDetailsModal({
     }
   };
 
-  // Fallback image
-  const imageSource = recommendation.imageUrl
-    ? { uri: recommendation.imageUrl }
-    : require('@/assets/images/loop-logo6.png');
-
   // Photos for carousel
   const photos = recommendation.photos && recommendation.photos.length >= 3
     ? recommendation.photos
     : recommendation.imageUrl
     ? [recommendation.imageUrl]
     : [];
+
+  const hasImage = photos.length > 0;
+
+  // Get category icon for gradient fallback (matches activity card style)
+  const getCategoryIcon = (): string => {
+    const category = recommendation.category?.toLowerCase() || '';
+    if (category.includes('restaurant') || category.includes('food') || category.includes('dining')) return 'restaurant';
+    if (category.includes('cafe') || category.includes('coffee')) return 'cafe';
+    if (category.includes('bar') || category.includes('nightlife')) return 'wine';
+    if (category.includes('music') || category.includes('concert')) return 'musical-notes';
+    if (category.includes('sport') || category.includes('fitness') || category.includes('gym')) return 'fitness';
+    if (category.includes('park') || category.includes('outdoor') || category.includes('nature') || category.includes('trail')) return 'leaf';
+    if (category.includes('shopping') || category.includes('store')) return 'cart';
+    if (category.includes('movie') || category.includes('theater') || category.includes('entertainment')) return 'film';
+    if (category.includes('museum') || category.includes('art') || category.includes('gallery')) return 'color-palette';
+    if (category.includes('spa') || category.includes('wellness')) return 'flower';
+    return 'location';
+  };
 
   return (
     <Modal
@@ -324,14 +337,26 @@ export function SeeDetailsModal({
             contentContainerStyle={styles.scrollContent}
           >
             {/* Hero Image or Carousel */}
-            {photos.length > 0 ? (
+            {hasImage ? (
               photos.length >= 3 ? (
                 <PhotoCarousel photos={photos} />
               ) : (
-                <Image source={imageSource} style={styles.heroImage} resizeMode="cover" />
+                <Image source={{ uri: photos[0] }} style={styles.heroImage} resizeMode="cover" />
               )
             ) : (
-              <Image source={imageSource} style={styles.heroImage} resizeMode="cover" />
+              <LinearGradient
+                colors={[BrandColors.loopBlue, BrandColors.loopGreen]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.heroFallback}
+              >
+                <View style={styles.heroFallbackIconContainer}>
+                  <Ionicons name={getCategoryIcon() as any} size={64} color="rgba(255, 255, 255, 0.8)" />
+                </View>
+                <Text style={styles.heroFallbackCategory}>
+                  {recommendation.category}
+                </Text>
+              </LinearGradient>
             )}
 
             {/* Content Section */}
@@ -920,7 +945,7 @@ export function SeeDetailsModal({
             </View>
           </ScrollView>
 
-          {/* Add to Calendar Button (Fixed Bottom) */}
+          {/* Add to Loop Button (Fixed Bottom) */}
           <View style={[styles.footer, { backgroundColor: colors.card }]}>
             <Pressable
               style={[styles.addButton, { backgroundColor: colors.primary }]}
@@ -928,7 +953,7 @@ export function SeeDetailsModal({
               onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
             >
               <IconSymbol name="plus.circle.fill" size={24} color="#FFFFFF" />
-              <Text style={styles.addButtonText}>Add to Calendar</Text>
+              <Text style={styles.addButtonText}>Add to Loop</Text>
             </Pressable>
           </View>
         </View>
@@ -977,6 +1002,27 @@ const styles = StyleSheet.create({
   heroImage: {
     width: '100%',
     height: IMAGE_HEIGHT,
+  },
+  heroFallback: {
+    width: '100%',
+    height: IMAGE_HEIGHT,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroFallbackIconContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  heroFallbackCategory: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 12,
+    textTransform: 'capitalize',
   },
   carouselContainer: {
     width: '100%',

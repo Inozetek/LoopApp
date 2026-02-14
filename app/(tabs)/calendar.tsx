@@ -15,9 +15,7 @@ import {
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
 } from 'react-native';
-// NOTE: react-native-maps disabled for web compatibility
-// Map preview in create event modal is temporarily disabled
-// TODO: Create separate MapPreview component with .web.tsx version
+// Map preview is handled by components/map-preview.tsx (.web.tsx for web)
 // let MapView: any;
 // let Marker: any;
 // let Callout: any;
@@ -47,6 +45,7 @@ import { Colors } from '@/constants/theme';
 import { FeedbackModal } from '@/components/feedback-modal';
 import { CalendarEventSkeleton } from '@/components/skeleton-loader';
 import { LoopMapView } from '@/components/loop-map-view';
+import { MapPreview } from '@/components/map-preview';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
 import { CalendarHeader } from '@/components/calendar-header';
@@ -1545,12 +1544,10 @@ export default function CalendarScreen() {
               )} */}
               {newTaskLocation && (
                 <View style={styles.mapPreview}>
-                  <View style={[styles.map, { backgroundColor: Colors[colorScheme ?? 'light'].card, justifyContent: 'center', alignItems: 'center' }]}>
-                    <Ionicons name="map-outline" size={48} color={BrandColors.loopBlue} />
-                    <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].text, marginTop: 8 }]}>
-                      {Platform.OS === 'web' ? 'Map preview available on mobile' : 'Map preview temporarily unavailable'}
-                    </Text>
-                  </View>
+                  <MapPreview
+                    latitude={newTaskLocation.latitude}
+                    longitude={newTaskLocation.longitude}
+                  />
                 </View>
               )}
 

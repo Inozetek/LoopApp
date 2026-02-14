@@ -168,7 +168,7 @@ export function EventScheduleModal({
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>Your Arrival Time</Text>
               <Text style={styles.helperText}>
-                We've set this {minutesBeforeEvent} minutes before the event starts to give you
+                We&apos;ve set this {minutesBeforeEvent} minutes before the event starts to give you
                 time for parking and walking.
               </Text>
 

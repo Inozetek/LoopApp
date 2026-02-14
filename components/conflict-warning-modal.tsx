@@ -70,7 +70,7 @@ export function ConflictWarningModal({
         </Text>
 
         <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center' }]}>
-          You already have "{conflictingTask.title}" scheduled at{' '}
+          You already have &quot;{conflictingTask.title}&quot; scheduled at{' '}
           {conflictingTask.start_time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
         </Text>
 
@@ -110,14 +110,14 @@ export function ConflictWarningModal({
         <Ionicons name="car-outline" size={48} color={BrandColors.error} />
 
         <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.md, textAlign: 'center' }]}>
-          Can't Make It On Time
+          Can&apos;t Make It On Time
         </Text>
 
         <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center' }]}>
-          "{travelDetails.previousTask}" ends at{' '}
+          &quot;{travelDetails.previousTask}&quot; ends at{' '}
           {travelDetails.arrivalTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.
           {'\n'}
-          With {travelDetails.travelMinutes} min travel time, you'll arrive at{' '}
+          With {travelDetails.travelMinutes} min travel time, you&apos;ll arrive at{' '}
           {travelDetails.arrivalTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}{' '}
           ({travelDetails.minutesLate} min late).
         </Text>

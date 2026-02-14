@@ -28,6 +28,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth } from '@/contexts/auth-context';
 import { ThemeColors, Spacing, BorderRadius, BrandColors, Typography } from '@/constants/brand';
 import { getLikersList, type LikerProfile } from '@/services/likes-service';
+import { sendFriendRequest } from '@/services/friends-service';
 
 export default function LikersListScreen() {
   const { placeId, placeName } = useLocalSearchParams<{ placeId: string; placeName: string }>();
@@ -42,6 +43,7 @@ export default function LikersListScreen() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
   // Load initial data
   useEffect(() => {
@@ -159,13 +161,28 @@ export default function LikersListScreen() {
             </View>
           ) : (
             <Pressable
-              style={[styles.followButton, { backgroundColor: BrandColors.loopBlue }]}
-              onPress={() => {
+              style={[styles.followButton, {
+                backgroundColor: followingIds.has(item.userId) ? colors.background : BrandColors.loopBlue,
+                borderWidth: followingIds.has(item.userId) ? 1 : 0,
+                borderColor: colors.border,
+              }]}
+              onPress={async () => {
+                if (!user?.id || followingIds.has(item.userId)) return;
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                // TODO: Implement follow
+                try {
+                  await sendFriendRequest(user.id, item.userId);
+                  setFollowingIds(prev => new Set(prev).add(item.userId));
+                } catch (error) {
+                  console.error('Error following user:', error);
+                }
               }}
+              disabled={followingIds.has(item.userId)}
             >
-              <Text style={styles.followButtonText}>Follow</Text>
+              <Text style={[styles.followButtonText, {
+                color: followingIds.has(item.userId) ? colors.textSecondary : '#FFFFFF',
+              }]}>
+                {followingIds.has(item.userId) ? 'Requested' : 'Follow'}
+              </Text>
             </Pressable>
           )}
         </View>

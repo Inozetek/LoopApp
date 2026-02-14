@@ -891,7 +891,7 @@ export function GroupPlanningModal({
                   Suggested Activities
                 </Text>
                 <Text style={[Typography.bodySmall, { color: colors.icon, marginBottom: 16 }]}>
-                  Based on your group's preferences and location
+                  Based on your group&apos;s preferences and location
                 </Text>
 
                 {/* Map preview showing midpoint + venues */}

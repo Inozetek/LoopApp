@@ -2318,8 +2318,17 @@ export default function RecommendationFeedScreen() {
                     }]}
                     onPress={() => {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      router.push('/(tabs)/settings');
-                      // TODO: Navigate directly to subscription upgrade
+                      Alert.alert(
+                        'Upgrade to Loop Plus',
+                        'Get unlimited daily recommendations, group planning with up to 5 friends, and an ad-free experience for just $4.99/month.',
+                        [
+                          { text: 'Not Now', style: 'cancel' },
+                          {
+                            text: 'View Plans',
+                            onPress: () => router.push('/(tabs)/settings'),
+                          },
+                        ]
+                      );
                     }}
                   >
                     <Ionicons name="star-outline" size={20} color={BrandColors.loopBlue} />

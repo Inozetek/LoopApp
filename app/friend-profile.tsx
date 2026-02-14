@@ -137,18 +137,36 @@ export default function FriendProfileScreen() {
 
   const handleMomentPress = useCallback((moment: Moment) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // TODO: Open moment detail modal
-  }, []);
+    router.push({
+      pathname: '/moment-detail' as any,
+      params: { momentId: moment.id, userName: profile?.name },
+    });
+  }, [router, profile?.name]);
 
   const handlePlacePress = useCallback((place: LikedPlace) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // TODO: Navigate to place details or search for it
-  }, []);
+    router.push({
+      pathname: '/place-details' as any,
+      params: { placeId: place.placeId, placeName: place.placeName },
+    });
+  }, [router]);
 
-  const handleFollowPress = useCallback(() => {
+  const [followLoading, setFollowLoading] = useState(false);
+
+  const handleFollowPress = useCallback(async () => {
+    if (!user?.id || !userId || followLoading) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // TODO: Implement follow/unfollow
-  }, []);
+    setFollowLoading(true);
+    try {
+      const { sendFriendRequest } = await import('@/services/friends-service');
+      await sendFriendRequest(user.id, userId);
+      setProfile(prev => prev ? { ...prev, isFriend: true } : prev);
+    } catch (error) {
+      console.error('Error sending friend request:', error);
+    } finally {
+      setFollowLoading(false);
+    }
+  }, [user?.id, userId, followLoading]);
 
   const formatMemberSince = (dateString: string) => {
     const date = new Date(dateString);
@@ -249,11 +267,18 @@ export default function FriendProfileScreen() {
           {/* Follow Button */}
           {!profile.isFriend && (
             <Pressable
-              style={[styles.followButton, { backgroundColor: BrandColors.loopBlue }]}
+              style={[styles.followButton, { backgroundColor: BrandColors.loopBlue, opacity: followLoading ? 0.6 : 1 }]}
               onPress={handleFollowPress}
+              disabled={followLoading}
             >
-              <Ionicons name="person-add" size={16} color="#FFFFFF" />
-              <Text style={styles.followButtonText}>Follow</Text>
+              {followLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="person-add" size={16} color="#FFFFFF" />
+                  <Text style={styles.followButtonText}>Follow</Text>
+                </>
+              )}
             </Pressable>
           )}
         </View>
