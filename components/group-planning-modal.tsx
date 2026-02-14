@@ -366,19 +366,61 @@ export function GroupPlanningModal({
    */
   const mapPlaceTypesToCategory = (types: string[]): string => {
     const typeToCategory: Record<string, string> = {
+      // Food & Drink
       restaurant: 'Dining',
+      american_restaurant: 'Dining',
+      italian_restaurant: 'Dining',
+      mexican_restaurant: 'Dining',
+      japanese_restaurant: 'Dining',
+      chinese_restaurant: 'Dining',
+      thai_restaurant: 'Dining',
+      indian_restaurant: 'Dining',
+      seafood_restaurant: 'Dining',
+      pizza_restaurant: 'Dining',
+      hamburger_restaurant: 'Dining',
+      bakery: 'Dining',
+      meal_takeaway: 'Dining',
+      fast_food_restaurant: 'Dining',
       cafe: 'Coffee',
+      coffee_shop: 'Coffee',
       bar: 'Nightlife',
-      park: 'Outdoor',
-      museum: 'Culture',
-      movie_theater: 'Entertainment',
       night_club: 'Nightlife',
-      gym: 'Fitness',
-      spa: 'Wellness',
-      tourist_attraction: 'Sightseeing',
+      wine_bar: 'Nightlife',
+      // Entertainment
+      movie_theater: 'Entertainment',
       bowling_alley: 'Entertainment',
+      amusement_park: 'Entertainment',
+      performing_arts_theater: 'Entertainment',
+      comedy_club: 'Entertainment',
+      concert_hall: 'Entertainment',
+      casino: 'Entertainment',
+      karaoke: 'Entertainment',
+      // Outdoor & Nature
+      park: 'Outdoor',
       zoo: 'Outdoor',
       aquarium: 'Outdoor',
+      garden: 'Outdoor',
+      hiking_area: 'Outdoor',
+      national_park: 'Outdoor',
+      // Fitness & Wellness
+      gym: 'Fitness',
+      fitness_center: 'Fitness',
+      spa: 'Wellness',
+      // Culture
+      museum: 'Culture',
+      art_gallery: 'Culture',
+      library: 'Culture',
+      historical_landmark: 'Culture',
+      // Sports
+      stadium: 'Sports',
+      sports_complex: 'Sports',
+      golf_course: 'Sports',
+      // Shopping
+      shopping_mall: 'Shopping',
+      clothing_store: 'Shopping',
+      market: 'Shopping',
+      // Travel
+      tourist_attraction: 'Sightseeing',
     };
 
     for (const type of types) {

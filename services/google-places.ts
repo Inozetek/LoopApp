@@ -292,6 +292,10 @@ function convertNewAPIPlaceToActivity(
     googlePlaceId: place.id,
     isSponsored: false,
     sponsorTier: 'organic',
+    openingHoursPeriods: place.currentOpeningHours?.periods?.map((p: any) => ({
+      open: { day: p.open?.day ?? 0, time: p.open?.hour != null ? `${String(p.open.hour).padStart(2, '0')}${String(p.open.minute ?? 0).padStart(2, '0')}` : '0000' },
+      close: p.close ? { day: p.close.day ?? 0, time: `${String(p.close.hour).padStart(2, '0')}${String(p.close.minute ?? 0).padStart(2, '0')}` } : undefined,
+    })),
   };
 
   return activity;
@@ -325,23 +329,135 @@ function getNewAPIPhotoUrl(photoName: string, maxWidth: number = 800): string {
 
 /**
  * Map Google Place types to our activity categories
+ * Comprehensive mapping covering both legacy and New Places API types
  */
 function mapGoogleTypesToCategory(types: string[]): string {
   const categoryMap: Record<string, string> = {
+    // Food & Drink
     restaurant: 'Dining',
+    american_restaurant: 'Dining',
+    chinese_restaurant: 'Dining',
+    french_restaurant: 'Dining',
+    greek_restaurant: 'Dining',
+    indian_restaurant: 'Dining',
+    italian_restaurant: 'Dining',
+    japanese_restaurant: 'Dining',
+    korean_restaurant: 'Dining',
+    lebanese_restaurant: 'Dining',
+    mediterranean_restaurant: 'Dining',
+    mexican_restaurant: 'Dining',
+    middle_eastern_restaurant: 'Dining',
+    seafood_restaurant: 'Dining',
+    spanish_restaurant: 'Dining',
+    steak_house: 'Dining',
+    sushi_restaurant: 'Dining',
+    thai_restaurant: 'Dining',
+    turkish_restaurant: 'Dining',
+    vegan_restaurant: 'Dining',
+    vegetarian_restaurant: 'Dining',
+    vietnamese_restaurant: 'Dining',
+    barbecue_restaurant: 'Dining',
+    brazilian_restaurant: 'Dining',
+    brunch_restaurant: 'Dining',
+    hamburger_restaurant: 'Dining',
+    pizza_restaurant: 'Dining',
+    ramen_restaurant: 'Dining',
+    sandwich_shop: 'Dining',
+    food: 'Dining',
+    meal_takeaway: 'Dining',
+    meal_delivery: 'Dining',
+    fast_food_restaurant: 'Dining',
+    bakery: 'Dining',
+    ice_cream_shop: 'Dining',
+
+    // Coffee & Cafes
     cafe: 'Coffee',
+    coffee_shop: 'Coffee',
+
+    // Bars & Nightlife
     bar: 'Bars',
     night_club: 'Nightlife',
+    wine_bar: 'Bars',
+    cocktail_bar: 'Bars',
+
+    // Entertainment
+    movie_theater: 'Entertainment',
+    bowling_alley: 'Entertainment',
+    amusement_park: 'Entertainment',
+    performing_arts_theater: 'Entertainment',
+    casino: 'Entertainment',
+    escape_room: 'Entertainment',
+    comedy_club: 'Entertainment',
+    karaoke: 'Entertainment',
+    concert_hall: 'Entertainment',
+    event_venue: 'Entertainment',
+    convention_center: 'Entertainment',
+    cultural_center: 'Entertainment',
+
+    // Fitness & Wellness
     gym: 'Fitness',
-    park: 'Outdoor',
+    fitness_center: 'Fitness',
+    yoga_studio: 'Fitness',
+    athletic_field: 'Fitness',
+    spa: 'Wellness',
+    beauty_salon: 'Wellness',
+    hair_salon: 'Wellness',
+    nail_salon: 'Wellness',
+
+    // Culture & Education
     museum: 'Culture',
     art_gallery: 'Arts',
-    movie_theater: 'Entertainment',
-    shopping_mall: 'Shopping',
-    spa: 'Wellness',
-    stadium: 'Sports',
     library: 'Education',
+    book_store: 'Culture',
+    university: 'Education',
+    school: 'Education',
+    church: 'Culture',
+    hindu_temple: 'Culture',
+    mosque: 'Culture',
+    synagogue: 'Culture',
+    historical_landmark: 'Culture',
+
+    // Outdoor & Nature
+    park: 'Outdoor',
+    national_park: 'Outdoor',
+    campground: 'Outdoor',
+    zoo: 'Outdoor',
+    aquarium: 'Outdoor',
+    hiking_area: 'Outdoor',
+    garden: 'Outdoor',
+    dog_park: 'Outdoor',
+    marina: 'Outdoor',
+    playground: 'Outdoor',
+
+    // Sports
+    stadium: 'Sports',
+    sports_complex: 'Sports',
+    sports_club: 'Sports',
+    golf_course: 'Sports',
+    swimming_pool: 'Sports',
+    ski_resort: 'Sports',
+
+    // Shopping
+    shopping_mall: 'Shopping',
+    clothing_store: 'Shopping',
+    shoe_store: 'Shopping',
+    jewelry_store: 'Shopping',
+    electronics_store: 'Shopping',
+    furniture_store: 'Shopping',
+    home_goods_store: 'Shopping',
+    pet_store: 'Shopping',
+    gift_shop: 'Shopping',
+    market: 'Shopping',
+    grocery_store: 'Shopping',
+    supermarket: 'Shopping',
+    store: 'Shopping',
+
+    // Travel & Tourism
     tourist_attraction: 'Travel',
+    hotel: 'Travel',
+    lodging: 'Travel',
+    travel_agency: 'Travel',
+    visitor_center: 'Travel',
   };
 
   for (const type of types) {

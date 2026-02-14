@@ -13,6 +13,7 @@ import { ThemeContextProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { TabNotificationsProvider } from '@/contexts/tab-notifications-context';
 import { MenuAnimationProvider } from '@/contexts/menu-animation-context';
+import { ErrorBoundary } from '@/components/error-boundary';
 import { Colors } from '@/constants/theme';
 import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
 import { initializeErrorLogging } from '@/utils/error-logger';
@@ -139,7 +140,9 @@ export default function RootLayout() {
           <TabNotificationsProvider>
             <MenuAnimationProvider>
               <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                <RootLayoutNav />
+                <ErrorBoundary fallbackMessage="The app encountered an unexpected error. Tap below to reload.">
+                  <RootLayoutNav />
+                </ErrorBoundary>
                 <StatusBar style="auto" />
               </ThemeProvider>
             </MenuAnimationProvider>

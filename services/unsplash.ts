@@ -50,15 +50,12 @@ export async function searchUnsplashImage(category: string): Promise<string> {
   const API_KEY = process.env.EXPO_PUBLIC_UNSPLASH_ACCESS_KEY;
 
   if (!API_KEY) {
-    console.warn('⚠️ No Unsplash API key found, skipping fallback images');
     return '';
   }
 
   try {
     // Get search query for category
     const query = CATEGORY_SEARCH_QUERIES[category] || CATEGORY_SEARCH_QUERIES['Other'];
-
-    console.log(`🖼️ Searching Unsplash for: ${query}`);
 
     // Call Unsplash API
     const response = await fetch(
@@ -71,14 +68,12 @@ export async function searchUnsplashImage(category: string): Promise<string> {
     );
 
     if (!response.ok) {
-      console.error('❌ Unsplash API error:', response.status);
       return '';
     }
 
     const data: UnsplashSearchResponse = await response.json();
 
     if (data.results.length === 0) {
-      console.warn('⚠️ No Unsplash images found for query:', query);
       return '';
     }
 
@@ -87,15 +82,11 @@ export async function searchUnsplashImage(category: string): Promise<string> {
     const photo = data.results[randomIndex];
 
     // Return regular size URL (optimized for feed cards)
-    // Add size params: w=600&h=400&fit=crop for consistent dimensions
     const imageUrl = `${photo.urls.regular}&w=600&h=400&fit=crop`;
-
-    console.log(`✅ Found Unsplash image: ${photo.id}`);
 
     return imageUrl;
 
-  } catch (error) {
-    console.error('❌ Error fetching Unsplash image:', error);
+  } catch {
     return '';
   }
 }
@@ -139,7 +130,6 @@ export async function getCachedUnsplashImage(category: string): Promise<string> 
   const now = Date.now();
 
   if (cached && (now - cached.timestamp) < CACHE_DURATION_MS) {
-    console.log(`💾 Using cached Unsplash image for ${category}`);
     return cached.url;
   }
 
