@@ -132,14 +132,14 @@ export const CategoryColors: Record<string, string> = {
 };
 
 // Score bar segment colors (stacked bar in activity cards)
-// COOL-TONE AURORA PALETTE — cyan → indigo → violet → purple → pink
-// Glowy, complementary gradient that avoids rainbow scatter
+// MUTED DATA-VIZ PALETTE — understated, distinct, professional
+// Desaturated tones inspired by Linear/Stripe dashboards
 export const ScoreBarColors = {
-  interest: '#00A6D9',    // Cyan (loopBlue) - primary factor, brand anchor
-  location: '#6366F1',    // Indigo - cool complement to cyan
-  time: '#8B5CF6',        // Violet - continues cool gradient
-  feedback: '#A855F7',    // Soft purple - bridge to pink
-  social: '#EC4899',      // Pink - warm glow accent, social warmth
+  interest: '#5B8DEF',    // Soft blue - primary factor, trustworthy
+  location: '#4DBBA1',    // Sage green - grounded, proximity
+  time: '#9B8ACA',        // Dusty lavender - calm, temporal
+  feedback: '#E8845A',    // Muted coral - warm personal touch
+  social: '#7C8DB5',      // Slate blue - subtle, collaborative
 };
 
 // Alias for components that import ChartColors
