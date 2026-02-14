@@ -933,6 +933,8 @@ export default function RecommendationFeedScreen() {
         description: s.place.description, // Editorial summary from Google Places
         openNow: s.place.opening_hours?.open_now,
         isSponsored: s.isSponsored,
+        isCurated: !!(s.place as any)?._isCurated,
+        curatorName: (s.place as any)?._curatorName,
         score: s.score,
         businessHours: s.businessHours,
         hasEstimatedHours: s.hasEstimatedHours,

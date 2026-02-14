@@ -497,10 +497,10 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
       <View style={styles.emptyContainer}>
         <Ionicons name="calendar-outline" size={64} color={BrandColors.loopOrange} />
         <Text style={[styles.emptyTitle, Typography.headlineSmall]}>
-          No Tasks Scheduled
+          Your Loop is Empty
         </Text>
         <Text style={[styles.emptySubtitle, Typography.bodyMedium]}>
-          Add tasks to your calendar to see your Loop visualization
+          Add stops to see your Loop
         </Text>
       </View>
     );
@@ -515,9 +515,9 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
           Location Data Missing
         </Text>
         <Text style={[styles.emptySubtitle, Typography.bodyMedium]}>
-          {tasks.length} task{tasks.length > 1 ? 's' : ''} found, but no valid locations.
+          {tasks.length} stop{tasks.length > 1 ? 's' : ''} found, but no valid locations.
           {'\n'}
-          Please ensure your tasks have addresses.
+          Please ensure your stops have addresses.
         </Text>
       </View>
     );
@@ -537,7 +537,7 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
         <Text style={[styles.emptySubtitle, Typography.bodyMedium]}>
           Loop Map View is only available on iOS and Android.
           {'\n\n'}
-          You have {tasks.length} task{tasks.length !== 1 ? 's' : ''} scheduled today.
+          You have {tasks.length} stop{tasks.length !== 1 ? 's' : ''} in your Loop today.
         </Text>
       </View>
     );
@@ -554,7 +554,7 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
         <Text style={[styles.emptySubtitle, Typography.bodyMedium]}>
           Could not load map component.
           {'\n'}
-          You have {validTaskCoords.length} task{validTaskCoords.length !== 1 ? 's' : ''} with valid locations.
+          {validTaskCoords.length} stop{validTaskCoords.length !== 1 ? 's' : ''} with valid locations.
         </Text>
       </View>
     );
@@ -585,7 +585,7 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
       <Text style={[styles.emptySubtitle, Typography.bodyMedium]}>
         Something went wrong displaying the map.
         {'\n'}
-        You have {validTaskCoords.length} task{validTaskCoords.length !== 1 ? 's' : ''} scheduled.
+        {validTaskCoords.length} stop{validTaskCoords.length !== 1 ? 's' : ''} in your Loop.
       </Text>
     </View>
   );
@@ -894,7 +894,7 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
               </View>
               <View style={styles.taskDetailInfo}>
                 <Text style={styles.taskDetailTitle} numberOfLines={1}>
-                  {selectedTask.title || 'Task'}
+                  {selectedTask.title || 'Stop'}
                 </Text>
                 {formattedTime && (
                   <Text style={styles.taskDetailTime}>

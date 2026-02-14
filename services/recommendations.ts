@@ -29,6 +29,9 @@ import './ticketmaster-service'; // Import to ensure Ticketmaster service is reg
 import { detectUserCity, detectUserCityWithFallback } from './city-detection';
 import { checkCityCache, seedCityData, getCachedPlaces } from './cache-manager';
 
+// Curated recommendations (first-session magic)
+import { getCuratedRecommendations, getAgeBracketFromUser } from './curated-service';
+
 // Unified interest taxonomy
 import {
   INTEREST_GROUPS,
@@ -252,37 +255,21 @@ function mapPlaceTypeToCategory(types: string[]): string {
 function getPlacePhotoUrl(photoReference: string): string {
   const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 
-  if (!API_KEY) {
-    console.error('❌ getPlacePhotoUrl: No API key available');
+  if (!API_KEY || !photoReference) {
     return '';
   }
 
-  if (!photoReference) {
-    console.error('❌ getPlacePhotoUrl: No photo reference provided');
-    return '';
-  }
-
-  // CRITICAL: Validate input is a photo reference, NOT a full URL
-  // This prevents double URL concatenation bugs
+  // Reject full URLs — caller should handle these before calling this function
   if (photoReference.startsWith('http://') || photoReference.startsWith('https://')) {
-    console.error(`❌ getPlacePhotoUrl: Received full URL instead of photo reference!`);
-    console.error(`   Got: "${photoReference.substring(0, 100)}..."`);
-    console.error('   Photo reference should be: "places/PLACE_ID/photos/PHOTO_ID"');
-    console.error('   NOT a full URL like: "https://images.unsplash.com/..." or "https://places.googleapis.com/..."');
     return '';
   }
 
-  // Validate photo reference format BEFORE concatenation
+  // Validate photo reference format: must be "places/PLACE_ID/photos/PHOTO_ID"
   if (!photoReference.startsWith('places/') || !photoReference.includes('/photos/')) {
-    console.error(`❌ getPlacePhotoUrl: Invalid photo reference format: "${photoReference}"`);
-    console.error(`   Expected format: "places/PLACE_ID/photos/PHOTO_ID"`);
     return '';
   }
 
-  // NOW safe to concatenate - input is validated as a proper photo reference
-  const url = `https://places.googleapis.com/v1/${photoReference}/media?key=${API_KEY}&maxHeightPx=400&maxWidthPx=600`;
-
-  return url;
+  return `https://places.googleapis.com/v1/${photoReference}/media?key=${API_KEY}&maxHeightPx=400&maxWidthPx=600`;
 }
 
 /**
@@ -770,7 +757,8 @@ function activityToPlaceResult(activity: Activity): PlaceResult {
     price_level: activity.priceRange,
     photos: activity.photoUrl ? [{ photo_reference: activity.photoUrl }] : [],
     opening_hours: {
-      open_now: undefined, // Not stored in cache
+      open_now: undefined,
+      periods: activity.openingHoursPeriods,
     },
     source: 'google_places',
   };
@@ -838,6 +826,107 @@ export async function generateRecommendations(
     openNow,
     date: date?.toLocaleDateString(),
   });
+
+  // ========================================================================
+  // FIRST SESSION DETECTION: Use curated picks for instant personalization
+  // If user has no AI profile and no prior activity, serve hand-curated picks
+  // ========================================================================
+  const hasFavoriteCategories = user.ai_profile?.favorite_categories?.length > 0;
+  const isFirstSession = !hasFavoriteCategories && !user.last_active_date;
+
+  if (isFirstSession) {
+    console.log('🌟 FIRST SESSION DETECTED — trying curated picks for instant feed');
+
+    try {
+      // Detect city for curated lookup
+      const cityInfo = await detectUserCityWithFallback(user, {
+        lat: userLocation.lat,
+        lng: userLocation.lng,
+      });
+
+      if (cityInfo) {
+        const currentTOD = getCurrentTimeOfDay();
+        const ageBracket = getAgeBracketFromUser(user);
+        const userInterestList = (user.interests || []) as string[];
+
+        const curatedPicks = await getCuratedRecommendations(
+          cityInfo.city,
+          cityInfo.state,
+          userInterestList,
+          currentTOD,
+          ageBracket,
+          maxResults
+        );
+
+        if (curatedPicks.length >= 5) {
+          console.log(`🌟 Got ${curatedPicks.length} curated picks — scoring and returning`);
+
+          // Score curated picks through the normal pipeline for consistency
+          const scoredCurated: ScoredRecommendation[] = [];
+
+          for (const place of curatedPicks) {
+            const category = mapPlaceTypeToCategory(place.types);
+            const distance = calculateDistance(userLocation, place.geometry.location);
+
+            const scoreBreakdown = calculateActivityScore({
+              place,
+              category,
+              distance,
+              user,
+              homeLocation,
+              workLocation,
+              timeOfDay: currentTOD,
+            });
+
+            // Use curated explanation if available, otherwise generate one
+            const curatedExplanation = (place as any)._curatedExplanation;
+            const aiExplanation = curatedExplanation || generateExplanation({
+              place,
+              category,
+              distance,
+              user,
+              scoreBreakdown,
+            });
+
+            // Get photo URL
+            let photoUrl = '';
+            if (place.photos && place.photos.length > 0) {
+              const photoRef = place.photos[0].photo_reference;
+              if (photoRef) {
+                if (photoRef.startsWith('http://') || photoRef.startsWith('https://')) {
+                  photoUrl = photoRef;
+                } else {
+                  photoUrl = getPlacePhotoUrl(photoRef);
+                }
+              }
+            }
+            if (!photoUrl) {
+              photoUrl = await getCachedUnsplashImage(category);
+            }
+
+            scoredCurated.push({
+              place,
+              score: scoreBreakdown.finalScore,
+              scoreBreakdown,
+              distance,
+              category,
+              photoUrl,
+              aiExplanation,
+              isSponsored: false,
+            });
+          }
+
+          // Sort by score and return
+          scoredCurated.sort((a, b) => b.score - a.score);
+          return scoredCurated.slice(0, maxResults);
+        }
+
+        console.log(`🌟 Only ${curatedPicks.length} curated picks — falling through to normal algorithm`);
+      }
+    } catch (error) {
+      console.error('⚠️ Curated picks error, falling through to normal algorithm:', error);
+    }
+  }
 
   // Step 0.5: Get recently shown places for soft exclusion (Phase 1.3)
   // Instead of hard exclusion, we apply a decay-based penalty
@@ -1665,6 +1754,9 @@ function calculateActivityScore(params: {
   let friendPhotoBoost = 0; // +15 if place has friend moments
   let trendingFriendsBoost = 0; // +20 if 2+ friends visited this week
 
+  // NEW: Age bracket boost (Step 4)
+  let ageBracketBoost = 0;
+
   // === BASE SCORE (50 → 55 points max for events) ===
   // Interest match guides scoring but doesn't filter - allow discovery
   const userInterests = user.interests || [];
@@ -1768,7 +1860,7 @@ function calculateActivityScore(params: {
   locationScore += futureContextBonus;
   locationScore = Math.min(locationScore, 30); // Cap raised from 20 → 30 for future context
 
-  // === TIME CONTEXT SCORE (15 points max) ===
+  // === TIME CONTEXT SCORE (25 points max — enhanced with category weights) ===
   const currentTimeOfDay = timeOfDay || getCurrentTimeOfDay();
 
   // Check user's time preferences
@@ -1777,13 +1869,18 @@ function calculateActivityScore(params: {
     timeScore += 5;
   }
 
-  // Activity type vs time of day matching
+  // Activity type vs time of day matching (legacy 0-10)
   const timeContextMatches = checkTimeContext(category, currentTimeOfDay);
   if (timeContextMatches === 'perfect') timeScore += 10;
   else if (timeContextMatches === 'good') timeScore += 5;
   else timeScore += 2; // Acceptable
 
-  timeScore = Math.min(timeScore, 15); // Cap at 15
+  // NEW: Time-category weight boost (Step 3)
+  // Additive boost making morning feeds surface coffee, evening feeds surface restaurants
+  const timeCategoryBoost = getTimeCategoryBoost(category, currentTimeOfDay);
+  timeScore += timeCategoryBoost;
+
+  timeScore = Math.min(Math.max(timeScore, -10), 25); // Cap at 25, floor at -10
 
   // === DATA SOURCE INTEGRATIONS (Day 1 Sprint) ===
   // Source 1 & 2: Facebook Liked Places (EXACT match = +30, category only = +15)
@@ -1998,6 +2095,39 @@ function calculateActivityScore(params: {
     }
   }
 
+  // === AGE BRACKET BOOST (Step 4: Demographic tuning) ===
+  // Starting weights that feedback overrides over time
+  const AGE_BRACKET_PREFERENCES: Record<string, Record<string, number>> = {
+    '18-24': {
+      'Bars & Nightlife': 10, 'Entertainment': 10, 'Live Music': 8,
+      'Movies': 8, 'Fitness': 5,
+      'Arts & Culture': -3, 'Wellness': -3,
+    },
+    '25-34': {
+      'Dining': 8, 'Bars & Nightlife': 5, 'Fitness': 8,
+      'Live Music': 8, 'Coffee & Cafes': 5, 'Outdoor Activities': 5,
+    },
+    '35-44': {
+      'Dining': 10, 'Outdoor Activities': 8, 'Arts & Culture': 8,
+      'Wellness': 8, 'Shopping': 5,
+      'Bars & Nightlife': -5,
+    },
+    '45+': {
+      'Dining': 10, 'Arts & Culture': 10, 'Outdoor Activities': 8,
+      'Wellness': 10, 'Shopping': 5,
+      'Bars & Nightlife': -8, 'Entertainment': -3,
+    },
+  };
+
+  const userAgeBracket = getAgeBracketFromUser(user);
+  if (userAgeBracket && AGE_BRACKET_PREFERENCES[userAgeBracket]) {
+    const prefs = AGE_BRACKET_PREFERENCES[userAgeBracket];
+    ageBracketBoost = prefs[category] || 0;
+    if (ageBracketBoost !== 0) {
+      console.log(`🎂 AGE BRACKET (${userAgeBracket}): ${category} → ${ageBracketBoost > 0 ? '+' : ''}${ageBracketBoost} points`);
+    }
+  }
+
   // === COLLABORATIVE FILTERING (10 points max) ===
   // TODO: Implement once we have multiple users
   collaborativeScore = 0;
@@ -2096,7 +2226,9 @@ function calculateActivityScore(params: {
     // NEW: Friend social context boosts (Loop Moments)
     friendVisitBoost +
     friendPhotoBoost +
-    trendingFriendsBoost
+    trendingFriendsBoost +
+    // NEW: Age bracket boost (Step 4)
+    ageBracketBoost
   );
 
   return {
@@ -2121,33 +2253,60 @@ function calculateActivityScore(params: {
     friendVisitBoost, // +25 if friend visited in last 7 days
     friendPhotoBoost, // +15 if place has friend moments
     trendingFriendsBoost, // +20 if 2+ friends visited this week
-    finalScore: Math.max(0, Math.min(finalScore, 150)), // Raised cap from 100 to 150 to accommodate new boosts
+    finalScore: Math.max(0, Math.min(finalScore, 160)), // Raised cap to accommodate age bracket boost
   };
 }
 
 /**
- * Check if activity type matches time of day
+ * Time-of-day category weight matrix (Step 3: Time-of-Day Category Weighting)
+ * Returns additive point boost/penalty per category per time slot.
+ * Positive = great fit, Negative = poor fit, 0 = neutral.
+ */
+const TIME_CATEGORY_WEIGHTS: Record<string, Record<string, number>> = {
+  morning: {
+    'Coffee & Cafes': 25, 'Dining': 15, 'Fitness': 20,
+    'Outdoor Activities': 15, 'Wellness': 10,
+    'Bars & Nightlife': -10, 'Entertainment': 0,
+    'Arts & Culture': 5, 'Shopping': 5,
+  },
+  afternoon: {
+    'Shopping': 15, 'Arts & Culture': 15, 'Outdoor Activities': 15,
+    'Dining': 20, 'Entertainment': 10, 'Fitness': 10,
+    'Coffee & Cafes': 10, 'Bars & Nightlife': 0,
+  },
+  evening: {
+    'Dining': 25, 'Bars & Nightlife': 20, 'Entertainment': 20,
+    'Live Music': 20, 'Movies': 15,
+    'Coffee & Cafes': -5, 'Fitness': 0,
+    'Arts & Culture': 5, 'Shopping': 5,
+  },
+  night: {
+    'Bars & Nightlife': 25, 'Live Music': 25, 'Entertainment': 15,
+    'Dining': 10, 'Coffee & Cafes': -15, 'Fitness': -10,
+    'Arts & Culture': -5, 'Shopping': -10,
+  },
+};
+
+/**
+ * Get time-category weight boost for scoring
+ */
+function getTimeCategoryBoost(category: string, timeOfDay: string): number {
+  const weights = TIME_CATEGORY_WEIGHTS[timeOfDay];
+  if (!weights) return 0;
+  return weights[category] || 0;
+}
+
+/**
+ * Check if activity type matches time of day (legacy compatibility)
  */
 function checkTimeContext(
   category: string,
   timeOfDay: string
 ): 'perfect' | 'good' | 'acceptable' {
-  const timeMatches: Record<string, string[]> = {
-    morning: ['coffee', 'cafe', 'breakfast', 'gym', 'fitness', 'park'],
-    afternoon: ['dining', 'shopping', 'culture', 'museums', 'parks'],
-    evening: ['dining', 'nightlife', 'movies', 'entertainment', 'live music'],
-    night: ['nightlife', 'bars', 'live music', 'entertainment'],
-  };
-
-  const perfectMatches = timeMatches[timeOfDay] || [];
-
-  if (perfectMatches.includes(category)) {
-    return 'perfect';
-  } else if (category === 'dining' || category === 'entertainment') {
-    return 'good'; // These work most times
-  } else {
-    return 'acceptable';
-  }
+  const boost = getTimeCategoryBoost(category, timeOfDay);
+  if (boost >= 15) return 'perfect';
+  if (boost >= 5) return 'good';
+  return 'acceptable';
 }
 
 /**
@@ -2165,6 +2324,110 @@ function getCurrentTimeOfDay(): 'morning' | 'afternoon' | 'evening' | 'night' {
 /**
  * Generate AI explanation for recommendation
  */
+/**
+ * Extract neighborhood from address string for more specific explanations
+ * e.g., "2702 Main St, Dallas, TX 75226" → "Deep Ellum" (if zip matches known neighborhoods)
+ */
+function extractNeighborhood(address: string): string | null {
+  // Known Dallas neighborhoods by zip code or street patterns
+  const NEIGHBORHOOD_MAP: Record<string, string> = {
+    '75226': 'Deep Ellum',
+    '75201': 'Downtown',
+    '75204': 'Uptown',
+    '75219': 'Oak Lawn',
+    '75206': 'Lower Greenville',
+    '75207': 'Design District',
+    '75208': 'Oak Cliff',
+    '75209': 'University Park',
+    '75225': 'Highland Park',
+    '75214': 'Lakewood',
+    '75218': 'White Rock',
+    '75205': 'Highland Park',
+    '75202': 'Downtown',
+    '75215': 'South Dallas',
+  };
+
+  // Try zip code match
+  const zipMatch = address.match(/\b(\d{5})\b/);
+  if (zipMatch && NEIGHBORHOOD_MAP[zipMatch[1]]) {
+    return NEIGHBORHOOD_MAP[zipMatch[1]];
+  }
+
+  // Try street/area pattern match
+  const areaPatterns: [RegExp, string][] = [
+    [/deep ellum/i, 'Deep Ellum'],
+    [/bishop arts/i, 'Bishop Arts'],
+    [/uptown/i, 'Uptown'],
+    [/oak lawn/i, 'Oak Lawn'],
+    [/downtown/i, 'Downtown'],
+    [/greenville/i, 'Greenville'],
+    [/knox/i, 'Knox-Henderson'],
+    [/henderson/i, 'Knox-Henderson'],
+    [/trinity grove/i, 'Trinity Groves'],
+    [/design district/i, 'Design District'],
+    [/victory/i, 'Victory Park'],
+  ];
+
+  for (const [pattern, name] of areaPatterns) {
+    if (pattern.test(address)) return name;
+  }
+
+  return null;
+}
+
+/**
+ * Get a more specific place type descriptor instead of generic category
+ * e.g., "sushi spot" instead of "dining", "yoga studio" instead of "fitness"
+ */
+function getSpecificPlaceType(place: PlaceResult, fallbackCategory: string): string {
+  const types = place.types || [];
+  const name = place.name.toLowerCase();
+
+  // Specific type mappings
+  const specificTypes: [RegExp | string, string][] = [
+    ['sushi_restaurant', 'sushi spot'],
+    ['ramen_restaurant', 'ramen shop'],
+    ['pizza_restaurant', 'pizza place'],
+    ['mexican_restaurant', 'Mexican restaurant'],
+    ['italian_restaurant', 'Italian spot'],
+    ['japanese_restaurant', 'Japanese restaurant'],
+    ['thai_restaurant', 'Thai restaurant'],
+    ['indian_restaurant', 'Indian restaurant'],
+    ['korean_restaurant', 'Korean restaurant'],
+    ['vietnamese_restaurant', 'Vietnamese restaurant'],
+    ['seafood_restaurant', 'seafood spot'],
+    ['steak_house', 'steakhouse'],
+    ['barbecue_restaurant', 'BBQ joint'],
+    ['cafe', 'cafe'],
+    ['coffee_shop', 'coffee shop'],
+    ['bakery', 'bakery'],
+    ['brewery', 'brewery'],
+    ['wine_bar', 'wine bar'],
+    ['cocktail_bar', 'cocktail bar'],
+    ['yoga_studio', 'yoga studio'],
+    ['art_gallery', 'gallery'],
+    ['museum', 'museum'],
+    ['spa', 'spa'],
+    ['gym', 'gym'],
+  ];
+
+  for (const [type, label] of specificTypes) {
+    if (typeof type === 'string' && types.includes(type)) return label;
+    if (type instanceof RegExp && types.some(t => type.test(t))) return label;
+  }
+
+  // Check name for hints
+  if (name.includes('sushi')) return 'sushi spot';
+  if (name.includes('coffee')) return 'coffee shop';
+  if (name.includes('brewery') || name.includes('brewing')) return 'brewery';
+  if (name.includes('bbq') || name.includes('barbecue')) return 'BBQ joint';
+  if (name.includes('taco')) return 'taco spot';
+  if (name.includes('pizza')) return 'pizza place';
+  if (name.includes('bakery') || name.includes('bake')) return 'bakery';
+
+  return fallbackCategory.toLowerCase();
+}
+
 /**
  * Helper: Get time context based on hour
  */
@@ -2266,8 +2529,18 @@ function generateExplanation(params: {
     return parts.join(' • ');
   }
 
+  // 0. CURATED EXPLANATION PASSTHROUGH (Step 5: highest priority)
+  // If this is a curated pick with a hand-crafted explanation, use it directly
+  if ((place as any)._curatedExplanation) {
+    const curatorName = (place as any)._curatorName;
+    if (curatorName) {
+      return `${(place as any)._curatedExplanation} — Curated by ${curatorName}`;
+    }
+    return (place as any)._curatedExplanation;
+  }
+
   // REGULAR PLACE EXPLANATIONS (Google Places, restaurants, etc.)
-  // v3.0 - Intelligent, compelling explanations that make Loop feel premium
+  // v4.0 - Richer "why" explanations with feedback awareness and specificity
 
   const interests = user.interests || [];
   const rating = place.rating || 0;
@@ -2282,19 +2555,28 @@ function generateExplanation(params: {
     place.name.toLowerCase().includes(interest.toLowerCase())
   );
 
+  // Extract neighborhood from address for specificity
+  const address = place.formatted_address || place.vicinity || '';
+  const neighborhood = extractNeighborhood(address);
+
+  // Get place-specific descriptor instead of generic category
+  const specificType = getSpecificPlaceType(place, category);
+
   // 1. BUILD COMPELLING OPENING (what makes this special)
   if (matchingInterest && rating >= 4.5 && reviewCount >= 100) {
     // Strong match: interest + highly rated + popular
-    parts.push(`Perfect for your ${matchingInterest} craving — ${rating}★ with ${reviewCount}+ reviews`);
+    parts.push(`Perfect for your ${matchingInterest} craving — ${rating}★ with ${reviewCount.toLocaleString()}+ reviews`);
   } else if (matchingInterest && rating >= 4.0) {
     // Good match: interest + decent rating
-    parts.push(`Great ${matchingInterest} pick — ${rating}★ local favorite`);
+    const locationTag = neighborhood ? ` in ${neighborhood}` : '';
+    parts.push(`Great ${specificType} pick${locationTag} — ${rating}★ local favorite`);
   } else if (rating >= 4.7 && reviewCount >= 200) {
     // Hidden gem: exceptional rating and popularity
-    parts.push(`Local gem — ${rating}★ with ${reviewCount}+ glowing reviews`);
+    const locationTag = neighborhood ? ` in ${neighborhood}` : '';
+    parts.push(`Local gem${locationTag} — ${rating}★ with ${reviewCount.toLocaleString()}+ glowing reviews`);
   } else if (rating >= 4.5 && reviewCount >= 50) {
     // Solid choice: well-rated
-    parts.push(`Highly rated ${category.toLowerCase()} spot — ${rating}★`);
+    parts.push(`Highly rated ${specificType} spot — ${rating}★`);
   } else if (matchingInterest) {
     // Interest match without strong ratings
     parts.push(`Matches your love of ${matchingInterest}`);
@@ -2334,11 +2616,13 @@ function generateExplanation(params: {
   // 4. FALLBACK: Build something reasonable if we have nothing
   if (parts.length === 0) {
     if (rating >= 4.0) {
-      parts.push(`Well-rated ${category.toLowerCase()} — ${rating}★`);
+      const locationTag = neighborhood ? ` in ${neighborhood}` : '';
+      parts.push(`Well-rated ${specificType}${locationTag} — ${rating}★`);
     } else if (distance <= 5) {
-      parts.push(`${category} nearby — worth checking out`);
+      parts.push(`${specificType} nearby — worth checking out`);
     } else {
-      parts.push(`Trending ${category.toLowerCase()} in your area`);
+      const locationTag = neighborhood ? ` in ${neighborhood}` : ' in your area';
+      parts.push(`Trending ${specificType}${locationTag}`);
     }
   }
 
@@ -2463,55 +2747,45 @@ function applyBusinessRules(
   // If you have 10 great Italian restaurants nearby, user sees all 10
   let balancedRecommendations = dedupedRecommendations;
 
-  // Rule 4: AGGRESSIVE category diversity enforcement (min 7 categories in top 10)
-  const MIN_CATEGORIES_IN_TOP_10 = 7; // Force variety
-  const MIN_CATEGORIES_IN_TOP_20 = 10; // Enforce across top 20 too
-  const diversityWindow = balancedRecommendations.slice(0, 15);
-  const categoriesInTop10 = new Set(diversityWindow.slice(0, 10).map(r => r.category));
+  // Rule 4: Category diversity — limit any single category to max 3 in top 10
+  // Search the full result set (not just 15) for diverse replacements
+  const MAX_PER_CATEGORY_IN_TOP_10 = 3;
+  const top10 = balancedRecommendations.slice(0, 10);
+  const rest = balancedRecommendations.slice(10);
 
-  if (categoriesInTop10.size < MIN_CATEGORIES_IN_TOP_10) {
-    console.log(`⚠️ Low diversity: only ${categoriesInTop10.size} categories in top 10`);
+  const categoryCount = new Map<string, number>();
+  top10.forEach(r => {
+    categoryCount.set(r.category, (categoryCount.get(r.category) || 0) + 1);
+  });
 
-    const categoryCount = new Map<string, number>();
-    diversityWindow.slice(0, 10).forEach(r => {
-      categoryCount.set(r.category, (categoryCount.get(r.category) || 0) + 1);
-    });
+  // Find categories with too many entries
+  const overrepresented = Array.from(categoryCount.entries())
+    .filter(([_, count]) => count > MAX_PER_CATEGORY_IN_TOP_10);
 
-    const overrepresentedCategories = Array.from(categoryCount.entries())
-      .filter(([_, count]) => count >= 3)
-      .map(([cat, _]) => cat);
+  if (overrepresented.length > 0) {
+    const categoriesInTop10 = new Set(top10.map(r => r.category));
 
-    // Swap lowest-scoring overrepresented item with highest-scoring diverse item
-    for (const overrepCat of overrepresentedCategories) {
-      let lowestScoreIdx = -1;
-      let lowestScore = Infinity;
-      for (let i = 0; i < 10; i++) {
-        if (diversityWindow[i].category === overrepCat && diversityWindow[i].score < lowestScore) {
-          lowestScore = diversityWindow[i].score;
-          lowestScoreIdx = i;
+    for (const [overrepCat] of overrepresented) {
+      // Remove excess items from this category (keep the highest-scored ones)
+      let removed = 0;
+      const excess = categoryCount.get(overrepCat)! - MAX_PER_CATEGORY_IN_TOP_10;
+
+      for (let i = top10.length - 1; i >= 0 && removed < excess; i--) {
+        if (top10[i].category === overrepCat) {
+          // Find best replacement from rest that brings a new category
+          const swapIdx = rest.findIndex(r => !categoriesInTop10.has(r.category));
+          if (swapIdx !== -1) {
+            const replacement = rest.splice(swapIdx, 1)[0];
+            categoriesInTop10.add(replacement.category);
+            rest.push(top10[i]); // Move demoted item to rest
+            top10[i] = replacement;
+            removed++;
+          }
         }
-      }
-
-      let bestSwapIdx = -1;
-      let bestSwapScore = 0;
-      for (let i = 10; i < 15 && i < diversityWindow.length; i++) {
-        const isNewCategory = !categoryCount.has(diversityWindow[i].category);
-        if (isNewCategory && diversityWindow[i].score > bestSwapScore) {
-          bestSwapScore = diversityWindow[i].score;
-          bestSwapIdx = i;
-        }
-      }
-
-      if (lowestScoreIdx !== -1 && bestSwapIdx !== -1) {
-        console.log(`🔄 Diversity swap: ${diversityWindow[lowestScoreIdx].place.name} ↔ ${diversityWindow[bestSwapIdx].place.name}`);
-        const temp = diversityWindow[lowestScoreIdx];
-        diversityWindow[lowestScoreIdx] = diversityWindow[bestSwapIdx];
-        diversityWindow[bestSwapIdx] = temp;
-        break;
       }
     }
 
-    balancedRecommendations = [...diversityWindow, ...balancedRecommendations.slice(15)];
+    balancedRecommendations = [...top10, ...rest];
   }
 
   // Rule 5: Event balance (prevent spam, ensure visibility)

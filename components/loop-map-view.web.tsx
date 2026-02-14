@@ -36,7 +36,7 @@ export function LoopMapView({ tasks, homeLocation, onTaskPress }: LoopMapViewPro
       </Text>
       {tasks.length > 0 && (
         <Text style={styles.taskCount}>
-          {tasks.length} {tasks.length === 1 ? 'task' : 'tasks'} scheduled
+          {tasks.length} {tasks.length === 1 ? 'stop' : 'stops'} in your Loop
         </Text>
       )}
     </View>

@@ -549,7 +549,7 @@ export default function CalendarScreen() {
   const createEvent = async () => {
     if (!user) return;
     if (!newTaskTitle.trim()) {
-      Alert.alert('Error', 'Please enter a task title');
+      Alert.alert('Error', 'Please enter a title');
       return;
     }
     if (!newTaskAddress.trim()) {
@@ -600,13 +600,13 @@ export default function CalendarScreen() {
 
       if (error) throw error;
 
-      Alert.alert('Success', 'Task added to calendar!');
+      Alert.alert('Success', 'Added to your Loop!');
       closeCreateModal();
       loadEvents();
     } catch (error: any) {
       const msg = error?.message || error?.details || JSON.stringify(error);
       console.error('Error creating event:', msg, error);
-      Alert.alert('Error', `Failed to create task: ${msg}`);
+      Alert.alert('Error', `Failed to add to Loop: ${msg}`);
     }
   };
 
@@ -684,13 +684,13 @@ export default function CalendarScreen() {
 
       if (error) throw error;
 
-      Alert.alert('Success', 'Task updated successfully!');
+      Alert.alert('Success', 'Updated successfully!');
       setShowEditModal(false);
       setEditingEvent(null);
       loadEvents();
     } catch (error) {
       console.error('Error updating event:', error);
-      Alert.alert('Error', 'Failed to update task');
+      Alert.alert('Error', 'Failed to update');
     }
   };
 
@@ -698,15 +698,15 @@ export default function CalendarScreen() {
     if (!editingEvent) return;
 
     Alert.alert(
-      'Delete Task',
-      'Are you sure you want to delete this task?',
+      'Remove from Loop',
+      'Are you sure you want to remove this from your Loop?',
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
         {
-          text: 'Delete',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -719,13 +719,13 @@ export default function CalendarScreen() {
 
               if (error) throw error;
 
-              Alert.alert('Success', 'Task deleted successfully!');
+              Alert.alert('Success', 'Removed from your Loop');
               setShowEditModal(false);
               setEditingEvent(null);
               loadEvents();
             } catch (error) {
               console.error('Error deleting event:', error);
-              Alert.alert('Error', 'Failed to delete task');
+              Alert.alert('Error', 'Failed to remove');
             }
           },
         },
@@ -737,15 +737,15 @@ export default function CalendarScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     Alert.alert(
-      'Delete Task',
-      'Are you sure you want to delete this task?',
+      'Remove from Loop',
+      'Are you sure you want to remove this from your Loop?',
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
         {
-          text: 'Delete',
+          text: 'Remove',
           style: 'destructive',
           onPress: async () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -761,7 +761,7 @@ export default function CalendarScreen() {
               loadEvents();
             } catch (error) {
               console.error('Error deleting event:', error);
-              Alert.alert('Error', 'Failed to delete task');
+              Alert.alert('Error', 'Failed to remove');
             }
           },
         },
@@ -970,7 +970,7 @@ export default function CalendarScreen() {
             >
               <Ionicons name="add-circle-outline" size={20} color={Colors[colorScheme ?? 'light'].text} />
               <Text style={[styles.createTaskButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Create Task
+                Add to Loop
               </Text>
             </TouchableOpacity>
           </View>
@@ -1151,7 +1151,7 @@ export default function CalendarScreen() {
               <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    Create Task
+                    Add to Loop
                   </Text>
                   <TouchableOpacity onPress={closeCreateModal}>
                     <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
@@ -1443,7 +1443,7 @@ export default function CalendarScreen() {
                 style={[styles.createButton, { backgroundColor: BrandColors.loopBlue }]}
                 onPress={createEvent}
               >
-                <Text style={[Typography.labelLarge, { color: '#ffffff' }]}>Create Task</Text>
+                <Text style={[Typography.labelLarge, { color: '#ffffff' }]}>Add to Loop</Text>
               </TouchableOpacity>
                 </ScrollView>
               </View>
@@ -1463,7 +1463,7 @@ export default function CalendarScreen() {
               <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
                 <View style={styles.modalHeader}>
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    Edit Task
+                    Edit
                   </Text>
                   <TouchableOpacity onPress={() => setShowEditModal(false)}>
                     <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
@@ -1743,7 +1743,7 @@ export default function CalendarScreen() {
                     {viewMode === 'list' ? 'View Loop Map' : 'View Calendar List'}
                   </Text>
                   <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                    {viewMode === 'list' ? 'See your day as a connected route' : 'See your tasks as a list'}
+                    {viewMode === 'list' ? 'See your day as a connected route' : 'See your Loop as a list'}
                   </Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />

@@ -24,6 +24,10 @@ export interface Activity {
   phone?: string;
   website?: string;
   hours?: Record<string, string>; // { "monday": "9:00 AM - 5:00 PM", ... }
+  openingHoursPeriods?: Array<{
+    open: { day: number; time: string };
+    close?: { day: number; time: string };
+  }>; // Raw Google periods data for accurate isOpenAt checks
   tags?: string[];
   isSponsored?: boolean;
   sponsorTier?: 'organic' | 'boosted' | 'premium';
@@ -55,6 +59,8 @@ export interface Recommendation {
   reviewSummary?: string; // AI-generated summary of reviews
   openNow?: boolean;
   isSponsored: boolean;
+  isCurated?: boolean; // True for hand-curated "Loop Pick" recommendations
+  curatorName?: string; // Curator attribution (e.g., "Sarah, Dallas local")
   score?: number;
   scoreBreakdown?: RecommendationScore;
   // Business hours

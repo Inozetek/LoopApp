@@ -289,7 +289,7 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
         {nextTask ? (
           <View style={styles.nextTaskContainer}>
             <Text style={[styles.nextTaskLabel, { color: colors.textSecondary }]}>
-              Here's your next task:
+              Up next:
             </Text>
             <View style={[styles.nextTaskCard, { backgroundColor: colors.cardBackground, borderColor: BrandColors.strongMatchGlow }]}>
               <View style={styles.nextTaskInfo}>
@@ -310,7 +310,7 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
           </View>
         ) : (
           <Text style={[styles.noTasksText, { color: colors.textSecondary }]}>
-            No tasks scheduled for today. Explore recommendations below!
+            Nothing in your Loop today. Explore recommendations below!
           </Text>
         )}
       </View>
@@ -338,7 +338,7 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
         <View style={styles.sectionHeader}>
           <IconSymbol name="list.bullet" size={20} color={BrandColors.loopBlue} />
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Tasks in today's loop
+            Today's Loop
           </Text>
         </View>
         {today_tasks && today_tasks.length > 0 ? (
@@ -362,13 +362,13 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
             ))}
             {today_tasks.length > 5 && (
               <Text style={[styles.moreTasksText, { color: colors.textSecondary }]}>
-                +{today_tasks.length - 5} more tasks
+                +{today_tasks.length - 5} more
               </Text>
             )}
           </View>
         ) : (
           <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-            No tasks for today
+            Nothing planned today
           </Text>
         )}
       </View>
@@ -468,7 +468,7 @@ function MapView({ tasks, homeLocation, colors }: MapViewProps) {
           No loops planned for today
         </Text>
         <Text style={[styles.emptyMapSubtext, { color: colors.textTertiary }]}>
-          Add tasks to your calendar to see your Loop
+          Add stops to see your Loop
         </Text>
       </View>
     );

@@ -93,6 +93,7 @@ export default function OnboardingScreen() {
   const [calendarConnected, setCalendarConnected] = useState(false);
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [interestError, setInterestError] = useState(false);
+  const [birthYear, setBirthYear] = useState<number | null>(null);
 
   // Business flow state
   const [businessName, setBusinessName] = useState('');
@@ -333,6 +334,17 @@ export default function OnboardingScreen() {
         ? firstName.trim()
         : `${firstName.trim()} ${lastName.trim()}`.trim();
 
+      // Compute age bracket from birth year
+      const currentYear = new Date().getFullYear();
+      let ageBracket: string | null = null;
+      if (birthYear && birthYear >= currentYear - 80 && birthYear <= currentYear - 16) {
+        const age = currentYear - birthYear;
+        if (age <= 24) ageBracket = '18-24';
+        else if (age <= 34) ageBracket = '25-34';
+        else if (age <= 44) ageBracket = '35-44';
+        else ageBracket = '45+';
+      }
+
       const { error } = await updateUserProfile({
         name: userName,
         interests: isBusiness ? [businessCategory.toLowerCase()] : selectedInterests,
@@ -341,6 +353,8 @@ export default function OnboardingScreen() {
         work_address: formattedWorkAddress,
         work_location: workLocation as any,
         account_type: accountType,
+        ...(birthYear ? { birth_year: birthYear } : {}),
+        ...(ageBracket ? { age_bracket: ageBracket } : {}),
         preferences: {
           budget: 50,
           max_distance_miles: 10,
@@ -494,6 +508,10 @@ export default function OnboardingScreen() {
   }
 
   function renderPersonalStep1() {
+    const currentYear = new Date().getFullYear();
+    const minYear = currentYear - 80;
+    const maxYear = currentYear - 16;
+
     return (
       <View style={styles.stepInner}>
         <Text style={[styles.convoTitle, { color: theme.text }]}>
@@ -529,6 +547,28 @@ export default function OnboardingScreen() {
             {isGoogleUser && lastName ? (
               <Text style={[styles.hintText, { color: theme.textSubtle }]}>(from google)</Text>
             ) : null}
+          </View>
+          <View style={styles.underlineField}>
+            <TextInput
+              style={[styles.underlineInput, { color: theme.text, borderBottomColor: theme.border }]}
+              placeholder="birth year (optional)"
+              placeholderTextColor={theme.textSubtle}
+              value={birthYear ? String(birthYear) : ''}
+              onChangeText={(text) => {
+                const num = parseInt(text, 10);
+                if (text === '') {
+                  setBirthYear(null);
+                } else if (!isNaN(num) && text.length <= 4) {
+                  setBirthYear(num);
+                }
+              }}
+              keyboardType="number-pad"
+              maxLength={4}
+              editable={!isLoading}
+            />
+            <Text style={[styles.hintText, { color: theme.textSubtle }]}>
+              helps personalize your experience
+            </Text>
           </View>
         </Animated.View>
       </View>

@@ -94,7 +94,7 @@ export function ConflictWarningModal({
               style={[styles.button, styles.replaceButton, { backgroundColor: BrandColors.warning }]}
               onPress={handleReplaceTask}
             >
-              <Text style={[Typography.labelLarge, { color: '#FFFFFF' }]}>Replace Task</Text>
+              <Text style={[Typography.labelLarge, { color: '#FFFFFF' }]}>Replace</Text>
             </TouchableOpacity>
           )}
         </View>

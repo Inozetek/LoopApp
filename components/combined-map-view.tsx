@@ -287,7 +287,7 @@ export function CombinedMapView({
               <View style={[styles.legendDot, styles.taskDot, { backgroundColor: '#27AE60' }]}>
                 <Text style={styles.legendNumber}>1</Text>
               </View>
-              <Text style={[Typography.bodySmall, { color: colors.text }]}>Your Scheduled Tasks</Text>
+              <Text style={[Typography.bodySmall, { color: colors.text }]}>Your Loop</Text>
             </View>
 
             <View style={styles.legendItem}>

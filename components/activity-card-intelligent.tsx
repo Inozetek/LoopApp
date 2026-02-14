@@ -360,6 +360,9 @@ function ActivityCardIntelligentComponent({
   const isTrending = (recommendation.activity?.reviewsCount ?? 0) > 300 &&
     (recommendation.rating ?? 0) >= 4.3;
 
+  // Check if this is a curated "Loop Pick"
+  const isCurated = recommendation.isCurated === true;
+
   // Calculate AI match percentage (for subtle badge)
   const matchScore = score.finalScore || recommendation.score || 0;
   const matchPercentage = Math.min(99, Math.round((matchScore / 100) * 100));
@@ -700,8 +703,16 @@ function ActivityCardIntelligentComponent({
               </View>
             )}
 
+            {/* Loop Pick Badge (curated recommendations) */}
+            {isCurated && !isEvent && (
+              <View style={styles.loopPickBadge}>
+                <Ionicons name="star" size={11} color="#FFFFFF" />
+                <Text style={styles.loopPickText}>Loop Pick</Text>
+              </View>
+            )}
+
             {/* Trending Badge (high engagement activities) */}
-            {isTrending && !isEvent && !isStrongMatch && (
+            {isTrending && !isEvent && !isStrongMatch && !isCurated && (
               <View style={styles.trendingBadge}>
                 <Ionicons name="flame" size={12} color="#FFFFFF" />
                 <Text style={styles.trendingText}>Trending</Text>
@@ -1094,6 +1105,22 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  // Loop Pick Badge (curated recommendations)
+  loopPickBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: BrandColors.loopGreen,
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+  loopPickText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
     letterSpacing: 0.3,
   },
   // Trending Badge (replaces Top Match badge)
