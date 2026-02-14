@@ -132,14 +132,14 @@ export const CategoryColors: Record<string, string> = {
 };
 
 // Score bar segment colors (stacked bar in activity cards)
-// HARMONIOUS CHART PALETTE - User-approved colors that work well together
-// These colors are distinct but don't create visual noise when shown together
+// COOL-TONE AURORA PALETTE — cyan → indigo → violet → purple → pink
+// Glowy, complementary gradient that avoids rainbow scatter
 export const ScoreBarColors = {
-  interest: '#00A6D9',    // Cyan (matches loopBlue) - primary factor
-  location: '#09DB98',    // Green (matches loopGreen) - proximity
-  time: '#F0DA6A',        // Warm yellow - timing context
-  feedback: '#EDB95A',    // Gold - past user feedback
-  social: '#553C96',      // Deep purple - collaborative/social
+  interest: '#00A6D9',    // Cyan (loopBlue) - primary factor, brand anchor
+  location: '#6366F1',    // Indigo - cool complement to cyan
+  time: '#8B5CF6',        // Violet - continues cool gradient
+  feedback: '#A855F7',    // Soft purple - bridge to pink
+  social: '#EC4899',      // Pink - warm glow accent, social warmth
 };
 
 // Alias for components that import ChartColors

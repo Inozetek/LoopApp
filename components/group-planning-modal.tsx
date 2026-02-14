@@ -31,10 +31,13 @@ import { supabase } from '@/lib/supabase';
 import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { handleError } from '@/utils/error-handler';
 import { calculateGroupMidpoint } from '@/services/loop-service';
-import { searchNearbyPlaces, generateGroupRecommendations, PlaceLocation } from '@/services/recommendations';
+import { searchNearbyPlaces, generateGroupRecommendations, PlaceLocation, type ScoredRecommendation, type GroupRecommendationParams } from '@/services/recommendations';
 import { getPlacePhotoUrl } from '@/services/google-places';
 import { FriendGroup, getFriendGroups, getFriendsEligibleForGroupRecs } from '@/services/friend-groups-service';
 import { GroupSuggestionsMap } from '@/components/group-suggestions-map';
+import { DragHandle } from '@/components/drag-handle';
+import { SeeDetailsModal } from '@/components/see-details-modal';
+import type { Recommendation } from '@/types/activity';
 
 interface Friend {
   id: string;
@@ -42,6 +45,8 @@ interface Friend {
   email: string;
   profile_picture_url: string | null;
   loop_score: number;
+  interests?: string[];
+  home_location?: any;
 }
 
 interface GroupPlanningModalProps {
@@ -81,8 +86,11 @@ export function GroupPlanningModal({
   const [customTag, setCustomTag] = useState('');
   const [loading, setLoading] = useState(false);
   const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [scoredResults, setScoredResults] = useState<ScoredRecommendation[]>([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [groupMidpoint, setGroupMidpoint] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [selectedGroupRec, setSelectedGroupRec] = useState<Recommendation | null>(null);
+  const [showGroupDetails, setShowGroupDetails] = useState(false);
 
   // Date/time picker state — defaults to tomorrow at 6 PM
   const [planDate, setPlanDate] = useState<Date>(() => {
@@ -114,10 +122,13 @@ export function GroupPlanningModal({
       setSelectedTags([]);
       setCustomTag('');
       setSuggestions([]);
+      setScoredResults([]);
       setShowSuggestions(false);
       setGroupMidpoint(null);
       setSelectedGroupId(null);
       setShowGroupSelection(true);
+      setSelectedGroupRec(null);
+      setShowGroupDetails(false);
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
       tomorrow.setHours(18, 0, 0, 0);
@@ -311,42 +322,60 @@ export function GroupPlanningModal({
       setGroupMidpoint(midpoint);
       console.log('[GroupPlanning] Group midpoint calculated:', midpoint);
 
-      // Map selected tags to Google Places API types
-      const includedTypes = mapTagsToPlaceTypes(selectedTags);
-      console.log('[GroupPlanning] Searching with types:', includedTypes);
-
-      // Search for real places near the group midpoint
-      const places = await searchNearbyPlaces({
-        location: { lat: midpoint.latitude, lng: midpoint.longitude },
-        radius: 8000, // 8km radius to find good options
-        maxResults: 10,
-        includedTypes: includedTypes.length > 0 ? includedTypes : undefined,
+      // Build participants with enriched friend data
+      const participants: GroupRecommendationParams['participants'] = selectedFriends.map((friendId) => {
+        const friend = friends.find((f) => f.id === friendId);
+        const friendLocation = friend?.home_location ? parseLocation(friend.home_location) : null;
+        return {
+          userId: friendId,
+          name: friend?.name || 'Friend',
+          homeLocation: friendLocation
+            ? { lat: friendLocation.latitude, lng: friendLocation.longitude }
+            : undefined,
+          interests: friend?.interests || [],
+          preferences: { budget_level: 3 },
+          profilePicUrl: friend?.profile_picture_url || undefined,
+        };
       });
 
-      if (places.length === 0) {
-        // Fallback to mock suggestions if no places found
-        console.log('[GroupPlanning] No places found, using fallback suggestions');
+      // Use the full scoring engine
+      const params: GroupRecommendationParams = {
+        groupId: selectedGroupId || 'ad-hoc',
+        participants,
+        userLocation: { lat: midpoint.latitude, lng: midpoint.longitude },
+        tags: selectedTags,
+        maxDistance: 5,
+        maxResults: 5,
+      };
+
+      console.log('[GroupPlanning] Running generateGroupRecommendations with', participants.length, 'participants');
+      const scored = await generateGroupRecommendations(params);
+      setScoredResults(scored);
+
+      if (scored.length === 0) {
+        console.log('[GroupPlanning] No scored results, using fallback suggestions');
         const fallbackSuggestions = getFallbackSuggestions();
         setSuggestions(fallbackSuggestions);
       } else {
-        // Convert places to suggestion format
-        const realSuggestions = places.slice(0, 5).map((place) => ({
-          id: place.place_id,
-          name: place.name,
-          category: mapPlaceTypesToCategory(place.types || []),
-          description: place.description || place.vicinity || 'Great spot for groups',
-          distance: calculateDistance(midpoint.latitude, midpoint.longitude, place.geometry.location.lat, place.geometry.location.lng),
-          rating: place.rating || 4.0,
-          priceRange: place.price_level || 2,
-          photoUrl: place.photos?.[0]?.photo_reference
-            ? getPlacePhotoUrl(place.photos[0].photo_reference, 800)
-            : 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800',
-          address: place.formatted_address || place.vicinity,
-          latitude: place.geometry.location.lat,
-          longitude: place.geometry.location.lng,
+        // Convert scored results to suggestion format for display
+        const realSuggestions = scored.map((s) => ({
+          id: s.place.place_id,
+          name: s.place.name,
+          category: s.category,
+          description: s.aiExplanation || s.place.vicinity || 'Great spot for groups',
+          distance: Math.round(s.distance * 10) / 10,
+          rating: s.place.rating || 4.0,
+          priceRange: s.place.price_level || 2,
+          photoUrl: s.photoUrl || 'https://images.unsplash.com/photo-1517457373958-b7bdd4587205?w=800',
+          address: s.place.formatted_address || s.place.vicinity,
+          latitude: s.place.geometry.location.lat,
+          longitude: s.place.geometry.location.lng,
+          score: s.score,
+          scoreBreakdown: s.scoreBreakdown,
+          groupMemberMatches: s.groupMemberMatches,
         }));
 
-        console.log(`[GroupPlanning] Found ${realSuggestions.length} real places`);
+        console.log(`[GroupPlanning] Found ${realSuggestions.length} scored places`);
         setSuggestions(realSuggestions);
       }
 
@@ -478,6 +507,24 @@ export function GroupPlanningModal({
   /**
    * Get fallback suggestions when API fails
    */
+  const buildFallbackMemberMatches = (category: string) => {
+    return selectedFriends.map((friendId) => {
+      const friend = friends.find((f) => f.id === friendId);
+      const friendInterests = friend?.interests || [];
+      const catLower = category.toLowerCase();
+      const matchedInterests = friendInterests.filter((i: string) =>
+        i.toLowerCase().includes(catLower) || catLower.includes(i.toLowerCase())
+      );
+      return {
+        userId: friendId,
+        name: friend?.name || 'Friend',
+        matchedInterests,
+        distanceMiles: 0,
+        profilePicUrl: friend?.profile_picture_url || undefined,
+      };
+    });
+  };
+
   const getFallbackSuggestions = () => [
     {
       id: 'fallback-1',
@@ -488,6 +535,7 @@ export function GroupPlanningModal({
       rating: 4.7,
       priceRange: 1,
       photoUrl: 'https://images.unsplash.com/photo-1519331379826-f10be5486c6f?w=800',
+      groupMemberMatches: buildFallbackMemberMatches('Outdoor'),
     },
     {
       id: 'fallback-2',
@@ -498,6 +546,7 @@ export function GroupPlanningModal({
       rating: 4.5,
       priceRange: 2,
       photoUrl: 'https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=800',
+      groupMemberMatches: buildFallbackMemberMatches('Sightseeing'),
     },
     {
       id: 'fallback-3',
@@ -508,8 +557,65 @@ export function GroupPlanningModal({
       rating: 4.6,
       priceRange: 2,
       photoUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800',
+      groupMemberMatches: buildFallbackMemberMatches('Entertainment'),
     },
   ];
+
+  /**
+   * Open see-details-modal for a group suggestion instead of immediately creating a plan
+   */
+  const handleViewSuggestionDetails = (activity: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    const memberMatches = (activity.groupMemberMatches || []).map((m: any) => ({
+      userId: m.userId,
+      name: m.name,
+      matchedInterests: m.matchedInterests || [],
+      distanceMiles: m.distanceMiles || 0,
+      profilePicUrl: m.profilePicUrl,
+    }));
+
+    const farthest = memberMatches.length > 0
+      ? memberMatches.reduce((prev: any, curr: any) => curr.distanceMiles > prev.distanceMiles ? curr : prev, memberMatches[0])
+      : { name: 'Unknown', distanceMiles: 0 };
+
+    const rec: Recommendation = {
+      id: activity.id,
+      title: activity.name,
+      category: activity.category,
+      location: activity.address || '',
+      distance: `${activity.distance} mi`,
+      priceRange: activity.priceRange || 2,
+      rating: activity.rating || 4.0,
+      imageUrl: activity.photoUrl || '',
+      aiExplanation: activity.description || '',
+      isSponsored: false,
+      score: activity.score,
+      scoreBreakdown: activity.scoreBreakdown ? {
+        baseScore: activity.scoreBreakdown.baseScore,
+        locationScore: activity.scoreBreakdown.locationScore,
+        timeScore: activity.scoreBreakdown.timeScore || 0,
+        feedbackScore: activity.scoreBreakdown.feedbackScore || 0,
+        collaborativeScore: activity.scoreBreakdown.collaborativeScore || 0,
+        sponsorBoost: activity.scoreBreakdown.sponsoredBoost || 0,
+        finalScore: activity.scoreBreakdown.finalScore,
+      } : undefined,
+      groupContext: {
+        memberMatches,
+        interestMatchScore: activity.scoreBreakdown?.baseScore || 0,
+        farthestMemberName: farthest.name,
+        farthestMemberDistance: farthest.distanceMiles,
+        onChoose: () => {
+          setShowGroupDetails(false);
+          setSelectedGroupRec(null);
+          handleSelectActivity(activity);
+        },
+      },
+    };
+
+    setSelectedGroupRec(rec);
+    setShowGroupDetails(true);
+  };
 
   const handleSelectActivity = async (activity: any) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -606,6 +712,7 @@ export function GroupPlanningModal({
     >
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <DragHandle onClose={handleClose} />
           {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.text }]}>Plan Group Activity</Text>
@@ -905,7 +1012,7 @@ export function GroupPlanningModal({
                 {suggestions.map((activity) => (
                   <TouchableOpacity
                     key={activity.id}
-                    onPress={() => handleSelectActivity(activity)}
+                    onPress={() => handleViewSuggestionDetails(activity)}
                     style={[styles.suggestionCard, { backgroundColor: isDark ? '#2f3133' : '#f8f9fa' }]}
                   >
                     <View style={styles.suggestionInfo}>
@@ -975,6 +1082,21 @@ export function GroupPlanningModal({
           )}
         </View>
       </View>
+
+      {/* See Details Modal for group suggestion */}
+      <SeeDetailsModal
+        visible={showGroupDetails}
+        recommendation={selectedGroupRec}
+        onClose={() => {
+          setShowGroupDetails(false);
+          setSelectedGroupRec(null);
+        }}
+        onAddToCalendar={() => {
+          // onChoose in groupContext handles plan creation
+          selectedGroupRec?.groupContext?.onChoose?.();
+        }}
+        userId={userId}
+      />
     </Modal>
   );
 }
