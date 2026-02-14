@@ -2451,6 +2451,7 @@ export default function RecommendationFeedScreen() {
               setShowDetailsModal(false);
               setShowScheduleModal(true);
             }}
+            userId={user?.id}
           />
         )}
 

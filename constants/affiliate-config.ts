@@ -16,7 +16,7 @@
  * uber://?action=setPickup&dropoff[latitude]=X&dropoff[longitude]=Y&client_id=YOUR_CODE
  */
 
-export const AFFILIATE_CONFIG = {
+export const AFFILIATE_CONFIG: Record<string, { affiliateCode: string; enabled: boolean }> = {
   uber: {
     // Placeholder - replace with real affiliate code after signup
     affiliateCode: 'LOOP_AFFILIATE_CODE_PLACEHOLDER',
@@ -24,6 +24,30 @@ export const AFFILIATE_CONFIG = {
   },
   lyft: {
     affiliateCode: 'LOOP_LYFT_PLACEHOLDER',
+    enabled: false,
+  },
+  opentable: {
+    affiliateCode: 'LOOP_OPENTABLE_PLACEHOLDER',
+    enabled: false,
+  },
+  fandango: {
+    affiliateCode: 'LOOP_FANDANGO_PLACEHOLDER',
+    enabled: false,
+  },
+  eventbrite: {
+    affiliateCode: 'LOOP_EVENTBRITE_PLACEHOLDER',
+    enabled: false,
+  },
+  ticketmaster: {
+    affiliateCode: 'LOOP_TICKETMASTER_PLACEHOLDER',
+    enabled: false,
+  },
+  airbnb: {
+    affiliateCode: 'LOOP_AIRBNB_PLACEHOLDER',
+    enabled: false,
+  },
+  groupon: {
+    affiliateCode: 'LOOP_GROUPON_PLACEHOLDER',
     enabled: false,
   },
 };

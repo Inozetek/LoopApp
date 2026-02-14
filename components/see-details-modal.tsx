@@ -31,6 +31,7 @@ import { getStaticMapUrl } from '@/utils/maps';
 import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
 import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
 import { extractReviewTopics, type ReviewTopic } from '@/utils/review-topics';
+import { getMatchingPartners, openAffiliateLink, trackAffiliateClick, type MatchedPartner } from '@/services/affiliate-service';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -41,6 +42,7 @@ interface SeeDetailsModalProps {
   recommendation: Recommendation | null;
   onClose: () => void;
   onAddToCalendar: () => void;
+  userId?: string;
 }
 
 /**
@@ -170,6 +172,7 @@ export function SeeDetailsModal({
   recommendation,
   onClose,
   onAddToCalendar,
+  userId,
 }: SeeDetailsModalProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -601,20 +604,30 @@ export function SeeDetailsModal({
                       onPress={async () => {
                         try {
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-                          console.log('🎟️ Opening event page:', (recommendation as any).event_metadata.event_url);
 
                           const url = (recommendation as any).event_metadata.event_url;
+
+                          // Determine partner from URL for tracking
+                          const urlLower = url.toLowerCase();
+                          const partnerId = urlLower.includes('ticketmaster') ? 'ticketmaster' as const
+                            : urlLower.includes('eventbrite') ? 'eventbrite' as const
+                            : urlLower.includes('fandango') ? 'fandango' as const
+                            : null;
+
+                          // Track affiliate click (non-blocking)
+                          if (partnerId) {
+                            trackAffiliateClick(userId, partnerId, recommendation).catch(() => {});
+                          }
+
                           const canOpen = await Linking.canOpenURL(url);
 
                           if (canOpen) {
                             await Linking.openURL(url);
-                            console.log('✅ Opened Ticketmaster page successfully');
                           } else {
-                            console.error('❌ Cannot open URL:', url);
                             Alert.alert('Error', 'Unable to open ticket page. Please check your internet connection.');
                           }
                         } catch (error) {
-                          console.error('❌ Error opening ticket page:', error);
+                          console.error('Error opening ticket page:', error);
                           Alert.alert('Error', 'Failed to open ticket page. Please try again.');
                         }
                       }}
@@ -668,6 +681,38 @@ export function SeeDetailsModal({
                   )}
                 </View>
               )}
+
+              {/* Book through Loop - Affiliate Partners */}
+              {recommendation && (() => {
+                const matchedPartners = getMatchingPartners(recommendation);
+                if (matchedPartners.length === 0) return null;
+                return (
+                  <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>Book through Loop</Text>
+                    <View style={styles.affiliateButtons}>
+                      {matchedPartners.map((partner) => (
+                        <Pressable
+                          key={partner.partnerId}
+                          style={[styles.affiliateButton, { borderColor: partner.color, backgroundColor: partner.color + '0D' }]}
+                          onPress={async () => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            const success = await openAffiliateLink(partner.partnerId, recommendation, userId);
+                            if (!success) {
+                              Alert.alert('Error', `Unable to open ${partner.ctaText.toLowerCase()}. Please try again.`);
+                            }
+                          }}
+                        >
+                          <Ionicons name={partner.icon as any} size={22} color={partner.color} />
+                          <Text style={[styles.affiliateButtonText, { color: partner.color }]}>
+                            {partner.ctaText}
+                          </Text>
+                          <Ionicons name="arrow-forward" size={16} color={partner.color} />
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                );
+              })()}
 
               {/* Quick Actions */}
               <View style={styles.section}>
@@ -816,33 +861,8 @@ export function SeeDetailsModal({
                       style={[styles.actionButton, { borderColor: colors.icon, backgroundColor: 'rgba(0, 0, 0, 0.05)' }]}
                       onPress={async () => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-                        const { latitude, longitude } = recommendation.activity!.location;
-                        const name = recommendation.title;
-
-                        // Build Uber deep link with affiliate code
-                        const uberDeepLink = `uber://?action=setPickup&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}&dropoff[nickname]=${encodeURIComponent(name)}${
-                          AFFILIATE_CONFIG.uber.enabled ? `&client_id=${AFFILIATE_CONFIG.uber.affiliateCode}` : ''
-                        }`;
-
-                        // Fallback web URL (also includes affiliate code)
-                        const uberWebUrl = `https://m.uber.com/ul/?action=setPickup&dropoff[latitude]=${latitude}&dropoff[longitude]=${longitude}${
-                          AFFILIATE_CONFIG.uber.enabled ? `&client_id=${AFFILIATE_CONFIG.uber.affiliateCode}` : ''
-                        }`;
-
-                        try {
-                          // Check if Uber app is installed
-                          const canOpen = await Linking.canOpenURL(uberDeepLink);
-
-                          if (canOpen) {
-                            // Open Uber app
-                            await Linking.openURL(uberDeepLink);
-                          } else {
-                            // Fallback to web browser
-                            await Linking.openURL(uberWebUrl);
-                          }
-                        } catch (error) {
-                          console.error('Failed to open Uber:', error);
+                        const success = await openAffiliateLink('uber', recommendation, userId);
+                        if (!success) {
                           Alert.alert('Error', 'Could not open Uber. Please try again.');
                         }
                       }}
@@ -850,6 +870,25 @@ export function SeeDetailsModal({
                       <Ionicons name="car-outline" size={20} color="#000000" />
                       <Text style={[styles.actionButtonText, { color: colors.text }]}>
                         Uber
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {/* Lyft Button */}
+                  {recommendation.activity?.location && (
+                    <Pressable
+                      style={[styles.actionButton, { borderColor: '#FF00BF', backgroundColor: 'rgba(255, 0, 191, 0.05)' }]}
+                      onPress={async () => {
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        const success = await openAffiliateLink('lyft', recommendation, userId);
+                        if (!success) {
+                          Alert.alert('Error', 'Could not open Lyft. Please try again.');
+                        }
+                      }}
+                    >
+                      <Ionicons name="car-sport-outline" size={20} color="#FF00BF" />
+                      <Text style={[styles.actionButtonText, { color: colors.text }]}>
+                        Lyft
                       </Text>
                     </Pressable>
                   )}
@@ -1211,6 +1250,25 @@ const styles = StyleSheet.create({
   detailText: {
     fontSize: 14,
     flex: 1,
+  },
+
+  // AFFILIATE BUTTONS
+  affiliateButtons: {
+    gap: Spacing.sm,
+  },
+  affiliateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    paddingVertical: 14,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1.5,
+  },
+  affiliateButtonText: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '600',
   },
 
   // ACTION BUTTONS
