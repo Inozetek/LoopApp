@@ -1,13 +1,13 @@
 /**
  * Notifications Tray Modal
  *
- * Full-screen notification center showing all user notifications
+ * Right-side AnimatedDrawer showing all user notifications
  * Grouped by time: Today, Yesterday, Earlier
  *
  * UX REDESIGN (v2.0):
  * - Replaced horizontal scrolling categories with vertical filter chips
- * - Updated header to match profile page styling
- * - Modern notification patterns like iOS/Android native
+ * - Grok-style right-side drawer with glass blur + swipe-right to close
+ * - 92% width for reading comfort
  */
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
@@ -15,13 +15,13 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   Pressable,
   ScrollView,
   ActivityIndicator,
   RefreshControl,
   Linking,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -35,6 +35,7 @@ import {
   markAllNotificationsRead,
 } from '@/services/dashboard-aggregator';
 import type { DashboardNotification } from '@/types/dashboard';
+import { AnimatedDrawer } from '@/components/animated-drawer';
 
 // Notification filter categories
 type NotificationFilter = 'all' | 'recommendations' | 'social' | 'reminders';
@@ -56,6 +57,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
+  const insets = useSafeAreaInsets();
 
   const [notifications, setNotifications] = useState<DashboardNotification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,7 +73,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
         case 'recommendations':
           return ['new_recommendations', 'featured_venue', 'featured_movie', 'lunch_suggestion'].includes(n.notification_type);
         case 'social':
-          return ['friend_activity', 'pending_invite', 'family_in_town'].includes(n.notification_type);
+          return ['friend_activity', 'pending_invite', 'family_in_town', 'activity_share', 'activity_invite'].includes(n.notification_type);
         case 'reminders':
           return ['loops_planned', 'event_reminder'].includes(n.notification_type);
         default:
@@ -95,7 +97,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
       const data = await fetchDashboardNotifications(user.id);
       setNotifications(data);
     } catch (error) {
-      console.error('❌ Error loading notifications:', error);
+      console.error('Error loading notifications:', error);
     } finally {
       setLoading(false);
     }
@@ -113,7 +115,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
       await dismissNotification(notificationId);
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
-      console.error('❌ Error dismissing notification:', error);
+      console.error('Error dismissing notification:', error);
     }
   };
 
@@ -161,7 +163,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
       // Remove from list
       setNotifications(prev => prev.filter(n => n.id !== notification.id));
     } catch (error) {
-      console.error('❌ Error actioning notification:', error);
+      console.error('Error actioning notification:', error);
     }
   };
 
@@ -179,7 +181,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
       await Promise.all(notifications.map(n => dismissNotification(n.id)));
       setNotifications([]);
     } catch (error) {
-      console.error('❌ Error clearing notifications:', error);
+      console.error('Error clearing notifications:', error);
     }
   };
 
@@ -193,14 +195,14 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
   }, []);
 
   return (
-    <Modal
+    <AnimatedDrawer
       visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
-      onRequestClose={handleClose}
+      onClose={onClose}
+      side="right"
+      widthPercentage={0.92}
     >
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* HEADER - Updated to match profile page styling */}
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* HEADER */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
           <Pressable onPress={handleClose} style={styles.closeButton} hitSlop={8}>
             <Ionicons name="close" size={24} color={colors.text} />
@@ -219,7 +221,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
           )}
         </View>
 
-        {/* FILTER CHIPS - Vertical layout replacing horizontal scroll */}
+        {/* FILTER CHIPS */}
         {notifications.length > 0 && (
           <View style={styles.filterChipsContainer}>
             {NOTIFICATION_FILTERS.map((filter) => {
@@ -330,7 +332,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
           </ScrollView>
         )}
       </View>
-    </Modal>
+    </AnimatedDrawer>
   );
 }
 
@@ -506,6 +508,10 @@ function getNotificationIcon(type: string): any {
       return 'restaurant-outline';
     case 'event_reminder':
       return 'alarm-outline';
+    case 'activity_share':
+      return 'paper-plane-outline';
+    case 'activity_invite':
+      return 'gift-outline';
     default:
       return 'notifications-outline';
   }
@@ -544,7 +550,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    paddingTop: Spacing.xl + 20, // Safe area
     borderBottomWidth: 1,
   },
   closeButton: {
@@ -566,7 +571,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
-  // FILTER CHIPS (v2.0 - replaces horizontal scroll categories)
+  // FILTER CHIPS
   filterChipsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -574,7 +579,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     gap: Spacing.xs,
     borderBottomWidth: 1,
-    borderBottomColor: 'transparent', // Will use colors.border in component
+    borderBottomColor: 'transparent',
   },
   filterChip: {
     flexDirection: 'row',

@@ -38,7 +38,8 @@ export interface RecommendationRecord {
  */
 export async function saveRecommendationsToDB(
   userId: string,
-  recommendations: Recommendation[]
+  recommendations: Recommendation[],
+  discoveryMode: 'for_you' | 'explore' = 'for_you'
 ): Promise<void> {
   if (!userId || recommendations.length === 0) return;
 
@@ -48,7 +49,7 @@ export async function saveRecommendationsToDB(
 
     const records = recommendations.map((rec) => ({
       user_id: userId,
-      recommendation_data: rec,
+      recommendation_data: { ...rec, _discoveryMode: discoveryMode },
       google_place_id: rec.activity?.googlePlaceId || rec.id,
       place_name: rec.title,
       category: rec.category,
@@ -91,7 +92,8 @@ export async function saveRecommendationsToDB(
  * - Include recommendations older than threshold
  */
 export async function loadRecommendationsFromDB(
-  userId: string
+  userId: string,
+  discoveryMode: 'for_you' | 'explore' = 'for_you'
 ): Promise<Recommendation[] | null> {
   if (!userId) return null;
 
@@ -128,13 +130,68 @@ export async function loadRecommendationsFromDB(
     }
 
     if (!data || data.length === 0) {
-      console.log('📭 No pending recommendations in database');
+      // Fallback: Try loading ANY non-expired recs (drop 24-hour freshness constraint)
+      console.log('📭 No fresh recommendations — trying stale fallback...');
+      const { data: staleData, error: staleError } = await supabase
+        .from('recommendation_tracking')
+        .select('*')
+        .eq('user_id', userId)
+        .neq('status', 'not_interested')
+        .neq('status', 'accepted')
+        .gte('expires_at', now.toISOString())
+        .eq('status', 'pending')
+        .order('confidence_score', { descending: true })
+        .limit(10);
+
+      if (staleError || !staleData || staleData.length === 0) {
+        console.log('📭 No recommendations in database at all');
+        return null;
+      }
+
+      // Filter stale fallback by discovery mode too
+      const staleFiltered = staleData.filter((record: any) => {
+        const savedMode = record.recommendation_data?._discoveryMode || 'for_you';
+        return savedMode === discoveryMode;
+      });
+
+      if (staleFiltered.length === 0) {
+        console.log(`📭 ${staleData.length} stale recs found but none match mode '${discoveryMode}'`);
+        return null;
+      }
+
+      console.log(`📥 Loaded ${staleFiltered.length} stale recommendations as fallback (older than 24h, mode=${discoveryMode})`);
+      return staleFiltered.map((record: any) => {
+        const rec = record.recommendation_data as Recommendation;
+        if (!rec.scoreBreakdown && rec.score) {
+          rec.scoreBreakdown = {
+            baseScore: Math.round(rec.score * 0.4),
+            locationScore: Math.round(rec.score * 0.2),
+            timeScore: Math.round(rec.score * 0.15),
+            feedbackScore: Math.round(rec.score * 0.15),
+            collaborativeScore: Math.round(rec.score * 0.1),
+            sponsorBoost: 0,
+            finalScore: rec.score,
+          };
+        }
+        return rec;
+      });
+    }
+
+    // DISCOVERY MODE FILTER: Only return recs matching the current mode
+    // Recs saved before mode tracking won't have _discoveryMode — treat as 'for_you'
+    const modeFiltered = data.filter((record: any) => {
+      const savedMode = record.recommendation_data?._discoveryMode || 'for_you';
+      return savedMode === discoveryMode;
+    });
+
+    if (modeFiltered.length === 0 && data.length > 0) {
+      console.log(`📭 ${data.length} cached recs found but none match mode '${discoveryMode}' — regenerating`);
       return null;
     }
 
     // DEDUPLICATION: Remove duplicate place_ids (keep highest confidence score)
     const seenPlaceIds = new Set<string>();
-    const uniqueData = data.filter((record: any) => {
+    const uniqueData = modeFiltered.filter((record: any) => {
       if (seenPlaceIds.has(record.google_place_id)) {
         console.log(`🔄 Skipping duplicate: ${record.place_name} (already seen)`);
         return false;
@@ -150,8 +207,23 @@ export async function loadRecommendationsFromDB(
     console.log(`   - Excluded: not_interested, accepted, recently shown, duplicates`);
     console.log(`   - Included: pending, declined (>3 days), viewed/expired (>7 days)`);
 
-    // Extract the recommendation data
-    const recommendations = limitedData.map((record: any) => record.recommendation_data as Recommendation);
+    // Extract the recommendation data and ensure scoreBreakdown is populated
+    const recommendations = limitedData.map((record: any) => {
+      const rec = record.recommendation_data as Recommendation;
+      // Old cached recs may lack scoreBreakdown — reconstruct from score so badges render
+      if (!rec.scoreBreakdown && rec.score) {
+        rec.scoreBreakdown = {
+          baseScore: Math.round(rec.score * 0.4),
+          locationScore: Math.round(rec.score * 0.2),
+          timeScore: Math.round(rec.score * 0.15),
+          feedbackScore: Math.round(rec.score * 0.15),
+          collaborativeScore: Math.round(rec.score * 0.1),
+          sponsorBoost: 0,
+          finalScore: rec.score,
+        };
+      }
+      return rec;
+    });
 
     // Check if cached recommendations have photos
     const withoutPhotos = recommendations.filter((r: any) => !r.imageUrl || r.imageUrl === '');
@@ -341,6 +413,73 @@ export async function getRecommendationStats(userId: string): Promise<{
   } catch (error) {
     console.error('Error getting recommendation stats:', error);
     return { total: 0, accepted: 0, declined: 0, notInterested: 0, acceptanceRate: 0 };
+  }
+}
+
+/**
+ * History item for recommendation history modal
+ */
+export interface HistoryItem {
+  id: string;
+  googlePlaceId: string;
+  title: string;
+  category: string;
+  photoUrl: string;
+  status: string;
+  createdAt: string;
+  respondedAt: string | null;
+  score: number;
+}
+
+/**
+ * Get recommendation history for user, filtered by tab
+ *
+ * @param userId User ID
+ * @param tab 'accepted' | 'passed' | 'all'
+ * @param limit Max items to return
+ * @param offset Pagination offset
+ */
+export async function getRecommendationHistory(
+  userId: string,
+  tab: 'accepted' | 'passed' | 'all' = 'all',
+  limit: number = 50,
+  offset: number = 0
+): Promise<HistoryItem[]> {
+  try {
+    let query = supabase
+      .from('recommendation_tracking')
+      .select('id, google_place_id, place_name, category, photo_url, status, created_at, responded_at, confidence_score')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (tab === 'accepted') {
+      query = query.eq('status', 'accepted');
+    } else if (tab === 'passed') {
+      query = query.in('status', ['declined', 'not_interested', 'expired']);
+    }
+
+    const { data, error } = await query;
+
+    if (error || !data) {
+      console.error('Error fetching recommendation history:', error);
+      return [];
+    }
+
+    return data.map((r: any) => ({
+      id: r.id,
+      googlePlaceId: r.google_place_id,
+      title: r.place_name || 'Unknown',
+      category: r.category || 'other',
+      photoUrl: r.photo_url || '',
+      status: r.status,
+      createdAt: r.created_at,
+      respondedAt: r.responded_at,
+      score: Math.round((r.confidence_score || 0) * 100),
+    }));
+  } catch (error) {
+    console.error('Error in getRecommendationHistory:', error);
+    return [];
   }
 }
 

@@ -19,6 +19,8 @@ import {
   Alert,
   Platform,
   TouchableOpacity,
+  TextInput,
+  ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -32,11 +34,26 @@ import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
 import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
 import { extractReviewTopics, type ReviewTopic } from '@/utils/review-topics';
 import { getMatchingPartners, openAffiliateLink, trackAffiliateClick, type MatchedPartner } from '@/services/affiliate-service';
+import { getComments, postComment, type Comment } from '@/services/comments-service';
+import { getLikesCount } from '@/services/likes-service';
+import { useAuth } from '@/contexts/auth-context';
 import { DragHandle } from '@/components/drag-handle';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 const IMAGE_HEIGHT = 300;
+
+function formatCommentDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  if (diffDays === 0) return 'Today';
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays} days ago`;
+  if (diffDays < 30) return `${Math.floor(diffDays / 7)}w ago`;
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
 
 interface SeeDetailsModalProps {
   visible: boolean;
@@ -44,6 +61,7 @@ interface SeeDetailsModalProps {
   onClose: () => void;
   onAddToCalendar: () => void;
   userId?: string;
+  scrollToComments?: boolean;
 }
 
 /**
@@ -175,19 +193,32 @@ export function SeeDetailsModal({
   onClose,
   onAddToCalendar,
   userId,
+  scrollToComments = false,
 }: SeeDetailsModalProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
 
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const commentsYRef = useRef(0);
+  const { user } = useAuth();
 
   // Reviews state
   const [reviews, setReviews] = useState<PlaceReview[]>([]);
   const [reviewTopics, setReviewTopics] = useState<ReviewTopic[]>([]);
   const [loadingReviews, setLoadingReviews] = useState(false);
 
-  // Fetch reviews when modal opens for non-event recommendations
+  // Likes count for metadata
+  const [likesCount, setLikesCount] = useState(0);
+
+  // Loop comments state
+  const [loopComments, setLoopComments] = useState<Comment[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [isPostingComment, setIsPostingComment] = useState(false);
+  const [showCommentInput, setShowCommentInput] = useState(false);
+
+  // Fetch reviews + Loop comments when modal opens
   useEffect(() => {
     const googlePlaceId = recommendation?.activity?.googlePlaceId;
     const isEvent = !!(recommendation as any)?.event_metadata?.event_url;
@@ -196,8 +227,14 @@ export function SeeDetailsModal({
       const fetchReviews = async () => {
         setLoadingReviews(true);
         try {
-          const placeReviews = await getPlaceReviews(googlePlaceId);
+          const [placeReviews, comments, likes] = await Promise.all([
+            getPlaceReviews(googlePlaceId),
+            getComments(googlePlaceId, 10),
+            getLikesCount(googlePlaceId).catch(() => 0),
+          ]);
           setReviews(placeReviews);
+          setLoopComments(comments);
+          setLikesCount(likes);
 
           // Extract topics from reviews
           const topics = extractReviewTopics(placeReviews);
@@ -205,6 +242,7 @@ export function SeeDetailsModal({
         } catch (error) {
           console.error('Failed to fetch reviews:', error);
           setReviews([]);
+          setLoopComments([]);
           setReviewTopics([]);
         } finally {
           setLoadingReviews(false);
@@ -213,11 +251,44 @@ export function SeeDetailsModal({
 
       fetchReviews();
     } else {
-      // Reset reviews when modal closes or for events
+      // Reset when modal closes or for events
       setReviews([]);
+      setLoopComments([]);
       setReviewTopics([]);
+      setShowCommentInput(false);
+      setCommentText('');
+      setLikesCount(0);
     }
   }, [visible, recommendation?.activity?.googlePlaceId]);
+
+  // Scroll to comments section when triggered from card comment icon
+  useEffect(() => {
+    if (scrollToComments && visible && !loadingReviews && commentsYRef.current > 0) {
+      setTimeout(() => {
+        scrollViewRef.current?.scrollTo({ y: commentsYRef.current, animated: true });
+      }, 400); // Wait for modal animation
+    }
+  }, [scrollToComments, visible, loadingReviews]);
+
+  async function handlePostComment() {
+    const placeId = recommendation?.activity?.googlePlaceId;
+    if (!user?.id || !placeId || !commentText.trim()) return;
+
+    setIsPostingComment(true);
+    try {
+      const comment = await postComment(user.id, placeId, commentText.trim());
+      if (comment) {
+        setLoopComments(prev => [{ ...comment, userName: 'You' }, ...prev]);
+        setCommentText('');
+        setShowCommentInput(false);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Failed to post comment:', error);
+    } finally {
+      setIsPostingComment(false);
+    }
+  }
 
   useEffect(() => {
     if (visible) {
@@ -335,6 +406,7 @@ export function SeeDetailsModal({
           </Pressable>
 
           <ScrollView
+            ref={scrollViewRef}
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
           >
@@ -386,6 +458,15 @@ export function SeeDetailsModal({
                         ({recommendation.activity.reviewsCount.toLocaleString()})
                       </Text>
                     )}
+                    {likesCount > 0 && (
+                      <>
+                        <View style={styles.metaDivider} />
+                        <Ionicons name="heart" size={14} color={BrandColors.like} />
+                        <Text style={[styles.metaText, { color: colors.text }]}>
+                          {likesCount}
+                        </Text>
+                      </>
+                    )}
                     <View style={styles.metaDivider} />
                   </>
                 )}
@@ -398,193 +479,18 @@ export function SeeDetailsModal({
                 </Text>
               </View>
 
-              {/* Description Section */}
-              {(recommendation.description || recommendation.activity?.description) && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
-                  <Text style={[styles.description, { color: colors.textSecondary }]}>
-                    {recommendation.description || recommendation.activity?.description}
-                  </Text>
-                </View>
-              )}
-
-              {/* Map Preview Section */}
-              {recommendation.activity?.location && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Location
-                  </Text>
-                  <TouchableOpacity
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      const { latitude, longitude } = recommendation.activity!.location;
-                      const url = Platform.select({
-                        ios: `http://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=d`,
-                        android: `google.navigation:q=${latitude},${longitude}`,
-                        default: `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`,
-                      });
-                      Linking.openURL(url);
-                    }}
-                    style={styles.mapPreviewContainer}
-                  >
-                    <Image
-                      source={{
-                        uri: getStaticMapUrl({
-                          latitude: recommendation.activity.location.latitude,
-                          longitude: recommendation.activity.location.longitude,
-                        })
-                      }}
-                      style={styles.mapPreview}
-                      resizeMode="cover"
-                    />
-                    <View style={styles.mapOverlay}>
-                      <IconSymbol name="map" size={20} color="#fff" />
-                      <Text style={styles.mapOverlayText}>Tap for directions</Text>
-                    </View>
-                  </TouchableOpacity>
-                </View>
-              )}
-
-              {/* Reviews Section (for non-event venues only) */}
-              {!((recommendation as any).event_metadata) && recommendation.activity?.googlePlaceId && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Reviews
-                  </Text>
-
-                  {loadingReviews ? (
-                    <View style={{ padding: 20, alignItems: 'center' }}>
-                      <Text style={[{ color: colors.icon }]}>Loading reviews...</Text>
-                    </View>
-                  ) : reviews.length > 0 ? (
-                    <>
-                      {/* Review Topic Bubbles */}
-                      {reviewTopics.length > 0 && (
-                        <View style={styles.topicBubblesContainer}>
-                          {reviewTopics.map((topic, index) => (
-                            <View
-                              key={index}
-                              style={[
-                                styles.topicBubble,
-                                {
-                                  backgroundColor: topic.sentiment === 'positive'
-                                    ? BrandColors.success + '26'
-                                    : BrandColors.error + '26',
-                                  borderColor: topic.sentiment === 'positive'
-                                    ? BrandColors.success
-                                    : BrandColors.error,
-                                },
-                              ]}
-                            >
-                              <IconSymbol
-                                name={topic.sentiment === 'positive' ? 'hand.thumbsup.fill' : 'hand.thumbsdown.fill'}
-                                size={12}
-                                color={topic.sentiment === 'positive' ? BrandColors.success : BrandColors.error}
-                              />
-                              <Text
-                                style={[
-                                  styles.topicText,
-                                  {
-                                    color: topic.sentiment === 'positive' ? BrandColors.success : BrandColors.error,
-                                  },
-                                ]}
-                              >
-                                {topic.topic}
-                              </Text>
-                              {topic.count > 1 && (
-                                <Text style={[styles.topicCount, { color: colors.icon }]}>
-                                  ({topic.count})
-                                </Text>
-                              )}
-                            </View>
-                          ))}
-                        </View>
-                      )}
-
-                      <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.reviewsContainer}
-                    >
-                      {reviews.slice(0, 5).map((review, index) => (
-                        <View key={index} style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                          {/* Reviewer Avatar + Name */}
-                          <View style={styles.reviewHeader}>
-                            {review.authorAttribution.photoUri ? (
-                              <Image
-                                source={{ uri: review.authorAttribution.photoUri }}
-                                style={styles.reviewerAvatar}
-                              />
-                            ) : (
-                              <View style={[styles.reviewerAvatar, styles.reviewerAvatarPlaceholder, { backgroundColor: BrandColors.loopBlue }]}>
-                                <Text style={styles.reviewerInitial}>
-                                  {review.authorAttribution.displayName[0]}
-                                </Text>
-                              </View>
-                            )}
-                            <View style={styles.reviewerInfo}>
-                              <Text style={[styles.reviewerName, { color: colors.text }]} numberOfLines={1}>
-                                {review.authorAttribution.displayName}
-                              </Text>
-                              <Text style={[styles.reviewDate, { color: colors.icon }]}>
-                                {review.relativePublishTimeDescription}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* Star Rating */}
-                          <View style={styles.reviewRating}>
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <IconSymbol
-                                key={star}
-                                name={star <= review.rating ? 'star.fill' : 'star'}
-                                size={14}
-                                color={star <= review.rating ? '#FFD700' : colors.icon}
-                              />
-                            ))}
-                          </View>
-
-                          {/* Review Text */}
-                          <Text
-                            style={[styles.reviewText, { color: colors.text }]}
-                            numberOfLines={4}
-                          >
-                            {review.text.text}
-                          </Text>
-                        </View>
-                      ))}
-                    </ScrollView>
-                    </>
-                  ) : (
-                    <Text style={[styles.noReviewsText, { color: colors.icon }]}>
-                      No reviews available
-                    </Text>
-                  )}
-                </View>
-              )}
-
-              {/* AI Explanation */}
-              <View style={styles.section}>
-                <View style={styles.aiHeader}>
-                  <IconSymbol name="sparkles" size={18} color={colors.primary} />
-                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                    Why We Recommend This
-                  </Text>
-                </View>
-                <Text style={[styles.description, { color: colors.textSecondary }]}>
-                  {recommendation.aiExplanation}
-                </Text>
-              </View>
-
-              {/* Group Reasoning Section */}
+              {/* Group Reasoning Section — placed prominently before other content */}
               {recommendation.groupContext && recommendation.groupContext.memberMatches.length > 0 && (
-                <View style={styles.section}>
+                <View style={[styles.section, styles.groupReasoningBanner, { backgroundColor: colors.primary + '08', borderColor: colors.primary + '20' }]}>
                   <View style={styles.aiHeader}>
                     <Ionicons name="people" size={18} color={colors.primary} />
-                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    <Text style={[styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
                       Why this works for your group
                     </Text>
                   </View>
+                  <Text style={[styles.description, { color: colors.textSecondary, marginTop: 8 }]}>
+                    {recommendation.aiExplanation}
+                  </Text>
                   <View style={styles.groupMembersContainer}>
                     {recommendation.groupContext.memberMatches.map((member) => {
                       const hasMatch = member.matchedInterests.length > 0;
@@ -636,6 +542,268 @@ export function SeeDetailsModal({
                       </Text>
                     </View>
                   )}
+                </View>
+              )}
+
+              {/* Description Section */}
+              {(recommendation.description || recommendation.activity?.description) && (
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>About</Text>
+                  <Text style={[styles.description, { color: colors.textSecondary }]}>
+                    {recommendation.description || recommendation.activity?.description}
+                  </Text>
+                </View>
+              )}
+
+              {/* Map Preview Section */}
+              {recommendation.activity?.location && (
+                <View style={styles.section}>
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    Location
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      const { latitude, longitude } = recommendation.activity!.location;
+                      const url = Platform.select({
+                        ios: `http://maps.apple.com/?daddr=${latitude},${longitude}&dirflg=d`,
+                        android: `google.navigation:q=${latitude},${longitude}`,
+                        default: `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`,
+                      });
+                      Linking.openURL(url);
+                    }}
+                    style={styles.mapPreviewContainer}
+                  >
+                    <Image
+                      source={{
+                        uri: getStaticMapUrl({
+                          latitude: recommendation.activity.location.latitude,
+                          longitude: recommendation.activity.location.longitude,
+                        })
+                      }}
+                      style={styles.mapPreview}
+                      resizeMode="cover"
+                    />
+                    <View style={styles.mapOverlay}>
+                      <IconSymbol name="map" size={20} color="#fff" />
+                      <Text style={styles.mapOverlayText}>Tap for directions</Text>
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              )}
+
+              {/* What People Are Saying (for non-event venues only) */}
+              {!((recommendation as any).event_metadata) && recommendation.activity?.googlePlaceId && (
+                <View
+                  style={styles.section}
+                  onLayout={(e) => { commentsYRef.current = e.nativeEvent.layout.y; }}
+                >
+                  <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                    What People Are Saying
+                  </Text>
+
+                  {loadingReviews ? (
+                    <View style={{ padding: 20, alignItems: 'center' }}>
+                      <ActivityIndicator size="small" color={colors.icon} />
+                    </View>
+                  ) : (
+                    <>
+                      {/* Topic Bubbles (merged from both sources) */}
+                      {reviewTopics.length > 0 && (
+                        <View style={styles.topicBubblesContainer}>
+                          {reviewTopics.map((topic, index) => (
+                            <View
+                              key={index}
+                              style={[
+                                styles.topicBubble,
+                                {
+                                  backgroundColor: topic.sentiment === 'positive'
+                                    ? BrandColors.success + '26'
+                                    : BrandColors.error + '26',
+                                  borderColor: topic.sentiment === 'positive'
+                                    ? BrandColors.success
+                                    : BrandColors.error,
+                                },
+                              ]}
+                            >
+                              <IconSymbol
+                                name={topic.sentiment === 'positive' ? 'hand.thumbsup.fill' : 'hand.thumbsdown.fill'}
+                                size={12}
+                                color={topic.sentiment === 'positive' ? BrandColors.success : BrandColors.error}
+                              />
+                              <Text
+                                style={[
+                                  styles.topicText,
+                                  {
+                                    color: topic.sentiment === 'positive' ? BrandColors.success : BrandColors.error,
+                                  },
+                                ]}
+                              >
+                                {topic.topic}
+                              </Text>
+                              {topic.count > 1 && (
+                                <Text style={[styles.topicCount, { color: colors.icon }]}>
+                                  ({topic.count})
+                                </Text>
+                              )}
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Loop Community Comments (shown first) */}
+                      {loopComments.length > 0 && (
+                        <View style={styles.loopCommentsSection}>
+                          <Text style={[styles.commentSourceLabel, { color: colors.textSecondary }]}>
+                            Loop Community
+                          </Text>
+                          {loopComments.slice(0, 5).map((comment) => (
+                            <View key={comment.id} style={[styles.loopCommentCard, { borderBottomColor: colors.border }]}>
+                              <View style={styles.loopCommentHeader}>
+                                <View style={[styles.loopCommentDot, { backgroundColor: BrandColors.success }]} />
+                                <Text style={[styles.loopCommentAuthor, { color: colors.text }]}>
+                                  {comment.userName}
+                                </Text>
+                                <Text style={[styles.loopCommentDate, { color: colors.icon }]}>
+                                  {formatCommentDate(comment.createdAt)}
+                                </Text>
+                              </View>
+                              <Text style={[styles.loopCommentText, { color: colors.text }]} numberOfLines={3}>
+                                {comment.text}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      )}
+
+                      {/* Add Your Experience CTA */}
+                      {!showCommentInput ? (
+                        <TouchableOpacity
+                          style={[styles.addCommentButton, { borderColor: colors.border }]}
+                          onPress={() => {
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                            setShowCommentInput(true);
+                          }}
+                        >
+                          <Ionicons name="add-circle-outline" size={18} color={BrandColors.loopBlue} />
+                          <Text style={[styles.addCommentText, { color: BrandColors.loopBlue }]}>
+                            Add Your Experience
+                          </Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <View style={[styles.commentInputContainer, { borderColor: colors.border, backgroundColor: colors.card }]}>
+                          <TextInput
+                            style={[styles.commentInput, { color: colors.text }]}
+                            placeholder="Share your experience..."
+                            placeholderTextColor={colors.icon}
+                            value={commentText}
+                            onChangeText={setCommentText}
+                            multiline
+                            maxLength={500}
+                            autoFocus
+                          />
+                          <View style={styles.commentInputActions}>
+                            <TouchableOpacity onPress={() => { setShowCommentInput(false); setCommentText(''); }}>
+                              <Text style={[styles.commentCancelText, { color: colors.icon }]}>Cancel</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              onPress={handlePostComment}
+                              disabled={!commentText.trim() || isPostingComment}
+                              style={[styles.commentPostButton, { backgroundColor: commentText.trim() ? BrandColors.loopBlue : colors.border }]}
+                            >
+                              {isPostingComment ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                              ) : (
+                                <Text style={styles.commentPostText}>Post</Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Google Reviews (shown below Loop comments) */}
+                      {reviews.length > 0 && (
+                        <View style={styles.googleReviewsSection}>
+                          <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            style={styles.reviewsContainer}
+                          >
+                            {reviews.slice(0, 5).map((review, index) => (
+                              <View key={index} style={[styles.reviewCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                                <View style={styles.reviewHeader}>
+                                  {review.authorAttribution.photoUri ? (
+                                    <Image
+                                      source={{ uri: review.authorAttribution.photoUri }}
+                                      style={styles.reviewerAvatar}
+                                    />
+                                  ) : (
+                                    <View style={[styles.reviewerAvatar, styles.reviewerAvatarPlaceholder, { backgroundColor: BrandColors.loopBlue }]}>
+                                      <Text style={styles.reviewerInitial}>
+                                        {review.authorAttribution.displayName[0]}
+                                      </Text>
+                                    </View>
+                                  )}
+                                  <View style={styles.reviewerInfo}>
+                                    <Text style={[styles.reviewerName, { color: colors.text }]} numberOfLines={1}>
+                                      {review.authorAttribution.displayName}
+                                    </Text>
+                                    <Text style={[styles.reviewDate, { color: colors.icon }]}>
+                                      {review.relativePublishTimeDescription}
+                                    </Text>
+                                  </View>
+                                </View>
+                                <View style={styles.reviewRating}>
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <IconSymbol
+                                      key={star}
+                                      name={star <= review.rating ? 'star.fill' : 'star'}
+                                      size={14}
+                                      color={star <= review.rating ? '#FFD700' : colors.icon}
+                                    />
+                                  ))}
+                                </View>
+                                <Text
+                                  style={[styles.reviewText, { color: colors.text }]}
+                                  numberOfLines={4}
+                                >
+                                  {review.text.text}
+                                </Text>
+                              </View>
+                            ))}
+                          </ScrollView>
+                          {/* Google Maps attribution (TOS required) */}
+                          <Text
+                            style={[styles.googleAttribution, { color: colors.icon }]}
+                            accessibilityLabel="Google Maps"
+                          >
+                            Google Maps
+                          </Text>
+                        </View>
+                      )}
+
+                      {reviews.length === 0 && loopComments.length === 0 && (
+                        <Text style={[styles.noReviewsText, { color: colors.icon }]}>
+                          Be the first to share your experience!
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </View>
+              )}
+
+              {/* AI Explanation — only for non-group recs (group recs show explanation in the group banner above) */}
+              {!recommendation.groupContext && (
+                <View style={styles.section}>
+                  <View style={styles.aiHeader}>
+                    <IconSymbol name="sparkles" size={18} color={colors.primary} />
+                    <Text style={[styles.sectionTitle, { color: colors.text }]}>
+                      Why We Recommend This
+                    </Text>
+                  </View>
+                  <Text style={[styles.description, { color: colors.textSecondary }]}>
+                    {recommendation.aiExplanation}
+                  </Text>
                 </View>
               )}
 
@@ -1309,6 +1477,103 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
+  // Loop comments
+  loopCommentsSection: {
+    marginTop: 8,
+  },
+  commentSourceLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  loopCommentCard: {
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  loopCommentHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  loopCommentDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  loopCommentAuthor: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loopCommentDate: {
+    fontSize: 12,
+  },
+  loopCommentText: {
+    fontSize: 14,
+    lineHeight: 20,
+    paddingLeft: 14,
+  },
+  addCommentButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 12,
+    marginTop: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+  },
+  addCommentText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  commentInputContainer: {
+    marginTop: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    padding: 12,
+  },
+  commentInput: {
+    fontSize: 14,
+    lineHeight: 20,
+    minHeight: 60,
+    maxHeight: 120,
+    textAlignVertical: 'top',
+  },
+  commentInputActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 8,
+  },
+  commentCancelText: {
+    fontSize: 14,
+  },
+  commentPostButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 16,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  commentPostText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  googleReviewsSection: {
+    marginTop: 16,
+  },
+  googleAttribution: {
+    fontSize: 12,
+    textAlign: 'right',
+    marginTop: 6,
+    marginRight: 4,
+  },
   aiHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1571,5 +1836,10 @@ const styles = StyleSheet.create({
   groupScoreText: {
     fontSize: 13,
     fontWeight: '500',
+  },
+  groupReasoningBanner: {
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
   },
 });

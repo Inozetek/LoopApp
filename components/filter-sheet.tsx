@@ -35,11 +35,12 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import { DragHandle } from '@/components/drag-handle';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 // Filter mode type - matches iOS Phone app pattern (All vs Missed -> AI Curated vs Explore)
-export type FilterMode = 'ai_curated' | 'explore';
+export type FilterMode = 'for_you' | 'explore';
 
 export interface FilterSheetFilters {
   mode: FilterMode; // Primary filter mode - AI Curated or Explore
@@ -208,10 +209,7 @@ export function FilterSheet({
                 },
               ]}
             >
-              {/* Handle */}
-              <View style={styles.handleContainer}>
-                <View style={[styles.handle, { backgroundColor: colors.border }]} />
-              </View>
+              <DragHandle onClose={onClose} />
 
               {/* Header */}
               <View style={styles.header}>

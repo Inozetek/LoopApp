@@ -34,6 +34,7 @@ import {
 import { Linking } from 'react-native';
 import { handleError, validateRequired } from '@/utils/error-handler';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
+import { DragHandle } from '@/components/drag-handle';
 
 interface ProfileSettingsModalProps {
   visible: boolean;
@@ -202,6 +203,7 @@ export function ProfileSettingsModal({
     >
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <DragHandle onClose={handleClose} />
           {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.text }]}>Profile Settings</Text>

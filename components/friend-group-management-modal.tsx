@@ -31,6 +31,7 @@ import {
   removeMemberFromGroup,
   updateGroupPrivacy,
 } from '@/services/friend-groups-service';
+import { DragHandle } from '@/components/drag-handle';
 
 interface Friend {
   id: string;
@@ -218,6 +219,7 @@ export function FriendGroupManagementModal({
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}>
+          <DragHandle onClose={onClose} />
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.icon + '20' }]}>
             <TouchableOpacity onPress={onClose}>

@@ -682,6 +682,7 @@ export interface ScoredRecommendation {
   businessHours?: any; // Google opening_hours object
   hasEstimatedHours?: boolean;
   suggestedTime?: Date;
+  groupMemberMatches?: GroupMemberMatch[];
 }
 
 export interface RecommendationParams {
@@ -698,7 +699,7 @@ export interface RecommendationParams {
   minRating?: number; // Minimum rating (0-5)
   date?: Date; // Search for specific date (future recommendations)
   openNow?: boolean; // Only show places that are currently open
-  discoveryMode?: 'curated' | 'explore'; // Discovery mode: curated (conservative) vs explore (adventurous)
+  discoveryMode?: 'for_you' | 'explore'; // Discovery mode: for_you (conservative) vs explore (adventurous)
 }
 
 /**
@@ -1207,10 +1208,12 @@ export async function generateRecommendations(
       const refreshCadence = getCadenceForUser(user);
       console.log(`⏰ Cache refresh cadence: ${refreshCadence} days (${user.subscription_tier} tier)`);
 
+      const apiDisabled = process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true';
       const cacheStatus = await checkCityCache(cityInfo.city, cityInfo.state, refreshCadence);
 
       // Step 3: Seed cache if needed (first time or stale)
-      if (!cacheStatus.exists || cacheStatus.isStale) {
+      // Skip seeding when API is disabled — use whatever cache exists
+      if ((!cacheStatus.exists || cacheStatus.isStale) && !apiDisabled) {
         console.log(`🌱 Cache ${!cacheStatus.exists ? 'missing' : 'stale'} - seeding ${cityInfo.city}...`);
 
         const userCategories = getUserCategoriesForCaching(user.interests as string[] || []);
@@ -1226,6 +1229,8 @@ export async function generateRecommendations(
         );
 
         console.log(`✅ Seeded ${seedCount} places for ${cityInfo.city}`);
+      } else if (apiDisabled) {
+        console.log(`🚫 API disabled — using existing cache (${cacheStatus.count} places, stale=${cacheStatus.isStale})`);
       } else {
         console.log(`✅ Cache fresh: ${cacheStatus.count} places, last cached ${cacheStatus.lastCached?.toLocaleDateString()}`);
       }
@@ -1761,7 +1766,7 @@ function calculateActivityScore(params: {
   // Interest match guides scoring but doesn't filter - allow discovery
   const userInterests = user.interests || [];
   const topInterests = user.ai_profile?.favorite_categories || userInterests.slice(0, 3);
-  const { discoveryMode = 'curated' } = params;
+  const { discoveryMode = 'for_you' } = params;
   const isEvent = place.source === 'ticketmaster';
 
   if (topInterests.includes(category)) {
@@ -2909,6 +2914,14 @@ export async function getRecommendationsByCategory(
 
 // ─── Group Recommendations ──────────────────────────────────────────────
 
+export interface GroupMemberMatch {
+  userId: string;
+  name: string;
+  matchedInterests: string[];
+  distanceMiles: number;
+  profilePicUrl?: string;
+}
+
 export interface GroupRecommendationParams {
   groupId: string;
   participants: {
@@ -2917,6 +2930,7 @@ export interface GroupRecommendationParams {
     homeLocation?: PlaceLocation;
     interests: string[];
     preferences: { budget_level?: number; max_distance_miles?: number };
+    profilePicUrl?: string;
   }[];
   userLocation: PlaceLocation;
   tags?: string[];
@@ -3089,6 +3103,22 @@ export async function generateGroupRecommendations(
       photoUrl = await getCachedUnsplashImage(category);
     }
 
+    // ── Per-member matching ──
+    const groupMemberMatches: GroupMemberMatch[] = participants.map((p) => {
+      const from = p.homeLocation || userLocation;
+      const dist = calculateDistance(from, placeLocation);
+      const matched = (p.interests || []).filter(
+        (interest) => interest === category || interestMatchesCategory(interest, category)
+      );
+      return {
+        userId: p.userId,
+        name: p.name,
+        matchedInterests: matched,
+        distanceMiles: Math.round(dist * 10) / 10,
+        profilePicUrl: p.profilePicUrl,
+      };
+    });
+
     scored.push({
       place,
       score: totalScore,
@@ -3105,8 +3135,9 @@ export async function generateGroupRecommendations(
       distance: maxMemberDistance,
       category,
       photoUrl,
-      aiExplanation: buildGroupExplanation(place.name, category, participants.length, matchCount, maxMemberDistance),
+      aiExplanation: buildGroupExplanation(place.name, category, groupMemberMatches),
       isSponsored: false,
+      groupMemberMatches,
     });
   }
 
@@ -3116,18 +3147,71 @@ export async function generateGroupRecommendations(
   return scored.slice(0, maxResults);
 }
 
+/**
+ * Check if a user interest label loosely matches a place category.
+ * Handles cases like "Dining" matching "Food & Drink", "Coffee & Cafes" matching "Coffee", etc.
+ */
+export function interestMatchesCategory(interest: string, category: string): boolean {
+  const a = interest.toLowerCase();
+  const b = category.toLowerCase();
+  if (a === b) return true;
+
+  // Build a mapping of related terms
+  const aliases: Record<string, string[]> = {
+    'dining': ['food', 'restaurant', 'food & drink'],
+    'food & drink': ['dining', 'restaurant'],
+    'coffee & cafes': ['coffee', 'cafe'],
+    'coffee': ['coffee & cafes', 'cafe'],
+    'bars & nightlife': ['nightlife', 'bar', 'bars'],
+    'nightlife': ['bars & nightlife', 'bar', 'bars'],
+    'outdoor activities': ['outdoor', 'parks', 'nature', 'hiking'],
+    'outdoor': ['outdoor activities', 'parks'],
+    'arts & culture': ['culture', 'museum', 'art', 'gallery'],
+    'culture': ['arts & culture', 'museum'],
+    'entertainment': ['fun', 'movies', 'theater'],
+    'fitness': ['gym', 'sports', 'active'],
+    'shopping': ['store', 'mall', 'retail'],
+    'wellness': ['spa', 'relaxing'],
+    'live music': ['music', 'concerts'],
+  };
+
+  const aAliases = aliases[a] || [];
+  if (aAliases.includes(b)) return true;
+
+  // Substring containment as last resort
+  if (a.includes(b) || b.includes(a)) return true;
+
+  return false;
+}
+
 function buildGroupExplanation(
   placeName: string,
   category: string,
-  groupSize: number,
-  interestMatchCount: number,
-  maxDistance: number
+  members: GroupMemberMatch[]
 ): string {
-  if (interestMatchCount === groupSize) {
-    return `Everyone in the group loves ${category.toLowerCase()}! ${placeName} is a great fit.`;
+  const matchingMembers = members.filter((m) => m.matchedInterests.length > 0);
+  const farthest = members.reduce((prev, curr) => curr.distanceMiles > prev.distanceMiles ? curr : prev, members[0]);
+
+  if (matchingMembers.length === members.length && members.length > 0) {
+    const names = matchingMembers.map((m) => m.name.split(' ')[0]);
+    if (names.length === 1) {
+      return `${names[0]} loves ${category.toLowerCase()} — ${placeName} is a perfect pick.`;
+    }
+    if (names.length === 2) {
+      return `${names[0]} and ${names[1]} both love ${category.toLowerCase()} — great match for everyone!`;
+    }
+    return `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]} all love ${category.toLowerCase()}!`;
   }
-  if (interestMatchCount > groupSize / 2) {
-    return `Most of the group enjoys ${category.toLowerCase()}. ${placeName} is ${maxDistance.toFixed(1)} mi from the farthest member.`;
+
+  if (matchingMembers.length > 0) {
+    const names = matchingMembers.map((m) => m.name.split(' ')[0]);
+    const nameStr = names.length === 1
+      ? names[0]
+      : names.length === 2
+        ? `${names[0]} and ${names[1]}`
+        : `${names.slice(0, -1).join(', ')}, and ${names[names.length - 1]}`;
+    return `${nameStr} ${matchingMembers.length === 1 ? 'likes' : 'like'} ${category.toLowerCase()} — and it's only ${farthest.distanceMiles.toFixed(1)} mi from ${farthest.name.split(' ')[0]}.`;
   }
-  return `${placeName} is a group-friendly ${category.toLowerCase()} spot ${maxDistance.toFixed(1)} mi from the farthest member.`;
+
+  return `${placeName} is a group-friendly ${category.toLowerCase()} spot ${farthest.distanceMiles.toFixed(1)} mi from ${farthest.name.split(' ')[0]}.`;
 }

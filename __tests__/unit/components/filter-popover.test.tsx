@@ -2,7 +2,7 @@
  * FilterPopover Component Tests
  *
  * Tests for the iOS 26 Liquid Glass style filter popover
- * with AI Curated vs Explore mode selection (mimicking iOS Phone app pattern)
+ * with For You vs Explore mode selection (mimicking iOS Phone app pattern)
  *
  * NOTE: These are unit tests for the logic (mode selection, filter operations).
  * Component rendering tests require a proper React Native testing environment.
@@ -10,7 +10,7 @@
 
 describe('FilterPopover Logic', () => {
   // Type definitions matching the component
-  type FilterMode = 'ai_curated' | 'explore';
+  type FilterMode = 'for_you' | 'explore';
 
   interface FilterPopoverFilters {
     mode: FilterMode;
@@ -50,7 +50,7 @@ describe('FilterPopover Logic', () => {
 
   // Default filters
   const defaultFilters: FilterPopoverFilters = {
-    mode: 'ai_curated',
+    mode: 'for_you',
     categories: [],
     maxDistance: 100,
     priceRange: 'any',
@@ -59,8 +59,8 @@ describe('FilterPopover Logic', () => {
   };
 
   describe('Mode selection (iOS Phone app pattern)', () => {
-    it('should default to ai_curated mode', () => {
-      expect(defaultFilters.mode).toBe('ai_curated');
+    it('should default to for_you mode', () => {
+      expect(defaultFilters.mode).toBe('for_you');
     });
 
     it('should switch to explore mode', () => {
@@ -68,15 +68,15 @@ describe('FilterPopover Logic', () => {
       expect(result.mode).toBe('explore');
     });
 
-    it('should switch back to ai_curated mode', () => {
+    it('should switch back to for_you mode', () => {
       const exploreFilters = { ...defaultFilters, mode: 'explore' as FilterMode };
-      const result = selectMode(exploreFilters, 'ai_curated');
-      expect(result.mode).toBe('ai_curated');
+      const result = selectMode(exploreFilters, 'for_you');
+      expect(result.mode).toBe('for_you');
     });
 
     it('should preserve other filters when changing mode', () => {
       const filtersWithAdvanced: FilterPopoverFilters = {
-        mode: 'ai_curated',
+        mode: 'for_you',
         categories: ['restaurant'],
         maxDistance: 10,
         priceRange: 2,
@@ -92,15 +92,15 @@ describe('FilterPopover Logic', () => {
   });
 
   describe('Mode selection state check', () => {
-    it('should correctly identify ai_curated as selected', () => {
-      expect(isModeSelected(defaultFilters, 'ai_curated')).toBe(true);
+    it('should correctly identify for_you as selected', () => {
+      expect(isModeSelected(defaultFilters, 'for_you')).toBe(true);
       expect(isModeSelected(defaultFilters, 'explore')).toBe(false);
     });
 
     it('should correctly identify explore as selected', () => {
       const exploreFilters = { ...defaultFilters, mode: 'explore' as FilterMode };
       expect(isModeSelected(exploreFilters, 'explore')).toBe(true);
-      expect(isModeSelected(exploreFilters, 'ai_curated')).toBe(false);
+      expect(isModeSelected(exploreFilters, 'for_you')).toBe(false);
     });
   });
 
@@ -121,7 +121,7 @@ describe('FilterPopover Logic', () => {
 
     it('should count all advanced filters', () => {
       const filters: FilterPopoverFilters = {
-        mode: 'ai_curated',
+        mode: 'for_you',
         categories: ['restaurant', 'cafe'],
         maxDistance: 5,
         priceRange: 2,
@@ -132,7 +132,7 @@ describe('FilterPopover Logic', () => {
     });
 
     it('should not count mode as advanced filter', () => {
-      const aiFilters = { ...defaultFilters, mode: 'ai_curated' as FilterMode };
+      const aiFilters = { ...defaultFilters, mode: 'for_you' as FilterMode };
       const exploreFilters = { ...defaultFilters, mode: 'explore' as FilterMode };
 
       // Mode change should not affect advanced filter count
@@ -142,14 +142,14 @@ describe('FilterPopover Logic', () => {
   });
 
   describe('Filter modes semantic meaning', () => {
-    it('ai_curated mode should represent personalized AI recommendations', () => {
-      // In AI Curated mode, the algorithm prioritizes:
+    it('for_you mode should represent personalized AI recommendations', () => {
+      // In For You mode, the algorithm prioritizes:
       // - User preferences and interests
       // - Past behavior and feedback
       // - Collaborative filtering from similar users
       // - Time-appropriate suggestions
-      const aiFilters = selectMode(defaultFilters, 'ai_curated');
-      expect(aiFilters.mode).toBe('ai_curated');
+      const aiFilters = selectMode(defaultFilters, 'for_you');
+      expect(aiFilters.mode).toBe('for_you');
     });
 
     it('explore mode should represent discovery/browse mode', () => {
@@ -167,7 +167,7 @@ describe('FilterPopover Logic', () => {
     // The design mimics iOS Phone app's "All" vs "Missed" filter pattern
 
     it('should have exactly two primary mode options', () => {
-      const modes: FilterMode[] = ['ai_curated', 'explore'];
+      const modes: FilterMode[] = ['for_you', 'explore'];
       expect(modes.length).toBe(2);
     });
 
@@ -183,7 +183,7 @@ describe('FilterPopover Logic', () => {
       // The popover shows primary modes + "More Filters" link
       // Advanced filters are accessible via separate sheet
       const advancedFilters: FilterPopoverFilters = {
-        mode: 'ai_curated',
+        mode: 'for_you',
         categories: ['restaurant'],
         maxDistance: 10,
         priceRange: 2,

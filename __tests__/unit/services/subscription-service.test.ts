@@ -1,6 +1,10 @@
 /**
  * Tests for subscription service
  *
+ * 2-tier model: Free ($0) + Loop Plus ($3.99/mo)
+ * - Free: 5 daily recommendations
+ * - Plus: 999 (effectively unlimited)
+ *
  * Note: Functions that require database access are tested with mocks.
  * getDailyLimit is pure logic and can be tested directly.
  */
@@ -33,12 +37,8 @@ describe('subscription-service', () => {
       expect(getDailyLimit('free')).toBe(5);
     });
 
-    it('should return 15 for plus tier', () => {
-      expect(getDailyLimit('plus')).toBe(15);
-    });
-
-    it('should return 30 for premium tier', () => {
-      expect(getDailyLimit('premium')).toBe(30);
+    it('should return 999 (unlimited) for plus tier', () => {
+      expect(getDailyLimit('plus')).toBe(999);
     });
 
     it('should return 5 for unknown tier (default to free)', () => {
@@ -46,35 +46,32 @@ describe('subscription-service', () => {
       expect(getDailyLimit('')).toBe(5);
     });
 
+    it('should handle legacy premium tier as default (free)', () => {
+      // Legacy premium falls through to default since it is no longer a tier
+      expect(getDailyLimit('premium')).toBe(5);
+    });
+
     it('should handle case sensitivity', () => {
-      // The function uses direct string comparison, so case matters
       expect(getDailyLimit('Free')).toBe(5); // Falls through to default
-      expect(getDailyLimit('PREMIUM')).toBe(5); // Falls through to default
+      expect(getDailyLimit('PLUS')).toBe(5); // Falls through to default
     });
   });
 
   describe('subscription tiers business rules', () => {
-    it('free tier should have lowest limit', () => {
+    it('free tier should have lower limit than plus', () => {
       const freeLim = getDailyLimit('free');
       const plusLim = getDailyLimit('plus');
-      const premiumLim = getDailyLimit('premium');
 
       expect(freeLim).toBeLessThan(plusLim);
-      expect(plusLim).toBeLessThan(premiumLim);
     });
 
-    it('premium tier should have 6x free tier limit', () => {
-      const freeLim = getDailyLimit('free');
-      const premiumLim = getDailyLimit('premium');
-
-      expect(premiumLim).toBe(freeLim * 6);
-    });
-
-    it('plus tier should have 3x free tier limit', () => {
-      const freeLim = getDailyLimit('free');
+    it('plus tier should be effectively unlimited (999)', () => {
       const plusLim = getDailyLimit('plus');
+      expect(plusLim).toBe(999);
+    });
 
-      expect(plusLim).toBe(freeLim * 3);
+    it('free tier limit is 5', () => {
+      expect(getDailyLimit('free')).toBe(5);
     });
   });
 
@@ -86,25 +83,22 @@ describe('subscription-service', () => {
       expect(percentUsed).toBe(100);
     });
 
-    it('plus user viewing 5 recommendations uses 33% of limit', () => {
+    it('plus user viewing 50 recommendations uses ~5% of limit', () => {
       const limit = getDailyLimit('plus');
-      const viewed = 5;
+      const viewed = 50;
       const percentUsed = Math.round((viewed / limit) * 100);
-      expect(percentUsed).toBe(33);
+      expect(percentUsed).toBe(5);
     });
 
-    it('premium user viewing 15 recommendations uses 50% of limit', () => {
-      const limit = getDailyLimit('premium');
-      const viewed = 15;
-      const percentUsed = Math.round((viewed / limit) * 100);
-      expect(percentUsed).toBe(50);
+    it('plus user effectively never hits the limit in normal usage', () => {
+      const limit = getDailyLimit('plus');
+      const heavyUsage = 200; // Very heavy daily usage
+      expect(heavyUsage).toBeLessThan(limit);
     });
   });
 });
 
 describe('DailyLimitCheck interface behavior', () => {
-  // These tests document expected behavior of the DailyLimitCheck interface
-
   describe('canView logic', () => {
     it('should allow viewing when viewedToday < dailyLimit', () => {
       const mockCheck = {
@@ -135,20 +129,18 @@ describe('DailyLimitCheck interface behavior', () => {
     it('should handle exceeding limit gracefully', () => {
       const mockCheck = {
         dailyLimit: 5,
-        viewedToday: 7, // Somehow exceeded (edge case)
+        viewedToday: 7,
         canView: 7 < 5,
         remainingToday: Math.max(0, 5 - 7),
         subscriptionTier: 'free' as const,
       };
 
       expect(mockCheck.canView).toBe(false);
-      expect(mockCheck.remainingToday).toBe(0); // Never negative
+      expect(mockCheck.remainingToday).toBe(0);
     });
   });
 
   describe('upgrade prompt threshold', () => {
-    // shouldShowUpgradePrompt returns true when user hits limit 3+ times in past week
-
     it('should not show prompt when user rarely hits limit', () => {
       const daysAtLimit = 1;
       const shouldShow = daysAtLimit >= 3;
@@ -168,7 +160,7 @@ describe('DailyLimitCheck interface behavior', () => {
     });
 
     it('should show prompt when user frequently hits limit', () => {
-      const daysAtLimit = 7; // Every day this week
+      const daysAtLimit = 7;
       const shouldShow = daysAtLimit >= 3;
       expect(shouldShow).toBe(true);
     });

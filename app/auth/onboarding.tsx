@@ -33,6 +33,7 @@ import { requestCalendarPermissions } from '@/services/calendar-service';
 import { requestNotificationPermissions } from '@/services/notification-service';
 import { INTEREST_GROUPS } from '@/constants/activity-categories';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
+import { OnboardingLoopAnimation } from '@/components/onboarding-loop-animation';
 import { GROK_SPRING } from '@/constants/animations';
 
 // 12 quick interests for the picker
@@ -970,6 +971,13 @@ export default function OnboardingScreen() {
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
       {!isBusiness && <StatusBar style="light" />}
 
+      {/* Background loop animation — personal flow only */}
+      {!isBusiness && (
+        <View style={styles.loopAnimationWrap}>
+          <OnboardingLoopAnimation currentStep={step} size={280} />
+        </View>
+      )}
+
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -1067,6 +1075,12 @@ export default function OnboardingScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  loopAnimationWrap: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    justifyContent: 'center',
+    pointerEvents: 'none',
   },
   flex: {
     flex: 1,

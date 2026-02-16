@@ -1,10 +1,11 @@
 /**
  * Subscription Service
  *
- * Handles subscription tier enforcement for dual feed architecture:
+ * 2-tier model: Free ($0) + Loop Plus ($3.99/mo, $29.99/yr)
+ *
+ * Handles subscription tier enforcement:
  * - Free: 5 daily recommendations
- * - Loop Plus: 15 daily recommendations
- * - Loop Premium: 30 daily recommendations
+ * - Loop Plus: Unlimited (999)
  *
  * Tracks daily usage and enforces limits in Daily Feed mode.
  * Explore Feed has no limits.
@@ -23,7 +24,7 @@ export interface DailyLimitCheck {
   /** Number of recommendations viewed today */
   viewedToday: number;
   /** User's subscription tier */
-  subscriptionTier: 'free' | 'plus' | 'premium';
+  subscriptionTier: 'free' | 'plus';
   /** Number of recommendations remaining */
   remainingToday: number;
 }
@@ -55,7 +56,7 @@ export async function checkDailyLimit(userId: string): Promise<DailyLimitCheck> 
       };
     }
 
-    const subscriptionTier = (user.subscription_tier || 'free') as 'free' | 'plus' | 'premium';
+    const subscriptionTier = normalizeSubscriptionTier(user.subscription_tier);
     const dailyLimit = getDailyLimit(subscriptionTier);
 
     // Get today's view count from daily_feed_history
@@ -109,7 +110,7 @@ export async function incrementDailyViews(userId: string, count: number = 1): Pr
       .eq('id', userId)
       .single();
 
-    const subscriptionTier = (user?.subscription_tier || 'free') as 'free' | 'plus' | 'premium';
+    const subscriptionTier = normalizeSubscriptionTier(user?.subscription_tier);
     const dailyLimit = getDailyLimit(subscriptionTier);
 
     // Upsert daily_feed_history record
@@ -149,12 +150,18 @@ export function getDailyLimit(tier: string): number {
     case 'free':
       return 5;
     case 'plus':
-      return 15;
-    case 'premium':
-      return 30;
+      return 999; // Effectively unlimited
     default:
       return 5;
   }
+}
+
+/**
+ * Normalize subscription tier — maps legacy 'premium' to 'plus'
+ */
+function normalizeSubscriptionTier(tier: string | undefined | null): 'free' | 'plus' {
+  if (tier === 'plus' || tier === 'premium') return 'plus';
+  return 'free';
 }
 
 /**
@@ -177,7 +184,8 @@ export async function shouldShowUpgradePrompt(userId: string): Promise<boolean> 
       .single();
 
     // Only show upgrade prompt to free users
-    if (user?.subscription_tier !== 'free') {
+    const tier = normalizeSubscriptionTier(user?.subscription_tier);
+    if (tier !== 'free') {
       return false;
     }
 
@@ -210,7 +218,7 @@ export async function shouldShowUpgradePrompt(userId: string): Promise<boolean> 
  * @param userId User ID
  * @returns Subscription tier
  */
-export async function getUserSubscriptionTier(userId: string): Promise<'free' | 'plus' | 'premium'> {
+export async function getUserSubscriptionTier(userId: string): Promise<'free' | 'plus'> {
   try {
     const { data: user } = await supabase
       .from('users')
@@ -218,7 +226,7 @@ export async function getUserSubscriptionTier(userId: string): Promise<'free' | 
       .eq('id', userId)
       .single();
 
-    return (user?.subscription_tier || 'free') as 'free' | 'plus' | 'premium';
+    return normalizeSubscriptionTier(user?.subscription_tier);
   } catch (error) {
     console.error('[SubscriptionService] getUserSubscriptionTier error:', error);
     return 'free';

@@ -20,12 +20,16 @@ interface FriendsHeaderProps {
   title?: string;
   onAddPress?: () => void;
   notificationCount?: number;
+  onChatPress?: () => void;
+  chatBadgeCount?: number;
 }
 
 export function FriendsHeader({
   title = 'Friends',
   onAddPress,
   notificationCount = 0,
+  onChatPress,
+  chatBadgeCount = 0,
 }: FriendsHeaderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -34,6 +38,11 @@ export function FriendsHeader({
   const handleAddPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onAddPress?.();
+  };
+
+  const handleChatPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onChatPress?.();
   };
 
   return (
@@ -53,8 +62,26 @@ export function FriendsHeader({
         )}
       </View>
 
-      {/* Right Side - Add / Create */}
+      {/* Right Side - Chat + Add */}
       <View style={styles.rightSection}>
+        {onChatPress && (
+          <View>
+            <TouchableOpacity
+              onPress={handleChatPress}
+              style={styles.addButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.text} />
+            </TouchableOpacity>
+            {chatBadgeCount > 0 && (
+              <View style={styles.chatBadge}>
+                <Text style={styles.badgeText}>
+                  {chatBadgeCount > 9 ? '9+' : chatBadgeCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
         {onAddPress && (
           <TouchableOpacity
             onPress={handleAddPress}
@@ -144,12 +171,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rightSection: {
-    width: 44,
-    alignItems: 'flex-end',
+    width: 80,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: Spacing.xs,
   },
   addButton: {
     padding: Spacing.xs,
-    marginRight: -2,
     marginTop: 1,
+  },
+  chatBadge: {
+    position: 'absolute',
+    top: 0,
+    right: -2,
+    backgroundColor: BrandColors.loopBlue,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
   },
 });

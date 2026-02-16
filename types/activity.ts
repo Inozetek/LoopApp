@@ -44,6 +44,22 @@ export interface RecommendationScore {
   finalScore: number; // Total with sponsor boost
 }
 
+export interface GroupMemberMatchInfo {
+  userId: string;
+  name: string;
+  matchedInterests: string[];
+  distanceMiles: number;
+  profilePicUrl?: string;
+}
+
+export interface GroupContext {
+  memberMatches: GroupMemberMatchInfo[];
+  interestMatchScore: number;
+  farthestMemberName: string;
+  farthestMemberDistance: number;
+  onChoose?: () => void;
+}
+
 export interface Recommendation {
   id: string;
   title: string;
@@ -61,12 +77,15 @@ export interface Recommendation {
   isSponsored: boolean;
   isCurated?: boolean; // True for hand-curated "Loop Pick" recommendations
   curatorName?: string; // Curator attribution (e.g., "Sarah, Dallas local")
+  commentsCount?: number; // Real comment count from DB (overrides mock)
   score?: number;
   scoreBreakdown?: RecommendationScore;
   // Business hours
   businessHours?: any; // Google opening_hours object
   hasEstimatedHours?: boolean; // True if hours are estimated vs from Google
   suggestedTime?: Date; // Recommended visit time when place is open
+  // Group planning context
+  groupContext?: GroupContext;
   // Legacy fields for backward compatibility
   activity?: Activity;
   reason?: string;

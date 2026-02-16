@@ -6,13 +6,14 @@
  */
 
 import React, { useRef } from 'react';
-import { View, StyleSheet, PanResponder, GestureResponderEvent, PanResponderGestureState } from 'react-native';
+import { View, StyleSheet, PanResponder, GestureResponderEvent, PanResponderGestureState, useColorScheme } from 'react-native';
 
 interface DragHandleProps {
   onClose?: () => void;
 }
 
 export function DragHandle({ onClose }: DragHandleProps) {
+  const colorScheme = useColorScheme();
   const panResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () => !!onClose,
@@ -28,7 +29,7 @@ export function DragHandle({ onClose }: DragHandleProps) {
 
   return (
     <View style={styles.hitArea} {...panResponder.panHandlers}>
-      <View style={styles.pill} />
+      <View style={[styles.pill, { backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.4)' : 'rgba(0, 0, 0, 0.25)' }]} />
     </View>
   );
 }
@@ -37,13 +38,12 @@ const styles = StyleSheet.create({
   hitArea: {
     alignSelf: 'stretch',
     alignItems: 'center',
-    paddingTop: 8,
-    paddingBottom: 4,
+    paddingTop: 12,
+    paddingBottom: 8,
   },
   pill: {
-    width: 48,
+    width: 40,
     height: 5,
     borderRadius: 3,
-    backgroundColor: 'rgba(255, 255, 255, 0.4)',
   },
 });

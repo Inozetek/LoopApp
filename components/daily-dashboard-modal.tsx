@@ -1,9 +1,15 @@
 /**
  * Daily Dashboard Modal
  * "What's happening around you today" - Stats and Loop map view
+ *
+ * Custom animated bottom sheet (matching see-details-modal pattern):
+ * - Spring slide-up + fade backdrop
+ * - DragHandle overlay at top for swipe-down dismiss
+ * - Floating chevron-down FAB at bottom-right
+ * - No ugly close-circle button
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -13,10 +19,11 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
+  Animated,
 } from 'react-native';
-import { BlurView } from 'expo-blur';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
+import { Ionicons } from '@expo/vector-icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LoopMapView } from '@/components/loop-map-view';
 import { DiscoveryModeToggle, type DiscoveryMode } from '@/components/discovery-mode-toggle';
@@ -27,6 +34,7 @@ import type { DashboardData, DashboardView, DashboardNotification } from '@/type
 import { fetchDashboardData, markDashboardViewed, dismissNotification } from '@/services/dashboard-aggregator';
 import { useAuth } from '@/contexts/auth-context';
 import type { FeedFilters } from '@/components/feed-filters';
+import { DragHandle } from '@/components/drag-handle';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -50,7 +58,7 @@ export function DailyDashboardModal({
   visible,
   onClose,
   isFirstLoadToday = false,
-  discoveryMode = 'curated',
+  discoveryMode = 'for_you',
   onDiscoveryModeChange,
   selectedCategories = [],
   onCategoriesChange,
@@ -65,12 +73,48 @@ export function DailyDashboardModal({
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Animation values
+  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
   // Fetch dashboard data when modal opens
   useEffect(() => {
     if (visible && user) {
       loadDashboardData();
     }
   }, [visible, user]);
+
+  // Open/close animation
+  useEffect(() => {
+    if (visible) {
+      Animated.parallel([
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          friction: 8,
+          tension: 65,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 1,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    } else {
+      Animated.parallel([
+        Animated.timing(slideAnim, {
+          toValue: SCREEN_HEIGHT,
+          duration: 250,
+          useNativeDriver: true,
+        }),
+        Animated.timing(fadeAnim, {
+          toValue: 0,
+          duration: 200,
+          useNativeDriver: true,
+        }),
+      ]).start();
+    }
+  }, [visible]);
 
   const loadDashboardData = async () => {
     if (!user) return;
@@ -85,7 +129,7 @@ export function DailyDashboardModal({
         await markDashboardViewed(user.id);
       }
     } catch (error) {
-      console.error('❌ Error loading dashboard:', error);
+      console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
     }
@@ -108,132 +152,129 @@ export function DailyDashboardModal({
       await loadDashboardData();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
-      console.error('❌ Error dismissing notification:', error);
+      console.error('Error dismissing notification:', error);
     }
   };
 
   return (
     <Modal
       visible={visible}
-      animationType="slide"
-      presentationStyle="fullScreen"
+      animationType="none"
+      transparent
       onRequestClose={handleClose}
     >
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* HEADER */}
-        <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <Pressable
-            onPress={handleClose}
-            style={styles.closeButton}
-            hitSlop={8}
-          >
-            <IconSymbol name="xmark" size={24} color={colors.text} />
-          </Pressable>
+      {/* Fade backdrop - tap to close */}
+      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+      </Animated.View>
 
-          <Text style={[styles.headerTitle, Typography.headlineMedium, { color: colors.text }]}>
-            {isFirstLoadToday ? "What's happening today" : 'Your Dashboard'}
-          </Text>
+      {/* Sliding panel */}
+      <Animated.View
+        style={[
+          styles.modalContainer,
+          { transform: [{ translateY: slideAnim }] },
+        ]}
+      >
+        <View style={[styles.modal, { backgroundColor: colors.background }]}>
+          {/* DragHandle overlay at top */}
+          <View style={styles.dragHandleOverlay}>
+            <DragHandle onClose={handleClose} />
+          </View>
 
-          <View style={styles.closeButton} />
-        </View>
-
-        {/* VIEW TOGGLE */}
-        <View style={styles.viewToggleContainer}>
-          <Pressable
-            onPress={() => handleViewToggle('stats')}
-            style={[
-              styles.viewToggleButton,
-              currentView === 'stats' && styles.viewToggleButtonActive,
-              { backgroundColor: currentView === 'stats' ? BrandColors.loopBlue : 'transparent' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.viewToggleText,
-                { color: currentView === 'stats' ? '#FFFFFF' : colors.textSecondary },
-              ]}
-            >
-              Stats
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleViewToggle('map')}
-            style={[
-              styles.viewToggleButton,
-              currentView === 'map' && styles.viewToggleButtonActive,
-              { backgroundColor: currentView === 'map' ? BrandColors.loopBlue : 'transparent' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.viewToggleText,
-                { color: currentView === 'map' ? '#FFFFFF' : colors.textSecondary },
-              ]}
-            >
-              Map
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => handleViewToggle('controls')}
-            style={[
-              styles.viewToggleButton,
-              currentView === 'controls' && styles.viewToggleButtonActive,
-              { backgroundColor: currentView === 'controls' ? BrandColors.loopBlue : 'transparent' },
-            ]}
-          >
-            <Text
-              style={[
-                styles.viewToggleText,
-                { color: currentView === 'controls' ? '#FFFFFF' : colors.textSecondary },
-              ]}
-            >
-              Controls
-            </Text>
-          </Pressable>
-        </View>
-
-        {/* CONTENT */}
-        {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={BrandColors.loopBlue} />
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Loading your day...
+          {/* HEADER - centered title only */}
+          <View style={[styles.header, { borderBottomColor: colors.border }]}>
+            <Text style={[styles.headerTitle, Typography.headlineMedium, { color: colors.text }]}>
+              {isFirstLoadToday ? "What's happening today" : 'Your Dashboard'}
             </Text>
           </View>
-        ) : (
-          <>
-            {currentView === 'stats' && data && (
-              <StatsView
-                data={data}
-                colors={colors}
-                onDismissNotification={handleDismissNotification}
-              />
-            )}
 
-            {currentView === 'map' && data && (
-              <MapView
-                tasks={data.today_tasks}
-                homeLocation={data.home_location}
-                colors={colors}
-              />
-            )}
+          {/* VIEW TOGGLE */}
+          <View style={styles.viewToggleContainer}>
+            <Pressable
+              onPress={() => handleViewToggle('stats')}
+              style={[
+                styles.viewToggleButton,
+                currentView === 'stats' && styles.viewToggleButtonActive,
+                { backgroundColor: currentView === 'stats' ? BrandColors.loopBlue : 'transparent' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.viewToggleText,
+                  { color: currentView === 'stats' ? '#FFFFFF' : colors.textSecondary },
+                ]}
+              >
+                Stats
+              </Text>
+            </Pressable>
 
-            {currentView === 'controls' && (
-              <ControlsView
-                discoveryMode={discoveryMode}
-                onDiscoveryModeChange={onDiscoveryModeChange}
-                selectedCategories={selectedCategories}
-                onCategoriesChange={onCategoriesChange}
-                filters={filters}
-                onClearAllFilters={onClearAllFilters}
-                colors={colors}
-              />
-            )}
-          </>
-        )}
-      </View>
+            <Pressable
+              onPress={() => handleViewToggle('map')}
+              style={[
+                styles.viewToggleButton,
+                currentView === 'map' && styles.viewToggleButtonActive,
+                { backgroundColor: currentView === 'map' ? BrandColors.loopBlue : 'transparent' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.viewToggleText,
+                  { color: currentView === 'map' ? '#FFFFFF' : colors.textSecondary },
+                ]}
+              >
+                Map
+              </Text>
+            </Pressable>
+
+            {/* Controls tab removed — filters now consolidated in AdvancedSearchModal */}
+          </View>
+
+          {/* CONTENT */}
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={BrandColors.loopBlue} />
+              <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+                Loading your day...
+              </Text>
+            </View>
+          ) : (
+            <>
+              {currentView === 'stats' && data && (
+                <StatsView
+                  data={data}
+                  colors={colors}
+                  onDismissNotification={handleDismissNotification}
+                />
+              )}
+
+              {currentView === 'map' && data && (
+                <MapView
+                  tasks={data.today_tasks}
+                  homeLocation={data.home_location}
+                  colors={colors}
+                />
+              )}
+
+              {/* ControlsView removed — filters now consolidated in AdvancedSearchModal */}
+            </>
+          )}
+
+          {/* Floating dismiss FAB */}
+          <Pressable
+            style={[
+              styles.dismissFab,
+              {
+                backgroundColor: colors.card,
+                borderColor: 'rgba(0,0,0,0.08)',
+              },
+            ]}
+            onPress={handleClose}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+      </Animated.View>
     </Modal>
   );
 }
@@ -385,7 +426,7 @@ function StatsView({ data, colors, onDismissNotification }: StatsViewProps) {
           {stats.new_recommendations_count || 0}
         </Text>
         <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }]}>
-          AI-curated suggestions for you
+          AI-personalized suggestions for you
         </Text>
       </View>
 
@@ -742,26 +783,65 @@ function FriendActivityCard({ activity, colors }: FriendActivityCardProps) {
 // ============================================================================
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
+  // Modal overlay + container (custom animated bottom sheet)
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'flex-end',
+  },
+  modal: {
+    height: SCREEN_HEIGHT,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  dragHandleOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 5,
+    alignItems: 'center',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    paddingTop: Spacing.xl + 20, // Safe area
-    borderBottomWidth: 1,
-  },
-  closeButton: {
-    width: 40,
-    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    paddingTop: Spacing.xl + 12, // Room for drag handle
+    borderBottomWidth: 1,
   },
   headerTitle: {
     fontWeight: '700',
+  },
+
+  // Floating dismiss FAB
+  dismissFab: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 10,
   },
 
   // View Toggle
@@ -807,7 +887,7 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     padding: Spacing.lg,
-    paddingBottom: Spacing.xl * 2,
+    paddingBottom: Spacing.xl * 2 + 44, // Extra space for FAB
   },
   greeting: {
     marginBottom: Spacing.lg,

@@ -23,6 +23,7 @@ import { BrandColors } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { supabase } from '@/lib/supabase';
+import { DragHandle } from '@/components/drag-handle';
 
 interface FeedbackModalProps {
   visible: boolean;
@@ -216,6 +217,7 @@ export function FeedbackModal({
     >
       <View style={styles.overlay}>
         <View style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <DragHandle onClose={handleClose} />
           {/* Header */}
           <View style={styles.header}>
             <Text style={[styles.title, { color: colors.text }]}>

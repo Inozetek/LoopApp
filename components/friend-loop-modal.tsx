@@ -21,6 +21,7 @@ import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/const
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { supabase } from '@/lib/supabase';
+import { DragHandle } from '@/components/drag-handle';
 
 interface Friend {
   id: string;
@@ -230,6 +231,7 @@ export function FriendLoopModal({ visible, onClose, friend }: FriendLoopModalPro
     <Modal visible={visible} animationType="slide" transparent>
       <View style={styles.overlay}>
         <View style={[styles.container, { backgroundColor: isDark ? '#1a1a1a' : '#ffffff' }]}>
+          <DragHandle onClose={handleClose} />
           {/* Header */}
           <View style={[styles.header, { borderBottomColor: colors.icon + '20' }]}>
             <View style={styles.headerContent}>

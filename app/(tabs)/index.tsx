@@ -27,9 +27,9 @@ import { BlockActivityModal } from '@/components/block-activity-modal';
 import { ActivityFeedbackModal } from '@/components/activity-feedback-modal';
 import { ConflictWarningModal } from '@/components/conflict-warning-modal';
 import { FeedFiltersBar, type FeedFilters } from '@/components/feed-filters';
-import { FilterSheet, type FilterSheetFilters } from '@/components/filter-sheet';
-import { FilterPopover, type FilterPopoverFilters } from '@/components/filter-popover';
+import { type FilterSheetFilters } from '@/components/filter-sheet';
 import { MainMenuModal } from '@/components/main-menu-modal';
+import { RecommendationHistoryModal } from '@/components/recommendation-history-modal';
 import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
 import { checkDailyLimit, type DailyLimitCheck } from '@/services/subscription-service';
 import SwipeableLayout from '@/components/swipeable-layout';
@@ -47,10 +47,30 @@ import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/das
 import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
 import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities } from '@/services/feedback-service';
+import { getCommentCount } from '@/services/comments-service';
 import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service';
+import { ShareBottomSheet } from '@/components/share-bottom-sheet';
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
+
+/** Extract lat/lng from a scored place with multiple fallbacks */
+function getPlaceCoords(place: any): { lat: number; lng: number } {
+  // Primary: geometry.location (Google Places standard)
+  if (place.geometry?.location?.lat != null && place.geometry?.location?.lng != null) {
+    return { lat: place.geometry.location.lat, lng: place.geometry.location.lng };
+  }
+  // Fallback: direct lat/lng from cache columns
+  if (place.lat != null && place.lng != null) {
+    return { lat: place.lat, lng: place.lng };
+  }
+  // Fallback: underscore-prefixed from cache manager
+  if (place._latitude != null && place._longitude != null) {
+    return { lat: place._latitude, lng: place._longitude };
+  }
+  // Last resort: 0,0 (map won't render but won't crash)
+  return { lat: 0, lng: 0 };
+}
 
 // ============================================================================
 // MOCK DATA FOR PHASE 2: Group & Friend Activity Features (Demo)
@@ -340,6 +360,7 @@ export default function RecommendationFeedScreen() {
   const [selectedRecommendation, setSelectedRecommendation] = useState<Recommendation | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detailsScrollToComments, setDetailsScrollToComments] = useState(false);
   const [showBlockModal, setShowBlockModal] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -390,10 +411,9 @@ export default function RecommendationFeedScreen() {
   });
   const [showFilters, setShowFilters] = useState(false);
 
-  // Filter sheet state (iOS 26 Liquid Glass style bottom sheet - for advanced filters)
-  const [showFilterSheet, setShowFilterSheet] = useState(false);
+  // Filter sheet state (managed by AdvancedSearchModal)
   const [filterSheetFilters, setFilterSheetFilters] = useState<FilterSheetFilters>({
-    mode: 'ai_curated', // Default to AI Curated mode
+    mode: 'for_you', // Default to For You mode
     categories: [],
     maxDistance: 100,
     priceRange: 'any',
@@ -401,9 +421,51 @@ export default function RecommendationFeedScreen() {
     timeOfDay: 'any',
   });
 
-  // Filter popover state (iOS 26 Liquid Glass style floating popover - for quick filters)
-  const [showFilterPopover, setShowFilterPopover] = useState(false);
-  const [filterPopoverPosition, setFilterPopoverPosition] = useState({ x: 0, y: 0 });
+  // History modal state
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Share sheet state
+  const [shareSheetVisible, setShareSheetVisible] = useState(false);
+  const [shareRecommendation, setShareRecommendation] = useState<Recommendation | null>(null);
+
+
+  // Fetch real comment counts for recommendations (background, non-blocking)
+  const commentCountsFetched = useRef(new Set<string>());
+  useEffect(() => {
+    if (recommendations.length === 0) return;
+
+    const fetchCommentCounts = async () => {
+      try {
+        // Only fetch for items we haven't fetched yet
+        const newPlaceIds = recommendations
+          .map(r => r.activity?.googlePlaceId)
+          .filter((id): id is string => !!id && !commentCountsFetched.current.has(id));
+        if (newPlaceIds.length === 0) return;
+
+        // Mark as fetched immediately to prevent duplicate requests
+        newPlaceIds.forEach(id => commentCountsFetched.current.add(id));
+
+        const counts = await Promise.all(
+          newPlaceIds.map(id => getCommentCount(id).catch(() => 0))
+        );
+
+        const countMap = new Map<string, number>();
+        newPlaceIds.forEach((id, i) => countMap.set(id, counts[i]));
+
+        setRecommendations(prev => prev.map(r => {
+          const placeId = r.activity?.googlePlaceId;
+          if (placeId && countMap.has(placeId)) {
+            return { ...r, commentsCount: countMap.get(placeId)! };
+          }
+          return r;
+        }));
+      } catch (error) {
+        // Non-critical — 0 will show as fallback
+      }
+    };
+
+    fetchCommentCounts();
+  }, [recommendations.length]);
 
   // Check if any filter sheet filters are active (for icon rotation animation)
   const isFilterSheetActive = useMemo(() => {
@@ -420,7 +482,7 @@ export default function RecommendationFeedScreen() {
   const [collapsingFilters, setCollapsingFilters] = useState(false);
 
   // Discovery mode & category filter state
-  const [discoveryMode, setDiscoveryMode] = useState<'curated' | 'explore'>('curated');
+  const [discoveryMode, setDiscoveryMode] = useState<'for_you' | 'explore'>('for_you');
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // Daily limit state for subscription-based limits
@@ -435,7 +497,7 @@ export default function RecommendationFeedScreen() {
   // Welcome message animation
   const welcomeOpacity = useSharedValue(0);
   const welcomeHeight = useSharedValue(0); // Start with 0 height
-  const feedOpacity = useSharedValue(0); // Feed starts invisible
+  const feedOpacity = useSharedValue(1); // Feed always visible
   const flatListRef = useRef<FlatList>(null);
   const previousScrollOffset = useRef<number>(0);
   const lockedScrollPosition = useRef<number>(0); // Lock scroll during filter collapse
@@ -661,8 +723,12 @@ export default function RecommendationFeedScreen() {
   );
 
   // Fetch recommendations
-  const fetchRecommendations = async (showRefreshIndicator = false) => {
-    console.log('🚀 fetchRecommendations called, user:', user?.id);
+  // modeOverride: when discovery mode just changed, pass the new mode directly
+  //               to avoid stale closure reading the old discoveryMode state
+  // skipDbCache: force fresh generation (used when switching discovery modes)
+  const fetchRecommendations = async (showRefreshIndicator = false, modeOverride?: 'for_you' | 'explore', skipDbCache = false) => {
+    const effectiveMode = modeOverride ?? discoveryMode;
+    console.log('🚀 fetchRecommendations called, user:', user?.id, 'mode:', effectiveMode, 'skipCache:', skipDbCache);
 
     if (!user) {
       console.log('❌ No user, returning early');
@@ -694,17 +760,22 @@ export default function RecommendationFeedScreen() {
       console.log('🔄 Fetching recommendations...');
 
       // DATABASE-FIRST ARCHITECTURE: Try loading from database first
-      console.log('📦 Loading recommendations from database...');
-      const cachedRecs = await loadRecommendationsFromDB(user.id);
-      console.log('📦 DB returned:', cachedRecs?.length || 0, 'recommendations');
+      // Skip DB cache when switching discovery modes — need fresh generation with new mode
+      if (!skipDbCache) {
+        console.log('📦 Loading recommendations from database...');
+        const cachedRecs = await loadRecommendationsFromDB(user.id, effectiveMode);
+        console.log('📦 DB returned:', cachedRecs?.length || 0, 'recommendations');
 
-      if (cachedRecs && cachedRecs.length > 0) {
-        // Use cached recommendations (daily job ensures quality)
-        console.log(`✅ Loaded ${cachedRecs.length} recommendations from database`);
-        setRecommendations(cachedRecs);
-        setLoading(false);
-        setRefreshing(false);
-        return; // Always use cache if available
+        if (cachedRecs && cachedRecs.length > 0) {
+          // Use cached recommendations (daily job ensures quality)
+          console.log(`✅ Loaded ${cachedRecs.length} recommendations from database`);
+          setRecommendations(cachedRecs);
+          setLoading(false);
+          setRefreshing(false);
+          return; // Always use cache if available
+        }
+      } else {
+        console.log('⏭️ Skipping DB cache (discovery mode changed)');
       }
 
       // No recommendations in database - generate fresh ones (will seed city cache if needed)
@@ -763,7 +834,7 @@ export default function RecommendationFeedScreen() {
           workLocation,
           maxDistance: prefs?.max_distance_miles || 10,
           maxResults: 100,
-          discoveryMode: 'curated',
+          discoveryMode: effectiveMode,
         };
 
         const scored = await generateRecommendations(params);
@@ -804,8 +875,8 @@ export default function RecommendationFeedScreen() {
             category: s.category,
             description: s.place.description,
             location: {
-              latitude: s.place.geometry.location.lat,
-              longitude: s.place.geometry.location.lng,
+              latitude: getPlaceCoords(s.place).lat,
+              longitude: getPlaceCoords(s.place).lng,
               address: s.place.vicinity || s.place.formatted_address || '',
             },
             distance: s.distance,
@@ -817,15 +888,24 @@ export default function RecommendationFeedScreen() {
             website: s.place.website,
             googlePlaceId: s.place.place_id,
           },
+          groupContext: s.groupMemberMatches?.length ? {
+            memberMatches: s.groupMemberMatches,
+            interestMatchScore: s.scoreBreakdown.baseScore,
+            farthestMemberName: s.groupMemberMatches.reduce((f, m) =>
+              m.distanceMiles > f.distanceMiles ? m : f
+            ).name,
+            farthestMemberDistance: Math.max(...s.groupMemberMatches.map(m => m.distanceMiles)),
+          } : undefined,
         }));
 
-        // Save to database for future loads
-        await saveRecommendationsToDB(user.id, freshRecommendations);
+        // Save to database for future loads (with discovery mode tag)
+        await saveRecommendationsToDB(user.id, freshRecommendations, effectiveMode);
 
         setRecommendations(freshRecommendations);
       } catch (error) {
         console.error('Error generating recommendations:', error);
-        setRecommendations([]);
+        // Don't clear existing recommendations — keep whatever was loaded previously
+        // The empty state UI will show naturally if recommendations state is still []
       } finally {
         setSeedingCity(false);
         setCityName(null);
@@ -910,7 +990,7 @@ export default function RecommendationFeedScreen() {
         maxResults: 250, // Extra large batch for extended scrolling before loading
         timeOfDay: filters.timeOfDay !== 'any' ? filters.timeOfDay : undefined,
         priceRange: filters.priceRange !== 'any' ? filters.priceRange : undefined,
-        discoveryMode, // Curated vs Explore mode
+        discoveryMode: effectiveMode, // Use effective mode (handles stale closure)
         categories: selectedCategories.length > 0 ? selectedCategories : undefined, // Category filter
       };
 
@@ -955,8 +1035,8 @@ export default function RecommendationFeedScreen() {
           category: s.category,
           description: s.place.description,
           location: {
-            latitude: s.place.geometry.location.lat,
-            longitude: s.place.geometry.location.lng,
+            latitude: getPlaceCoords(s.place).lat,
+            longitude: getPlaceCoords(s.place).lng,
             address: s.place.vicinity || s.place.formatted_address || '',
           },
           distance: s.distance,
@@ -968,6 +1048,15 @@ export default function RecommendationFeedScreen() {
           website: s.place.website,
           googlePlaceId: s.place.place_id,
         },
+        // Group planning context — maps groupMemberMatches to GroupContext for see-details-modal
+        groupContext: s.groupMemberMatches?.length ? {
+          memberMatches: s.groupMemberMatches,
+          interestMatchScore: s.scoreBreakdown.baseScore,
+          farthestMemberName: s.groupMemberMatches.reduce((f, m) =>
+            m.distanceMiles > f.distanceMiles ? m : f
+          ).name,
+          farthestMemberDistance: Math.max(...s.groupMemberMatches.map(m => m.distanceMiles)),
+        } : undefined,
       }));
 
       console.log(`✅ Generated ${recommendations.length} recommendations`);
@@ -1005,8 +1094,8 @@ export default function RecommendationFeedScreen() {
 
       console.log(`🧹 Deduplication: ${recommendations.length} → ${dedupedRecommendations.length} (removed ${recommendations.length - dedupedRecommendations.length} duplicates)`);
 
-      // PHASE 1: Save recommendations to database BEFORE updating UI
-      await saveRecommendationsToDB(user.id, dedupedRecommendations);
+      // PHASE 1: Save recommendations to database BEFORE updating UI (with discovery mode tag)
+      await saveRecommendationsToDB(user.id, dedupedRecommendations, effectiveMode);
       console.log(`💾 Saved to DB, now updating UI state`);
 
       setRecommendations(dedupedRecommendations);
@@ -1401,6 +1490,13 @@ export default function RecommendationFeedScreen() {
     }).catch(() => {});
   }, [user]);
 
+  // Share handler — opens the share bottom sheet for a card
+  const handleShare = useCallback((item: Recommendation) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShareRecommendation(item);
+    setShareSheetVisible(true);
+  }, []);
+
   // Cache handlers per item to prevent recreation
   const handlersCache = useRef<Map<string, any>>(new Map());
 
@@ -1410,11 +1506,18 @@ export default function RecommendationFeedScreen() {
       handlersCache.current.set(cacheKey, {
         onAddToCalendar: () => handleAddToCalendar(item, index),
         onSeeDetails: () => handleSeeDetails(item, index),
+        onComment: () => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          setSelectedRecommendation(item);
+          setDetailsScrollToComments(true);
+          setShowDetailsModal(true);
+        },
         onNotInterested: () => handleNotInterested(item, index),
+        onShare: () => handleShare(item),
       });
     }
     return handlersCache.current.get(cacheKey);
-  }, [handleAddToCalendar, handleSeeDetails, handleNotInterested]);
+  }, [handleAddToCalendar, handleSeeDetails, handleNotInterested, handleShare]);
 
   // RSVP handlers for group plans (mock for demo)
   const handleAcceptRSVP = useCallback((recId: string) => {
@@ -1448,7 +1551,10 @@ export default function RecommendationFeedScreen() {
           recommendation={item}
           onAddToCalendar={handlers.onAddToCalendar}
           onSeeDetails={handlers.onSeeDetails}
+          onComment={handlers.onComment}
           onNotInterested={handlers.onNotInterested}
+          onShare={handlers.onShare}
+          commentsCount={item.commentsCount}
           index={index}
           isRemoving={removingCardId === item.id}
           // Phase 2: Social & Group features (mock data for demo)
@@ -1457,10 +1563,11 @@ export default function RecommendationFeedScreen() {
           onAcceptRSVP={() => handleAcceptRSVP(item.id)}
           onDeclineRSVP={() => handleDeclineRSVP(item.id)}
           onMaybeRSVP={() => handleMaybeRSVP(item.id)}
+          discoveryMode={discoveryMode}
         />
       );
     },
-    [getHandlersForItem, removingCardId, handleAcceptRSVP, handleDeclineRSVP, handleMaybeRSVP]
+    [getHandlersForItem, removingCardId, handleAcceptRSVP, handleDeclineRSVP, handleMaybeRSVP, discoveryMode]
   );
 
   // Phase 1.2: Smart Merge Pull-to-Refresh
@@ -1535,8 +1642,8 @@ export default function RecommendationFeedScreen() {
             category: s.category,
             description: s.place.description,
             location: {
-              latitude: s.place.geometry.location.lat,
-              longitude: s.place.geometry.location.lng,
+              latitude: getPlaceCoords(s.place).lat,
+              longitude: getPlaceCoords(s.place).lng,
               address: s.place.vicinity || s.place.formatted_address || '',
             },
             distance: s.distance,
@@ -1551,6 +1658,14 @@ export default function RecommendationFeedScreen() {
             isSponsored: s.isSponsored,
             googlePlaceId: s.place.place_id,
           },
+          groupContext: s.groupMemberMatches?.length ? {
+            memberMatches: s.groupMemberMatches,
+            interestMatchScore: s.scoreBreakdown.baseScore,
+            farthestMemberName: s.groupMemberMatches.reduce((f, m) =>
+              m.distanceMiles > f.distanceMiles ? m : f
+            ).name,
+            farthestMemberDistance: Math.max(...s.groupMemberMatches.map(m => m.distanceMiles)),
+          } : undefined,
         }));
 
         // Smart merge: Add new at top, keep bottom 40 existing (NO divider)
@@ -1559,8 +1674,8 @@ export default function RecommendationFeedScreen() {
           ...prev.slice(0, 40) // Keep bottom 40
         ]);
 
-        // Save new recommendations to DB
-        await saveRecommendationsToDB(user.id, newRecs);
+        // Save new recommendations to DB (with discovery mode tag)
+        await saveRecommendationsToDB(user.id, newRecs, discoveryMode);
 
         // Increment refresh key to force re-render
         setRefreshKey(prev => prev + 1);
@@ -1574,7 +1689,7 @@ export default function RecommendationFeedScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [user, recommendations, searchRadiusRef, filters, getCurrentLocation, saveRecommendationsToDB]);
+  }, [user, recommendations, searchRadiusRef, filters, getCurrentLocation, saveRecommendationsToDB, discoveryMode]);
 
   // Memoized onRefresh handler - calls smart merge refresh
   const handleRefresh = useCallback(() => {
@@ -1701,14 +1816,65 @@ export default function RecommendationFeedScreen() {
     // Store active filters
     setActiveFilters(searchFilters);
 
+    // Sync discovery mode to parent state (drives badge visibility, etc.)
+    if (searchFilters.discoveryMode !== discoveryMode) {
+      setDiscoveryMode(searchFilters.discoveryMode);
+    }
+
     // Trigger haptic feedback
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
-    // Convert advanced filters to recommendation params and refetch
+    // FAST PATH: If the user only changed basic filters (no custom search location/query),
+    // re-filter the existing DB-cached recommendations instead of calling live API.
+    // BUT: If discovery mode changed, we must regenerate to get mode-appropriate content.
+    const hasCustomSearch = searchFilters.searchQuery ||
+      searchFilters.location ||
+      searchFilters.searchType === 'place';
+    const modeChanged = searchFilters.discoveryMode !== discoveryMode;
+
+    if (!hasCustomSearch && !modeChanged && recommendations.length > 0) {
+      console.log('⚡ Fast filter: Re-filtering cached recommendations (no live API needed)');
+
+      // Sync filterSheetFilters for the useMemo filter pipeline
+      setFilterSheetFilters({
+        mode: searchFilters.discoveryMode === 'explore' ? 'explore' : 'for_you',
+        categories: searchFilters.categories,
+        maxDistance: searchFilters.maxDistance,
+        priceRange: searchFilters.priceRange[1] === 3 ? 'any' : searchFilters.priceRange[1] as 1 | 2 | 3 | 4,
+        minRating: searchFilters.minRating,
+        timeOfDay: searchFilters.timeOfDay.length === 1 ? searchFilters.timeOfDay[0] as any : 'any',
+      });
+
+      // Show confirmation toast
+      const filterSummary: string[] = [];
+      if (searchFilters.categories.length > 0) filterSummary.push(`${searchFilters.categories.length} categories`);
+      if (searchFilters.minRating > 0) filterSummary.push(`${searchFilters.minRating}+ stars`);
+      if (searchFilters.openNow) filterSummary.push('open now');
+
+      setToastMessage(
+        filterSummary.length > 0
+          ? `Filtered by: ${filterSummary.join(', ')}`
+          : searchFilters.discoveryMode === 'explore' ? 'Explore mode' : 'For You'
+      );
+      setShowToast(true);
+      return;
+    }
+
+    // MODE CHANGE PATH: Discovery mode changed — regenerate with correct mode
+    if (modeChanged && !hasCustomSearch) {
+      console.log(`🔄 Discovery mode changed in filters: ${discoveryMode} → ${searchFilters.discoveryMode}, regenerating...`);
+      fetchRecommendations(true, searchFilters.discoveryMode, false);
+      return;
+    }
+
+    // SLOW PATH: Custom search location or query — need live API call
     setRefreshing(true);
 
     try {
-      if (!user) return;
+      if (!user) {
+        setRefreshing(false);
+        return;
+      }
 
       // Determine search location (custom location or user's current location)
       let searchLocation: PlaceLocation | null = searchFilters.location
@@ -1781,8 +1947,8 @@ export default function RecommendationFeedScreen() {
           category: s.category,
           description: s.place.description,
           location: {
-            latitude: s.place.geometry.location.lat,
-            longitude: s.place.geometry.location.lng,
+            latitude: getPlaceCoords(s.place).lat,
+            longitude: getPlaceCoords(s.place).lng,
             address: s.place.vicinity || s.place.formatted_address || '',
           },
           distance: s.distance,
@@ -1794,6 +1960,14 @@ export default function RecommendationFeedScreen() {
           website: s.place.website,
           googlePlaceId: s.place.place_id,
         },
+        groupContext: s.groupMemberMatches?.length ? {
+          memberMatches: s.groupMemberMatches,
+          interestMatchScore: s.scoreBreakdown.baseScore,
+          farthestMemberName: s.groupMemberMatches.reduce((f, m) =>
+            m.distanceMiles > f.distanceMiles ? m : f
+          ).name,
+          farthestMemberDistance: Math.max(...s.groupMemberMatches.map(m => m.distanceMiles)),
+        } : undefined,
       }));
 
       console.log(`✅ Generated ${recommendations.length} filtered recommendations`);
@@ -1851,8 +2025,8 @@ export default function RecommendationFeedScreen() {
       setRecommendations(finalRecommendations);
       setRefreshKey(prev => prev + 1);
 
-      // Save to database
-      await saveRecommendationsToDB(user.id, dedupedRecommendations);
+      // Save to database (with discovery mode tag)
+      await saveRecommendationsToDB(user.id, dedupedRecommendations, searchFilters.discoveryMode);
 
       // Show toast with filter summary
       const filterSummary = [];
@@ -2050,12 +2224,13 @@ export default function RecommendationFeedScreen() {
   };
 
   // Handle discovery mode change
-  const handleDiscoveryModeChange = useCallback((mode: 'curated' | 'explore') => {
+  const handleDiscoveryModeChange = useCallback((mode: 'for_you' | 'explore') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setDiscoveryMode(mode);
 
-    // Refresh recommendations with new mode
-    fetchRecommendations(true);
+    // Refresh recommendations with new mode — pass mode directly to avoid stale closure,
+    // and skip DB cache so we actually regenerate with the new mode's scoring
+    fetchRecommendations(true, mode, true);
 
     // Save to database (debounced)
     if (user) {
@@ -2121,8 +2296,8 @@ export default function RecommendationFeedScreen() {
     // Clear category filter
     setSelectedCategories([]);
 
-    // Reset to curated mode (optional - keep user preference)
-    // setDiscoveryMode('curated');
+    // Reset to for_you mode (optional - keep user preference)
+    // setDiscoveryMode('for_you');
 
     // Refresh feed
     fetchRecommendations(true);
@@ -2131,7 +2306,6 @@ export default function RecommendationFeedScreen() {
   // Handle filter sheet apply
   const handleFilterSheetApply = useCallback((newFilters: FilterSheetFilters) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setShowFilterSheet(false);
 
     // Sync with FeedFilters bar for consistency
     setFilters(prev => ({
@@ -2149,7 +2323,7 @@ export default function RecommendationFeedScreen() {
   const handleFilterSheetReset = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const defaultFilters: FilterSheetFilters = {
-      mode: 'ai_curated', // Reset to default AI Curated mode
+      mode: 'for_you', // Reset to default For You mode
       categories: [],
       maxDistance: 100,
       priceRange: 'any',
@@ -2196,17 +2370,13 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
-            showMenuButton={true}
-            onMenuPress={() => setShowMainMenu(true)}
-            isMenuOpen={showMainMenu}
-            showFilterButton={true}
-            onFilterPress={(position) => {
-              setFilterPopoverPosition(position);
-              setShowFilterPopover(true);
-            }}
-            isFilterActive={isFilterSheetActive}
-            onDashboardOpen={handleDashboardOpen}
+            showProfileAvatar={true}
+            onProfilePress={() => setShowMainMenu(true)}
+            showSearchButton={true}
+            onSearchPress={() => setShowAdvancedSearch(true)}
+            hasActiveFilters={isFilterSheetActive}
             notificationCount={notificationCount}
+
           />
           {seedingCity ? (
             <View style={[styles.seedingContainer, { backgroundColor: colors.background }]}>
@@ -2238,17 +2408,13 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
-            showMenuButton={true}
-            onMenuPress={() => setShowMainMenu(true)}
-            isMenuOpen={showMainMenu}
-            showFilterButton={true}
-            onFilterPress={(position) => {
-              setFilterPopoverPosition(position);
-              setShowFilterPopover(true);
-            }}
-            isFilterActive={isFilterSheetActive}
-            onDashboardOpen={handleDashboardOpen}
+            showProfileAvatar={true}
+            onProfilePress={() => setShowMainMenu(true)}
+            showSearchButton={true}
+            onSearchPress={() => setShowAdvancedSearch(true)}
+            hasActiveFilters={isFilterSheetActive}
             notificationCount={notificationCount}
+
           />
           <EmptyState
             icon="sparkles"
@@ -2266,17 +2432,13 @@ export default function RecommendationFeedScreen() {
       <SwipeableLayout>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <LoopHeader
-            showMenuButton={true}
-            onMenuPress={() => setShowMainMenu(true)}
-            isMenuOpen={showMainMenu}
-            showFilterButton={true}
-            onFilterPress={(position) => {
-              setFilterPopoverPosition(position);
-              setShowFilterPopover(true);
-            }}
-            isFilterActive={isFilterSheetActive}
-            onDashboardOpen={handleDashboardOpen}
+            showProfileAvatar={true}
+            onProfilePress={() => setShowMainMenu(true)}
+            showSearchButton={true}
+            onSearchPress={() => setShowAdvancedSearch(true)}
+            hasActiveFilters={isFilterSheetActive}
             notificationCount={notificationCount}
+
           />
 
           {/* Daily Limit Reached Message */}
@@ -2288,7 +2450,7 @@ export default function RecommendationFeedScreen() {
               </Text>
               <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center', paddingHorizontal: Spacing.md }]}>
                 {dailyLimitInfo.subscriptionTier === 'free'
-                  ? `Free users get ${dailyLimitInfo.dailyLimit} curated picks per day. Upgrade for more, or tap Explore to browse unlimited activities.`
+                  ? `Free users get ${dailyLimitInfo.dailyLimit} personalized picks per day. Upgrade for more, or tap Explore to browse unlimited activities.`
                   : `You&apos;ve viewed ${dailyLimitInfo.dailyLimit} picks today. Come back tomorrow for fresh recommendations, or tap Explore for unlimited browsing.`
                 }
               </Text>
@@ -2320,7 +2482,7 @@ export default function RecommendationFeedScreen() {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       Alert.alert(
                         'Upgrade to Loop Plus',
-                        'Get unlimited daily recommendations, group planning with up to 5 friends, and an ad-free experience for just $4.99/month.',
+                        'Get unlimited recommendations, group planning, calendar sync, and an ad-free experience for just $3.99/month.',
                         [
                           { text: 'Not Now', style: 'cancel' },
                           {
@@ -2350,20 +2512,15 @@ export default function RecommendationFeedScreen() {
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <LoopHeader
-          showMenuButton={true}
-          onMenuPress={() => setShowMainMenu(true)}
-          isMenuOpen={showMainMenu}
-          showFilterButton={true}
-          onFilterPress={(position) => {
-            setFilterPopoverPosition(position);
-            setShowFilterPopover(true);
-          }}
-          isFilterActive={isFilterSheetActive}
-          onDashboardOpen={handleDashboardOpen}
+          showProfileAvatar={true}
+          onProfilePress={() => setShowMainMenu(true)}
+          showSearchButton={true}
+          onSearchPress={() => setShowAdvancedSearch(true)}
+          hasActiveFilters={isFilterSheetActive}
           notificationCount={notificationCount}
           onLogoPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setShowAdvancedSearch(true);
+            flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
           }}
           isLoading={USE_SHIMMER_FOR_REFRESH && refreshing}
         />
@@ -2430,7 +2587,7 @@ export default function RecommendationFeedScreen() {
               loadingMore={loadingMore}
               feedExhausted={feedExhausted}
               searchRadius={searchRadius}
-              extraData={refreshKey}
+              extraData={`${refreshKey}-${discoveryMode}`}
               useShimmer={USE_SHIMMER_FOR_REFRESH}
               filters={filters}
               onExpandDistance={handleExpandDistance}
@@ -2455,12 +2612,16 @@ export default function RecommendationFeedScreen() {
           <SeeDetailsModal
             visible={showDetailsModal}
             recommendation={selectedRecommendation}
-            onClose={() => setShowDetailsModal(false)}
+            onClose={() => {
+              setShowDetailsModal(false);
+              setDetailsScrollToComments(false);
+            }}
             onAddToCalendar={() => {
               setShowDetailsModal(false);
               setShowScheduleModal(true);
             }}
             userId={user?.id}
+            scrollToComments={detailsScrollToComments}
           />
         )}
 
@@ -2548,31 +2709,29 @@ export default function RecommendationFeedScreen() {
           onClose={() => setShowNotificationsTray(false)}
         />
 
-        {/* Filter Popover (iOS 26 Liquid Glass style - quick filters) */}
-        <FilterPopover
-          visible={showFilterPopover}
-          anchorPosition={filterPopoverPosition}
-          onClose={() => setShowFilterPopover(false)}
-          filters={filterSheetFilters}
-          onFiltersChange={setFilterSheetFilters}
-          onOpenAdvanced={() => setShowFilterSheet(true)}
-        />
-
-        {/* Filter Sheet (iOS 26 style - advanced filters) */}
-        <FilterSheet
-          visible={showFilterSheet}
-          filters={filterSheetFilters}
-          onClose={() => setShowFilterSheet(false)}
-          onFiltersChange={setFilterSheetFilters}
-          onApply={() => handleFilterSheetApply(filterSheetFilters)}
-          onReset={handleFilterSheetReset}
-        />
-
-        {/* Main Menu Modal */}
+        {/* Profile Drawer (formerly Main Menu) */}
         <MainMenuModal
           visible={showMainMenu}
           onClose={() => setShowMainMenu(false)}
           notificationCount={notificationCount}
+          onOpenDashboard={() => setShowDashboard(true)}
+          onOpenHistory={() => setShowHistory(true)}
+        />
+
+        {/* Recommendation History Modal */}
+        <RecommendationHistoryModal
+          visible={showHistory}
+          onClose={() => setShowHistory(false)}
+        />
+
+        {/* Share Bottom Sheet */}
+        <ShareBottomSheet
+          visible={shareSheetVisible}
+          onClose={() => setShareSheetVisible(false)}
+          recommendation={shareRecommendation}
+          onShareSuccess={() => {
+            setToast({ type: 'success', message: 'Shared successfully!' });
+          }}
         />
 
       </View>

@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
@@ -36,6 +37,7 @@ import {
   FriendGroup,
   getFriendGroups,
 } from '@/services/friend-groups-service';
+import { getUnreadCount as getChatUnreadCount } from '@/services/chat-service';
 
 interface Friend {
   id: string;
@@ -43,6 +45,8 @@ interface Friend {
   email: string;
   profile_picture_url: string | null;
   loop_score: number;
+  interests?: string[];
+  home_location?: any;
   status: 'accepted' | 'pending' | 'blocked';
   can_view_loop: boolean;
   created_at: string;
@@ -61,6 +65,7 @@ interface FriendRequest {
 
 export default function FriendsScreen() {
   const { user } = useAuth();
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 
@@ -89,12 +94,27 @@ export default function FriendsScreen() {
   const [showGroupManagement, setShowGroupManagement] = useState(false);
   const [managingGroup, setManagingGroup] = useState<FriendGroup | null>(null);
 
+  // Chat unread count
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
+
   useEffect(() => {
     loadFriends();
     loadFriendRequests();
     loadFriendMoments();
     loadFriendGroups();
+    loadChatUnreadCount();
   }, []);
+
+  const loadChatUnreadCount = async () => {
+    if (!user) return;
+    try {
+      const count = await getChatUnreadCount(user.id);
+      setChatUnreadCount(count);
+    } catch (error) {
+      // Chat feature may not be fully set up yet
+      setChatUnreadCount(0);
+    }
+  };
 
   const loadFriendGroups = async () => {
     if (!user) return;
@@ -164,7 +184,9 @@ export default function FriendsScreen() {
             name,
             email,
             profile_picture_url,
-            loop_score
+            loop_score,
+            interests,
+            home_location
           )
         `)
         .eq('user_id', user.id)
@@ -180,6 +202,8 @@ export default function FriendsScreen() {
         email: f.users.email,
         profile_picture_url: f.users.profile_picture_url,
         loop_score: f.users.loop_score || 0,
+        interests: f.users.interests || [],
+        home_location: f.users.home_location,
         status: 'accepted' as const,
         can_view_loop: f.can_view_loop,
         created_at: f.created_at,
@@ -583,6 +607,8 @@ export default function FriendsScreen() {
         <FriendsHeader
           onAddPress={openSocialActionSheet}
           notificationCount={friendRequests.length}
+          onChatPress={() => router.push('/chat' as any)}
+          chatBadgeCount={chatUnreadCount}
         />
 
       <ScrollView

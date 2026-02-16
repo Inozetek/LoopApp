@@ -5,7 +5,7 @@ import * as Haptics from 'expo-haptics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 
-export type DiscoveryMode = 'curated' | 'explore';
+export type DiscoveryMode = 'for_you' | 'explore';
 
 interface DiscoveryModeToggleProps {
   mode: DiscoveryMode;
@@ -29,26 +29,26 @@ export function DiscoveryModeToggle({ mode, onModeChange }: DiscoveryModeToggleP
       </Text>
 
       <View style={styles.toggleContainer}>
-        {/* Curated Mode Button */}
+        {/* For You Mode Button */}
         <TouchableOpacity
           style={[
             styles.toggleButton,
             { backgroundColor: colors.cardBackground, borderColor: colors.border },
-            mode === 'curated' && { backgroundColor: BrandColors.loopBlue, borderColor: BrandColors.loopBlue }
+            mode === 'for_you' && { backgroundColor: BrandColors.loopBlue, borderColor: BrandColors.loopBlue }
           ]}
-          onPress={() => handleToggle('curated')}
+          onPress={() => handleToggle('for_you')}
           activeOpacity={0.7}
         >
           <Ionicons
-            name="checkmark-circle"
+            name="sparkles"
             size={20}
-            color={mode === 'curated' ? '#FFFFFF' : colors.textSecondary}
+            color={mode === 'for_you' ? '#FFFFFF' : colors.textSecondary}
           />
           <Text style={[
             Typography.labelLarge,
-            { color: mode === 'curated' ? '#FFFFFF' : colors.textSecondary }
+            { color: mode === 'for_you' ? '#FFFFFF' : colors.textSecondary }
           ]}>
-            Curated
+            For You
           </Text>
         </TouchableOpacity>
 
@@ -78,8 +78,8 @@ export function DiscoveryModeToggle({ mode, onModeChange }: DiscoveryModeToggleP
 
       {/* Explanation text */}
       <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginTop: Spacing.sm, lineHeight: 18 }]}>
-        {mode === 'curated'
-          ? "Showing activities matching your top interests"
+        {mode === 'for_you'
+          ? "AI-personalized picks based on your interests, location, and feedback"
           : "Discovering activities across all categories - help us learn your preferences!"
         }
       </Text>

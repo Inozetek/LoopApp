@@ -26,6 +26,7 @@ import { IconSymbol } from '@/components/ui/icon-symbol';
 import { getLastTaskForDay, type TaskWithLocation } from '@/services/calendar-service';
 import { suggestStartTimeFromPreviousTask, isReasonableTravelTime, calculateTravelTimeWithBuffer } from '@/utils/route-calculations';
 import { useAuth } from '@/contexts/auth-context';
+import { DragHandle } from '@/components/drag-handle';
 
 interface SchedulePlanModalProps {
   visible: boolean;
@@ -296,10 +297,7 @@ export function SchedulePlanModal({
         ]}
       >
         <View style={[styles.modal, { backgroundColor: colors.card }]}>
-          {/* Handle Bar */}
-          <View style={styles.handleBar}>
-            <View style={[styles.handle, { backgroundColor: colors.border }]} />
-          </View>
+          <DragHandle onClose={handleClose} />
 
             {/* Header */}
             <View style={styles.header}>

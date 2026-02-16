@@ -37,7 +37,7 @@ describe('Recommendation Scoring Algorithm', () => {
      * - Top 3 interests: 30 points (+5 for events = 35)
      * - Other interests: 20 points (+3 for events = 23)
      * - Non-matching (explore mode): 15 points (+2 for events = 17)
-     * - Non-matching (curated mode): 10 points (+2 for events = 12)
+     * - Non-matching (for_you mode): 10 points (+2 for events = 12)
      */
 
     it('should give maximum points for top 3 interests', () => {
@@ -58,8 +58,8 @@ describe('Recommendation Scoring Algorithm', () => {
 
     it('should give lower points for discovery mode', () => {
       const exploreModeBase = 15;
-      const curatedModeBase = 10;
-      expect(exploreModeBase).toBeGreaterThan(curatedModeBase);
+      const forYouModeBase = 10;
+      expect(exploreModeBase).toBeGreaterThan(forYouModeBase);
     });
   });
 

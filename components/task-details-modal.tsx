@@ -32,6 +32,7 @@ import { getStaticMapUrl } from '@/utils/maps';
 import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
 import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
 import { extractReviewTopics, type ReviewTopic } from '@/utils/review-topics';
+import { DragHandle } from '@/components/drag-handle';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -499,6 +500,7 @@ export function TaskDetailsModal({
         ]}
       >
         <View style={[styles.modal, { backgroundColor: colors.card }]}>
+          <DragHandle onClose={handleClose} />
           {/* Close Button */}
           <Pressable style={styles.closeButton} onPress={handleClose}>
             <IconSymbol name="xmark.circle.fill" size={32} color={colors.text} />

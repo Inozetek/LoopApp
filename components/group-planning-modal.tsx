@@ -579,6 +579,24 @@ export function GroupPlanningModal({
       ? memberMatches.reduce((prev: any, curr: any) => curr.distanceMiles > prev.distanceMiles ? curr : prev, memberMatches[0])
       : { name: 'Unknown', distanceMiles: 0 };
 
+    // Build group-specific explanation
+    const memberNames = memberMatches.map((m: any) => m.name.split(' ')[0]);
+    const allInterests = [...new Set(memberMatches.flatMap((m: any) => m.matchedInterests))];
+    const avgDistance = memberMatches.length > 0
+      ? (memberMatches.reduce((sum: number, m: any) => sum + m.distanceMiles, 0) / memberMatches.length).toFixed(1)
+      : '0';
+    let groupExplanation = activity.description || '';
+    if (memberNames.length > 0) {
+      const namesStr = memberNames.length <= 2
+        ? memberNames.join(' and ')
+        : `${memberNames.slice(0, -1).join(', ')}, and ${memberNames[memberNames.length - 1]}`;
+      if (allInterests.length > 0) {
+        groupExplanation = `Great spot for ${namesStr} — matches shared interests in ${allInterests.slice(0, 3).join(', ')}. Everyone is within ${farthest.distanceMiles.toFixed(1)} mi.`;
+      } else {
+        groupExplanation = `Centrally located for ${namesStr} with an average distance of ${avgDistance} mi. ${activity.description || `A great ${activity.category?.toLowerCase()} option for your group.`}`;
+      }
+    }
+
     const rec: Recommendation = {
       id: activity.id,
       title: activity.name,
@@ -588,7 +606,7 @@ export function GroupPlanningModal({
       priceRange: activity.priceRange || 2,
       rating: activity.rating || 4.0,
       imageUrl: activity.photoUrl || '',
-      aiExplanation: activity.description || '',
+      aiExplanation: groupExplanation,
       isSponsored: false,
       score: activity.score,
       scoreBreakdown: activity.scoreBreakdown ? {

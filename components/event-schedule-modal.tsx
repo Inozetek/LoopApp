@@ -28,6 +28,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { BrandColors, Typography, Spacing, BorderRadius } from '@/constants/brand';
 import type { EventMetadata } from '@/types/activity';
+import { DragHandle } from '@/components/drag-handle';
 
 interface EventScheduleModalProps {
   visible: boolean;
@@ -112,6 +113,7 @@ export function EventScheduleModal({
     >
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
+          <DragHandle onClose={onClose} />
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Schedule Event</Text>

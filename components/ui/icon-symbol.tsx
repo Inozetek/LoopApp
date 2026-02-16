@@ -27,6 +27,11 @@ const MAPPING = {
   'arrow.triangle.merge': 'join-right',
   'person.2.fill': 'people',
   'person.fill': 'person',
+  // Common UI icons
+  'xmark.circle.fill': 'cancel',
+  'ellipsis.circle.fill': 'more-horiz',
+  'hand.raised.fill': 'pan-tool',
+  'chevron.up': 'expand-less',
   // Business tab icons
   'pencil': 'edit',
   'chart.bar.fill': 'bar-chart',

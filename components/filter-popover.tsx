@@ -3,7 +3,7 @@
  *
  * iOS 26 "Liquid Glass" style popover mimicking iOS Phone app's filter UI.
  * Features:
- * - Simple segmented control: "AI Curated" vs "Explore" modes
+ * - Simple segmented control: "For You" vs "Explore" modes
  * - Liquid Glass effect with refraction and specular highlights (iOS 26+)
  * - Skia GPU-accelerated BackdropBlur as secondary tier
  * - Materialization animation (blur-to-clear emergence)
@@ -261,30 +261,30 @@ export function FilterPopover({
           <Animated.View style={[styles.content, contentStyle]}>
             {/* Mode Selection - iOS Phone app style */}
             <View style={styles.modeSection}>
-              {/* AI Curated Option */}
+              {/* For You Option */}
               <TouchableOpacity
-                onPress={() => selectMode('ai_curated')}
+                onPress={() => selectMode('for_you')}
                 style={[
                   styles.modeOption,
-                  filters.mode === 'ai_curated' && styles.modeOptionSelected,
-                  filters.mode === 'ai_curated' && { backgroundColor: BrandColors.loopBlue },
+                  filters.mode === 'for_you' && styles.modeOptionSelected,
+                  filters.mode === 'for_you' && { backgroundColor: BrandColors.loopBlue },
                 ]}
                 activeOpacity={0.7}
               >
                 <Ionicons
                   name="sparkles"
                   size={18}
-                  color={filters.mode === 'ai_curated' ? '#FFFFFF' : colors.text}
+                  color={filters.mode === 'for_you' ? '#FFFFFF' : colors.text}
                 />
                 <Text
                   style={[
                     styles.modeLabel,
-                    { color: filters.mode === 'ai_curated' ? '#FFFFFF' : colors.text },
+                    { color: filters.mode === 'for_you' ? '#FFFFFF' : colors.text },
                   ]}
                 >
-                  AI Curated
+                  For You
                 </Text>
-                {filters.mode === 'ai_curated' && (
+                {filters.mode === 'for_you' && (
                   <Ionicons name="checkmark" size={18} color="#FFFFFF" />
                 )}
               </TouchableOpacity>

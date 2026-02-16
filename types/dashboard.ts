@@ -13,6 +13,8 @@ export type NotificationType =
   | 'family_in_town'
   | 'lunch_suggestion'
   | 'event_reminder'
+  | 'activity_share'
+  | 'activity_invite'
   | 'other';
 
 export type NotificationPriority = 'info' | 'attention' | 'urgent';

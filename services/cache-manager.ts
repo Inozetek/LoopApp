@@ -266,16 +266,21 @@ export async function getCachedPlaces(
     console.log(`   Category filter: ${category}`);
   }
 
+  const apiDisabled = process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true';
+
   try {
-    // Build query
+    // Build query — when API is disabled, include stale data (can't refresh anyway)
     let query = supabase
       .from('places_cache')
       .select('*')
       .eq('city', city)
       .eq('state', state)
-      .eq('is_stale', false)
       .order('last_used', { descending: true })
       .limit(limit);
+
+    if (!apiDisabled) {
+      query = query.eq('is_stale', false);
+    }
 
     // Add category filter if specified
     if (category) {

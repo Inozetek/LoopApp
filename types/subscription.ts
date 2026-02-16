@@ -1,11 +1,15 @@
 /**
  * Subscription Tiers & Limits
  *
+ * 2-tier model: Free ($0) + Loop Plus ($3.99/mo, $29.99/yr)
+ * Premium tier eliminated — features like itinerary planning and AI concierge
+ * will ship when ready, and Plus limits will expand to include them.
+ *
  * Strategy: Generous free tier with feature-gating (not quantity limits)
  * Free users get unlimited recommendations from database, but limited refresh frequency
  */
 
-export type SubscriptionTier = 'free' | 'plus' | 'premium';
+export type SubscriptionTier = 'free' | 'plus';
 
 export interface TierLimits {
   // Refresh frequency
@@ -25,8 +29,6 @@ export interface TierLimits {
   calendar_sync: boolean;
   ai_explanations: boolean;
   advanced_filters: boolean;
-  multi_day_itinerary: boolean;
-  ai_concierge: boolean;
 
   // UI
   show_ads: boolean;
@@ -49,54 +51,27 @@ export const TIER_LIMITS: Record<SubscriptionTier, TierLimits> = {
     calendar_sync: false,
     ai_explanations: false,
     advanced_filters: false,
-    multi_day_itinerary: false,
-    ai_concierge: false,
 
     // UI
     show_ads: true,
   },
 
   plus: {
-    // Refresh limits
-    refresh_interval_hours: 1, // Can refresh 24x per day
-    recommendations_per_refresh: 10, // ~240 recs/day total
-
-    // Data sources
-    use_database: true,
-    use_google_places: true, // Fresh discoveries enabled
-    google_api_calls_per_day: 10,
-
-    // Features
-    group_planning: true,
-    max_group_size: 5,
-    calendar_sync: true,
-    ai_explanations: true,
-    advanced_filters: true,
-    multi_day_itinerary: false,
-    ai_concierge: false,
-
-    // UI
-    show_ads: false,
-  },
-
-  premium: {
-    // Refresh limits
-    refresh_interval_hours: 0, // Unlimited refreshes
+    // Refresh limits — unlimited
+    refresh_interval_hours: 0,
     recommendations_per_refresh: 10,
 
     // Data sources
     use_database: true,
-    use_google_places: true, // All sources, real-time
+    use_google_places: true, // Fresh discoveries enabled
     google_api_calls_per_day: 50,
 
     // Features
     group_planning: true,
-    max_group_size: 20,
+    max_group_size: 10, // Merged from former Premium tier
     calendar_sync: true,
     ai_explanations: true,
     advanced_filters: true,
-    multi_day_itinerary: true,
-    ai_concierge: true,
 
     // UI
     show_ads: false,
@@ -104,27 +79,26 @@ export const TIER_LIMITS: Record<SubscriptionTier, TierLimits> = {
 };
 
 /**
- * Tier pricing (monthly)
+ * Tier pricing
  */
 export const TIER_PRICING = {
   free: 0,
-  plus: 4.99,
-  premium: 9.99,
+  plus: 3.99,
+  plus_annual: 29.99, // 37% annual discount
 } as const;
 
 /**
  * Tier display names
  */
-export const TIER_NAMES = {
+export const TIER_NAMES: Record<SubscriptionTier, string> = {
   free: 'Loop Free',
   plus: 'Loop Plus',
-  premium: 'Loop Premium',
-} as const;
+};
 
 /**
  * User-facing tier badges
  */
-export const TIER_BADGES = {
+export const TIER_BADGES: Record<SubscriptionTier, { label: string; color: string; emoji: string }> = {
   free: {
     label: 'Free',
     color: '#8E8E93', // iOS gray
@@ -135,17 +109,12 @@ export const TIER_BADGES = {
     color: '#00D9A3', // Loop Green
     emoji: '🟢',
   },
-  premium: {
-    label: 'Premium',
-    color: '#FF9500', // iOS orange
-    emoji: '🔴',
-  },
-} as const;
+};
 
 /**
  * Data freshness indicators (user-facing)
  */
-export const DATA_FRESHNESS_LABELS = {
+export const DATA_FRESHNESS_LABELS: Record<SubscriptionTier, { status: string; description: string; color: string }> = {
   free: {
     status: 'Curated',
     description: 'Updated every few hours',
@@ -153,12 +122,7 @@ export const DATA_FRESHNESS_LABELS = {
   },
   plus: {
     status: 'LIVE',
-    description: 'Fresh discoveries',
+    description: 'Fresh discoveries in real-time',
     color: '#00D9A3',
   },
-  premium: {
-    status: 'REAL-TIME',
-    description: 'Instant updates',
-    color: '#FF9500',
-  },
-} as const;
+};

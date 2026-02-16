@@ -65,7 +65,7 @@ export interface SearchFilters {
   openNow: boolean;
   groupOnly: boolean;
   showMap: boolean;
-  discoveryMode: DiscoveryMode; // 'curated' | 'explore'
+  discoveryMode: DiscoveryMode; // 'for_you' | 'explore'
 }
 
 interface AdvancedSearchModalProps {
@@ -108,8 +108,29 @@ export function AdvancedSearchModal({
   const [timeOfDay, setTimeOfDay] = useState<string[]>(currentFilters.timeOfDay || []);
   const [openNow, setOpenNow] = useState(currentFilters.openNow || false);
   const [groupOnly, setGroupOnly] = useState(currentFilters.groupOnly || false);
-  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(currentFilters.discoveryMode || 'curated');
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(currentFilters.discoveryMode || 'for_you');
   const [showAdvanced, setShowAdvanced] = useState(false);
+
+  // Sync internal state with currentFilters whenever the modal opens
+  useEffect(() => {
+    if (visible) {
+      setSearchQuery(currentFilters.searchQuery || '');
+      setSearchText(currentFilters.location?.address || '');
+      setSearchLocation(currentFilters.location || null);
+      setSearchType(currentFilters.searchType || null);
+      setPlaceName(currentFilters.placeName);
+      setPlaceTypes(currentFilters.placeTypes);
+      setSelectedCategories(currentFilters.categories || []);
+      setPriceRange(currentFilters.priceRange || [0, 3]);
+      setMinRating(currentFilters.minRating || 0);
+      setMaxDistance(currentFilters.maxDistance || 10);
+      setSelectedDate(currentFilters.date || new Date());
+      setTimeOfDay(currentFilters.timeOfDay || []);
+      setOpenNow(currentFilters.openNow || false);
+      setGroupOnly(currentFilters.groupOnly || false);
+      setDiscoveryMode(currentFilters.discoveryMode || 'for_you');
+    }
+  }, [visible]);
 
   const toggleCategory = (categoryId: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -242,7 +263,7 @@ export function AdvancedSearchModal({
     setTimeOfDay([]);
     setOpenNow(false);
     setGroupOnly(false);
-    setDiscoveryMode('curated');
+    setDiscoveryMode('for_you');
   };
 
   const getPriceLabel = (value: number) => {
