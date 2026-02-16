@@ -43,19 +43,6 @@ const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
 const IMAGE_HEIGHT = 400; // 60% of typical card
 
 /**
- * Generate a consistent hash from a string (for mock data)
- */
-function hashString(str: string): number {
-  let hash = 0;
-  for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash; // Convert to 32bit integer
-  }
-  return Math.abs(hash);
-}
-
-/**
  * Instagram-Style Photo Carousel Component
  * Horizontal scrollable photos with dot indicators
  */
@@ -171,6 +158,9 @@ interface ActivityCardIntelligentProps {
 
   // Pending invitation state (for pulsing border)
   hasPendingInvitation?: boolean;
+
+  // Discovery mode — hides match badge in 'explore' mode
+  discoveryMode?: 'for_you' | 'explore';
 }
 
 function ActivityCardIntelligentComponent({
@@ -192,6 +182,7 @@ function ActivityCardIntelligentComponent({
   onDeclineRSVP,
   onMaybeRSVP,
   hasPendingInvitation = false,
+  discoveryMode,
 }: ActivityCardIntelligentProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -321,10 +312,9 @@ function ActivityCardIntelligentComponent({
     });
   }, [placeId, recommendation.title, likeState.totalLikes, router]);
 
-  // Fallback to mock counts if not loaded
-  const idHash = recommendation.id ? hashString(recommendation.id) : 0;
-  const displayLikes = likeState.isLoading ? ((idHash % 200) + 50) : likeState.totalLikes;
-  const mockComments = commentsCount ?? (((idHash >> 8) % 50) + 5);
+  // Real counts only — no mock/fake numbers
+  const displayLikes = likeState.totalLikes;
+  const displayComments = commentsCount ?? 0;
 
   // Pulsing border animation for pending invitations
   useEffect(() => {
@@ -366,7 +356,7 @@ function ActivityCardIntelligentComponent({
   // Calculate AI match percentage (for subtle badge)
   const matchScore = score.finalScore || recommendation.score || 0;
   const matchPercentage = Math.min(99, Math.round((matchScore / 100) * 100));
-  const isStrongMatch = matchPercentage >= 85;
+  const isStrongMatch = matchPercentage >= 55;
 
   // Phase 2: Check card type for conditional rendering
   const isGroupPlan = Boolean(groupPlan);
@@ -518,6 +508,48 @@ function ActivityCardIntelligentComponent({
       startTime: eventMetadata?.start_time,
     });
   }
+
+  // Time context label for metadata row — computed fresh from category + current hour
+  // Hidden in Explore mode (personalization signal belongs to For You only)
+  const getTimeContextLabel = (): { icon: string; label: string } | null => {
+    if (discoveryMode === 'explore') return null;
+
+    const hour = new Date().getHours();
+    const cat = recommendation.category?.toLowerCase() || '';
+    const suggested = recommendation.suggestedTime;
+
+    // If suggestedTime is within 2 hours → "Perfect for now" variants
+    if (suggested) {
+      const hoursUntil = (new Date(suggested).getTime() - Date.now()) / (1000 * 60 * 60);
+      if (hoursUntil >= 0 && hoursUntil <= 2) {
+        if (cat.includes('coffee') || cat.includes('cafe')) return { icon: '☕', label: 'Perfect for now' };
+        if (cat.includes('dining') || cat.includes('restaurant') || cat.includes('food'))
+          return { icon: '🍽️', label: 'Great for now' };
+        return { icon: '⏰', label: 'Perfect timing' };
+      }
+    }
+
+    // Time-of-day contextual labels
+    if (hour >= 5 && hour < 12) {
+      if (cat.includes('coffee') || cat.includes('cafe')) return { icon: '☕', label: 'Morning spot' };
+      if (cat.includes('fitness') || cat.includes('gym') || cat.includes('yoga')) return { icon: '💪', label: 'Morning workout' };
+      if (cat.includes('breakfast') || cat.includes('brunch')) return { icon: '🍳', label: 'Brunch spot' };
+    } else if (hour >= 12 && hour < 17) {
+      if (cat.includes('dining') || cat.includes('restaurant') || cat.includes('food')) return { icon: '🍽️', label: 'Lunch spot' };
+      if (cat.includes('coffee') || cat.includes('cafe')) return { icon: '☕', label: 'Afternoon pick-me-up' };
+      if (cat.includes('shopping') || cat.includes('retail')) return { icon: '🛍️', label: 'Afternoon find' };
+    } else if (hour >= 17 && hour < 21) {
+      if (cat.includes('dining') || cat.includes('restaurant') || cat.includes('food')) return { icon: '🍽️', label: 'Dinner spot' };
+      if (cat.includes('bar') || cat.includes('nightlife') || cat.includes('pub')) return { icon: '🍸', label: 'Tonight' };
+      if (cat.includes('entertainment') || cat.includes('music') || cat.includes('concert')) return { icon: '🎵', label: 'Tonight' };
+    } else {
+      if (cat.includes('bar') || cat.includes('nightlife') || cat.includes('pub')) return { icon: '🌙', label: 'Late night' };
+    }
+
+    return null; // No match for this category at this time → no chip
+  };
+
+  const timeContext = getTimeContextLabel();
 
   // Format event date for badge
   const formatEventDate = (isoString: string) => {
@@ -671,8 +703,8 @@ function ActivityCardIntelligentComponent({
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
-            {/* AI Match Badge (subtle, for strong matches) */}
-            {isStrongMatch && !isEvent && (
+            {/* AI Match Badge (subtle, for strong matches — hidden in Explore mode) */}
+            {isStrongMatch && !isEvent && discoveryMode !== 'explore' && (
               <View style={styles.aiMatchBadge}>
                 <LinearGradient
                   colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
@@ -703,16 +735,16 @@ function ActivityCardIntelligentComponent({
               </View>
             )}
 
-            {/* Loop Pick Badge (curated recommendations) */}
-            {isCurated && !isEvent && (
+            {/* Loop Pick Badge (curated recommendations — For You only) */}
+            {isCurated && !isEvent && discoveryMode !== 'explore' && (
               <View style={styles.loopPickBadge}>
                 <Ionicons name="star" size={11} color="#FFFFFF" />
                 <Text style={styles.loopPickText}>Loop Pick</Text>
               </View>
             )}
 
-            {/* Trending Badge (high engagement activities) */}
-            {isTrending && !isEvent && !isStrongMatch && !isCurated && (
+            {/* Trending Badge (high engagement — Explore mode only) */}
+            {isTrending && !isEvent && !isCurated && discoveryMode === 'explore' && (
               <View style={styles.trendingBadge}>
                 <Ionicons name="flame" size={12} color="#FFFFFF" />
                 <Text style={styles.trendingText}>Trending</Text>
@@ -764,6 +796,15 @@ function ActivityCardIntelligentComponent({
             <Text style={[styles.metaText, { color: colors.textSecondary }]}>
               {getDistanceText(recommendation.distance)}
             </Text>
+            {/* Time context chip (e.g. "☕ Morning spot", "🍽️ Dinner spot") */}
+            {timeContext && !isGroupPlan && (
+              <>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
+                <Text style={[styles.timeChip, { color: colors.primary }]}>
+                  {timeContext.icon} {timeContext.label}
+                </Text>
+              </>
+            )}
             {/* Show group plan time if applicable */}
             {isGroupPlan && groupPlan?.suggestedTime && (
               <>
@@ -884,7 +925,7 @@ function ActivityCardIntelligentComponent({
           >
             <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
             <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
-              {formatCount(mockComments)}
+              {formatCount(displayComments)}
             </Text>
           </Pressable>
 
@@ -1245,6 +1286,10 @@ const styles = StyleSheet.create({
   metaDot: {
     fontSize: 12,
     marginHorizontal: 6,
+  },
+  timeChip: {
+    fontSize: 13,
+    fontWeight: '600',
   },
   aiExplanation: {
     flexDirection: 'row',

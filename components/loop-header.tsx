@@ -279,31 +279,23 @@ export function LoopHeader({
           <View style={styles.rightIconRow}>
             <TouchableOpacity
               onPress={() => {
+                console.log('🔍 Filter button pressed, onSearchPress:', !!onSearchPress);
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onSearchPress?.();
               }}
+              activeOpacity={0.6}
               style={styles.filterButton}
             >
-              {colorScheme === 'dark' ? (
-                <LinearGradient
-                  colors={['#4A4A4C', '#2A2A2C', '#4A4A4C', '#2A2A2C']}
-                  locations={[0, 0.3, 0.55, 0.85]}
-                  start={{ x: 0.15, y: 0 }}
-                  end={{ x: 0.85, y: 1 }}
-                  style={styles.filterCircleGradient}
-                >
-                  <View style={styles.filterCircleInner}>
-                    <FilterIcon color={colors.text} />
-                  </View>
-                </LinearGradient>
-              ) : (
-                <View style={[styles.filterCircle, {
-                  backgroundColor: 'rgba(229,229,234,0.65)',
-                  borderColor: 'rgba(0,0,0,0.08)',
-                }]}>
-                  <FilterIcon color={colors.text} />
-                </View>
-              )}
+              <View style={[styles.filterCircle, {
+                backgroundColor: colorScheme === 'dark'
+                  ? 'rgba(34,34,36,0.85)'
+                  : 'rgba(229,229,234,0.65)',
+                borderColor: colorScheme === 'dark'
+                  ? 'rgba(255,255,255,0.06)'
+                  : 'rgba(0,0,0,0.08)',
+              }]}>
+                <FilterIcon color={colors.text} />
+              </View>
               {/* Active filter dot indicator */}
               {hasActiveFilters && (
                 <View style={styles.filterDot} />
@@ -338,26 +330,16 @@ export function LoopHeader({
             }}
             style={styles.filterButton}
           >
-            {colorScheme === 'dark' ? (
-              <LinearGradient
-                colors={['#4A4A4C', '#2A2A2C', '#4A4A4C', '#2A2A2C']}
-                locations={[0, 0.3, 0.55, 0.85]}
-                start={{ x: 0.15, y: 0 }}
-                end={{ x: 0.85, y: 1 }}
-                style={styles.filterCircleGradient}
-              >
-                <View style={styles.filterCircleInner}>
-                  <FilterIcon color={colors.text} />
-                </View>
-              </LinearGradient>
-            ) : (
-              <View style={[styles.filterCircle, {
-                backgroundColor: 'rgba(229,229,234,0.65)',
-                borderColor: 'rgba(0,0,0,0.08)',
-              }]}>
-                <FilterIcon color={colors.text} />
-              </View>
-            )}
+            <View style={[styles.filterCircle, {
+              backgroundColor: colorScheme === 'dark'
+                ? 'rgba(34,34,36,0.85)'
+                : 'rgba(229,229,234,0.65)',
+              borderColor: colorScheme === 'dark'
+                ? 'rgba(255,255,255,0.06)'
+                : 'rgba(0,0,0,0.08)',
+            }]}>
+              <FilterIcon color={colors.text} />
+            </View>
           </TouchableOpacity>
         ) : showAddButton ? (
           <TouchableOpacity
@@ -532,21 +514,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-  },
-  filterCircleGradient: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  filterCircleInner: {
-    width: 33,
-    height: 33,
-    borderRadius: 16.5,
-    backgroundColor: 'rgba(28,28,30,0.75)',
-    alignItems: 'center',
-    justifyContent: 'center',
   },
   // Active filter dot on filter circle
   filterDot: {

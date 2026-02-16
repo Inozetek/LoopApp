@@ -281,6 +281,195 @@ describe('Activity Card Intelligent - Pure Logic', () => {
     });
   });
 
+  describe('Match Badge Visibility (discoveryMode gating)', () => {
+    /**
+     * Mirrors badge render condition from activity-card-intelligent.tsx:
+     * isStrongMatch && !isEvent && discoveryMode !== 'explore'
+     */
+    function shouldShowMatchBadge(
+      isStrongMatch: boolean,
+      isEvent: boolean,
+      discoveryMode?: 'for_you' | 'explore'
+    ): boolean {
+      return isStrongMatch && !isEvent && discoveryMode !== 'explore';
+    }
+
+    it('should show badge for strong match in For You mode', () => {
+      expect(shouldShowMatchBadge(true, false, 'for_you')).toBe(true);
+    });
+
+    it('should show badge for strong match when discoveryMode is undefined', () => {
+      expect(shouldShowMatchBadge(true, false, undefined)).toBe(true);
+    });
+
+    it('should hide badge in Explore mode even for strong matches', () => {
+      expect(shouldShowMatchBadge(true, false, 'explore')).toBe(false);
+    });
+
+    it('should hide badge for events regardless of mode', () => {
+      expect(shouldShowMatchBadge(true, true, 'for_you')).toBe(false);
+      expect(shouldShowMatchBadge(true, true, 'explore')).toBe(false);
+    });
+
+    it('should hide badge for weak matches regardless of mode', () => {
+      expect(shouldShowMatchBadge(false, false, 'for_you')).toBe(false);
+      expect(shouldShowMatchBadge(false, false, 'explore')).toBe(false);
+    });
+  });
+
+  describe('Time Context Label', () => {
+    /**
+     * Mirrors getTimeContextLabel from activity-card-intelligent.tsx
+     * No longer depends on timeScore — computed fresh from category + current hour.
+     * Hidden in Explore mode (personalization signal).
+     */
+    function getTimeContextLabel(
+      category: string,
+      currentHour: number,
+      discoveryMode?: 'for_you' | 'explore',
+      suggestedTime?: Date
+    ): { icon: string; label: string } | null {
+      if (discoveryMode === 'explore') return null;
+
+      const cat = category.toLowerCase();
+
+      // If suggestedTime is within 2 hours → "Perfect for now" variants
+      if (suggestedTime) {
+        const hoursUntil = (new Date(suggestedTime).getTime() - Date.now()) / (1000 * 60 * 60);
+        if (hoursUntil >= 0 && hoursUntil <= 2) {
+          if (cat.includes('coffee') || cat.includes('cafe')) return { icon: '☕', label: 'Perfect for now' };
+          if (cat.includes('dining') || cat.includes('restaurant') || cat.includes('food'))
+            return { icon: '🍽️', label: 'Great for now' };
+          return { icon: '⏰', label: 'Perfect timing' };
+        }
+      }
+
+      // Time-of-day contextual labels
+      if (currentHour >= 5 && currentHour < 12) {
+        if (cat.includes('coffee') || cat.includes('cafe')) return { icon: '☕', label: 'Morning spot' };
+        if (cat.includes('fitness') || cat.includes('gym') || cat.includes('yoga')) return { icon: '💪', label: 'Morning workout' };
+        if (cat.includes('breakfast') || cat.includes('brunch')) return { icon: '🍳', label: 'Brunch spot' };
+      } else if (currentHour >= 12 && currentHour < 17) {
+        if (cat.includes('dining') || cat.includes('restaurant') || cat.includes('food')) return { icon: '🍽️', label: 'Lunch spot' };
+        if (cat.includes('coffee') || cat.includes('cafe')) return { icon: '☕', label: 'Afternoon pick-me-up' };
+        if (cat.includes('shopping') || cat.includes('retail')) return { icon: '🛍️', label: 'Afternoon find' };
+      } else if (currentHour >= 17 && currentHour < 21) {
+        if (cat.includes('dining') || cat.includes('restaurant') || cat.includes('food')) return { icon: '🍽️', label: 'Dinner spot' };
+        if (cat.includes('bar') || cat.includes('nightlife') || cat.includes('pub')) return { icon: '🍸', label: 'Tonight' };
+        if (cat.includes('entertainment') || cat.includes('music') || cat.includes('concert')) return { icon: '🎵', label: 'Tonight' };
+      } else {
+        if (cat.includes('bar') || cat.includes('nightlife') || cat.includes('pub')) return { icon: '🌙', label: 'Late night' };
+      }
+
+      return null; // No match for this category at this time → no chip
+    }
+
+    // Explore mode gating
+    it('should return null in Explore mode regardless of category/time', () => {
+      expect(getTimeContextLabel('coffee', 8, 'explore')).toBeNull();
+      expect(getTimeContextLabel('bar', 23, 'explore')).toBeNull();
+      expect(getTimeContextLabel('dining', 19, 'explore')).toBeNull();
+    });
+
+    // Morning (5-11)
+    it('should return "Morning spot" for coffee in the morning', () => {
+      const result = getTimeContextLabel('coffee', 8, 'for_you');
+      expect(result).toEqual({ icon: '☕', label: 'Morning spot' });
+    });
+
+    it('should return "Morning workout" for fitness in the morning', () => {
+      const result = getTimeContextLabel('fitness', 7, 'for_you');
+      expect(result).toEqual({ icon: '💪', label: 'Morning workout' });
+    });
+
+    it('should return "Brunch spot" for brunch in the morning', () => {
+      const result = getTimeContextLabel('breakfast & brunch', 10, 'for_you');
+      expect(result).toEqual({ icon: '🍳', label: 'Brunch spot' });
+    });
+
+    // Afternoon (12-16)
+    it('should return "Lunch spot" for dining at noon', () => {
+      const result = getTimeContextLabel('dining', 12, 'for_you');
+      expect(result).toEqual({ icon: '🍽️', label: 'Lunch spot' });
+    });
+
+    it('should return "Afternoon pick-me-up" for coffee in afternoon', () => {
+      const result = getTimeContextLabel('cafe', 14, 'for_you');
+      expect(result).toEqual({ icon: '☕', label: 'Afternoon pick-me-up' });
+    });
+
+    it('should return "Afternoon find" for shopping in afternoon', () => {
+      const result = getTimeContextLabel('shopping', 15, 'for_you');
+      expect(result).toEqual({ icon: '🛍️', label: 'Afternoon find' });
+    });
+
+    // Evening (17-20)
+    it('should return "Dinner spot" for restaurant in evening', () => {
+      const result = getTimeContextLabel('restaurant', 19, 'for_you');
+      expect(result).toEqual({ icon: '🍽️', label: 'Dinner spot' });
+    });
+
+    it('should return "Tonight" for bar in evening', () => {
+      const result = getTimeContextLabel('bar', 20, 'for_you');
+      expect(result).toEqual({ icon: '🍸', label: 'Tonight' });
+    });
+
+    it('should return "Tonight" for entertainment in evening', () => {
+      const result = getTimeContextLabel('entertainment', 19, 'for_you');
+      expect(result).toEqual({ icon: '🎵', label: 'Tonight' });
+    });
+
+    // Late night (21+)
+    it('should return "Late night" for nightlife after 9pm', () => {
+      const result = getTimeContextLabel('nightlife', 23, 'for_you');
+      expect(result).toEqual({ icon: '🌙', label: 'Late night' });
+    });
+
+    // No match — unmatched categories return null (no generic fallback)
+    it('should return null for unmatched category at any time', () => {
+      expect(getTimeContextLabel('parks', 14, 'for_you')).toBeNull();
+      expect(getTimeContextLabel('parks', 8, 'for_you')).toBeNull();
+    });
+
+    it('should return null for unmatched category in early morning hours', () => {
+      const result = getTimeContextLabel('shopping', 3, 'for_you');
+      expect(result).toBeNull();
+    });
+
+    // Works without discoveryMode (defaults to showing chips)
+    it('should show chips when discoveryMode is undefined', () => {
+      const result = getTimeContextLabel('coffee', 8, undefined);
+      expect(result).toEqual({ icon: '☕', label: 'Morning spot' });
+    });
+  });
+
+  describe('Strong Match Badge Threshold', () => {
+    /**
+     * Mirrors isStrongMatch from activity-card-intelligent.tsx
+     * Threshold lowered from 70 → 55 so more For You cards show
+     * the AI match badge (most personalized recs score 55-90).
+     */
+    function isStrongMatch(matchPercentage: number): boolean {
+      return matchPercentage >= 55;
+    }
+
+    it('should be strong match at exactly 55%', () => {
+      expect(isStrongMatch(55)).toBe(true);
+    });
+
+    it('should be strong match for high scores', () => {
+      expect(isStrongMatch(70)).toBe(true);
+      expect(isStrongMatch(85)).toBe(true);
+      expect(isStrongMatch(99)).toBe(true);
+    });
+
+    it('should NOT be strong match below 55%', () => {
+      expect(isStrongMatch(54)).toBe(false);
+      expect(isStrongMatch(30)).toBe(false);
+      expect(isStrongMatch(0)).toBe(false);
+    });
+  });
+
   describe('Match Score Tier Logic', () => {
     /**
      * Mirrors MatchScoreColors tier selection from activity-card-intelligent.tsx
