@@ -1,27 +1,23 @@
 /**
  * Loop Header Component
  *
- * Snapchat-style header with centered Loop logo
- * Appears at the top of all main screens
- * Features: Swipe-down gesture to open dashboard, notification badge, blinking arrow hint
+ * Redesigned header: [Avatar] [Loop Logo] [Search]
+ * - Left: Profile avatar with notification badge overlay
+ * - Center: Loop logo (tap to scroll to top / refresh)
+ * - Right: Search icon (opens AdvancedSearchModal)
  */
 
-import React, { useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions, Alert } from 'react-native';
+import React, { useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
-  withSpring,
   withTiming,
   withSequence,
   withRepeat,
-  runOnJS,
-  interpolate,
-  Extrapolate,
   Easing,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -31,54 +27,88 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
-import { FilterBarsIcon } from '@/components/icons/filter-bars-icon';
-import { AnimatedMenuButton } from '@/components/animated-menu-button';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
+function FilterIcon({ color }: { color: string }) {
+  return (
+    <View style={filterIconStyles.container}>
+      <View style={[filterIconStyles.line, filterIconStyles.lineTop, { backgroundColor: color }]} />
+      <View style={[filterIconStyles.line, filterIconStyles.lineMid, { backgroundColor: color }]} />
+      <View style={[filterIconStyles.line, filterIconStyles.lineBot, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+const filterIconStyles = StyleSheet.create({
+  container: {
+    width: 18,
+    alignItems: 'center',
+    gap: 2,
+  },
+  line: {
+    borderRadius: 0.5,
+  },
+  lineTop: { width: 17, height: 1 },
+  lineMid: { width: 15, height: 1 },
+  lineBot: { width: 12, height: 1 },
+});
+
 interface LoopHeaderProps {
   showBackButton?: boolean;
-  onBackPress?: () => void; // Custom back navigation handler
-  showProfileButton?: boolean;
+  onBackPress?: () => void;
+  // Profile avatar (left side) — opens Profile Drawer
+  showProfileAvatar?: boolean;
   onProfilePress?: () => void;
-  showSettingsButton?: boolean;
-  onSettingsPress?: () => void;
-  // New: Menu button (left side) - hamburger icon for main menu
+  // Legacy: Menu button support for non-home screens
   showMenuButton?: boolean;
   onMenuPress?: () => void;
-  isMenuOpen?: boolean; // For hamburger-to-chevron morphing animation
-  // Notification bell (left side, alternative to menu)
+  isMenuOpen?: boolean;
+  // Search button (right side) — opens AdvancedSearchModal
+  showSearchButton?: boolean;
+  onSearchPress?: () => void;
+  hasActiveFilters?: boolean; // Shows dot indicator when filters are active
+  // Legacy: Filter button support for screens that haven't migrated
+  showFilterButton?: boolean;
+  onFilterPress?: (position: { x: number; y: number }) => void;
+  isFilterActive?: boolean;
+  // Legacy: Other buttons
+  showSettingsButton?: boolean;
+  onSettingsPress?: () => void;
   showNotificationBell?: boolean;
   onNotificationPress?: () => void;
-  // Filter button (right side) - iOS 26 Liquid Glass style
-  showFilterButton?: boolean;
-  onFilterPress?: (position: { x: number; y: number }) => void; // Returns button position for popover anchor
-  isFilterActive?: boolean; // Controls rotation state
-  // Legacy: Plus/Add button (right side) - deprecated, use showFilterButton
   showAddButton?: boolean;
   onAddPress?: () => void;
   rightAction?: React.ReactNode;
   onDashboardOpen?: () => void;
-  onLogoPress?: () => void; // Open advanced search/filters
+  onLogoPress?: () => void;
   notificationCount?: number;
-  isLoading?: boolean; // Trigger continuous shimmer when loading
+  isLoading?: boolean;
+  showProfileButton?: boolean;
+  // Chat button (right side) — navigates to chat list
+  showChatButton?: boolean;
+  onChatPress?: () => void;
+  chatBadgeCount?: number;
 }
 
 export function LoopHeader({
   showBackButton = false,
   onBackPress,
-  showProfileButton = false,
+  showProfileAvatar = false,
   onProfilePress,
-  showSettingsButton = false,
-  onSettingsPress,
   showMenuButton = false,
   onMenuPress,
   isMenuOpen = false,
-  showNotificationBell = false,
-  onNotificationPress,
+  showSearchButton = false,
+  onSearchPress,
+  hasActiveFilters = false,
   showFilterButton = false,
   onFilterPress,
   isFilterActive = false,
+  showSettingsButton = false,
+  onSettingsPress,
+  showNotificationBell = false,
+  onNotificationPress,
   showAddButton = false,
   onAddPress,
   rightAction,
@@ -86,104 +116,37 @@ export function LoopHeader({
   onLogoPress,
   notificationCount = 0,
   isLoading = false,
+  showProfileButton = false,
+  showChatButton = false,
+  onChatPress,
+  chatBadgeCount = 0,
 }: LoopHeaderProps) {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
-  const { signOut, user } = useAuth();
-
-  // Animated values for swipe gesture
-  const translateY = useSharedValue(0);
-  const isDragging = useSharedValue(false);
-
-  // Blinking arrow animation - shows on load and when there are notifications
-  const arrowOpacity = useSharedValue(0);
-  const [hasInitialBlink, setHasInitialBlink] = React.useState(false);
+  const { user } = useAuth();
 
   // Shimmer animation for border glow effect
   const shimmerTranslate = useSharedValue(-SCREEN_WIDTH);
 
-  // Filter icon rotation animation (iOS 2026 style)
-  const filterRotation = useSharedValue(0);
-
-  // Update filter rotation when isFilterActive changes
-  useEffect(() => {
-    filterRotation.value = withSpring(isFilterActive ? 180 : 0, {
-      damping: 15,
-      stiffness: 150,
-    });
-  }, [isFilterActive]);
-
-  // Filter icon animated style
-  const filterIconStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${filterRotation.value}deg` }],
-  }));
-
-  // Ref for filter button to measure position for popover anchor
-  const filterButtonRef = useRef<View>(null);
-
-  useEffect(() => {
-    // Function to start the blinking animation
-    const startBlinking = () => {
-      arrowOpacity.value = withSequence(
-        withTiming(1, { duration: 300 }), // Fade in
-        withRepeat(
-          withSequence(
-            withTiming(0.4, { duration: 500 }),
-            withTiming(1, { duration: 500 })
-          ),
-          4, // Blink 4 times over ~4 seconds
-          false
-        ),
-        withTiming(0, { duration: 300 }) // Fade out
-      );
-    };
-
-    // Always blink on initial mount (show users the feature exists)
-    if (!hasInitialBlink && onDashboardOpen) {
-      setHasInitialBlink(true);
-      setTimeout(() => startBlinking(), 300);
-    }
-
-    // Continue blinking every 60 seconds if there are notifications
-    if (notificationCount > 0) {
-      const interval = setInterval(() => {
-        startBlinking();
-      }, 60000); // 60 seconds
-
-      return () => clearInterval(interval);
-    }
-  }, [notificationCount, hasInitialBlink, onDashboardOpen]);
-
-  // Shimmer effect - subtle glow that moves across border periodically
+  // Shimmer effect
   useEffect(() => {
     const runShimmer = () => {
       shimmerTranslate.value = -SCREEN_WIDTH;
       shimmerTranslate.value = withTiming(SCREEN_WIDTH, {
-        duration: 1500, // RESTORED: 1500ms for smoother, more elegant shimmer (not 1000ms)
+        duration: 1500,
         easing: Easing.bezier(0.4, 0.0, 0.2, 1),
       });
     };
 
     if (isLoading) {
-      // Increased frequency when loading - repeat every 2.5 seconds
-      // This allows the animation to complete fully (1500ms) before starting again
-      const interval = setInterval(() => {
-        runShimmer();
-      }, 2500);
-
-      // Run immediately
+      const interval = setInterval(() => runShimmer(), 2500);
       runShimmer();
-
       return () => clearInterval(interval);
     } else {
-      // Normal shimmer - every 12 seconds
       const initialTimeout = setTimeout(() => runShimmer(), 1000);
-      const interval = setInterval(() => {
-        runShimmer();
-      }, 12000);
-
+      const interval = setInterval(() => runShimmer(), 12000);
       return () => {
         clearTimeout(initialTimeout);
         clearInterval(interval);
@@ -194,94 +157,23 @@ export function LoopHeader({
   const handleLogoPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (onLogoPress) {
-      // Custom action (e.g., open advanced search)
       onLogoPress();
     } else {
-      // Default: return to For You feed (like Snapchat)
       router.push('/(tabs)');
     }
   };
 
-  const handleDashboardOpen = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    if (onDashboardOpen) {
-      onDashboardOpen();
-    }
-  };
-
-  const handleSettingsPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    if (onSettingsPress) {
-      onSettingsPress();
-      return;
-    }
-
-    // Default settings menu with logout option
-    Alert.alert(
-      'Settings',
-      user?.name ? `Signed in as ${user.name}` : 'Account Options',
-      [
-        {
-          text: 'Logout',
-          style: 'destructive',
-          onPress: async () => {
-            const { error } = await signOut();
-            if (error) {
-              Alert.alert('Error', 'Failed to logout. Please try again.');
-            } else {
-              router.replace('/auth/login');
-            }
-          },
-        },
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-      ]
-    );
-  };
-
-  // Swipe-down gesture from logo area
-  const panGesture = Gesture.Pan()
-    .onStart(() => {
-      isDragging.value = true;
-    })
-    .onUpdate((event) => {
-      // Only allow downward swipes
-      if (event.translationY > 0) {
-        translateY.value = event.translationY * 0.5; // Dampening effect
-      }
-    })
-    .onEnd((event) => {
-      isDragging.value = false;
-
-      // Trigger dashboard if swiped down more than 50px or fast velocity
-      if (event.translationY > 50 || event.velocityY > 800) {
-        runOnJS(handleDashboardOpen)();
-      }
-
-      // Reset position
-      translateY.value = withSpring(0, {
-        damping: 15,
-        stiffness: 150,
-      });
-    })
-    .runOnJS(true);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: translateY.value }],
-  }));
-
-  // Blinking arrow style
-  const blinkingArrowStyle = useAnimatedStyle(() => ({
-    opacity: arrowOpacity.value,
-  }));
-
-  // Shimmer style
   const shimmerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: shimmerTranslate.value }],
   }));
+
+  // Get user initials for avatar fallback
+  const getInitials = () => {
+    if (!user?.name) return '?';
+    const parts = user.name.split(' ');
+    if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    return parts[0][0].toUpperCase();
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
@@ -301,13 +193,41 @@ export function LoopHeader({
           >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
+        ) : showProfileAvatar ? (
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onProfilePress?.();
+            }}
+            style={styles.avatarButton}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.avatarContainer, { backgroundColor: BrandColors.loopBlue + '20' }]}>
+              {user?.profile_picture_url ? (
+                <Image source={{ uri: user.profile_picture_url }} style={styles.avatar} />
+              ) : (
+                <Text style={styles.avatarInitials}>{getInitials()}</Text>
+              )}
+            </View>
+            {/* Notification badge on avatar */}
+            {notificationCount > 0 && (
+              <View style={styles.avatarBadge}>
+                <Text style={styles.avatarBadgeText}>
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </Text>
+              </View>
+            )}
+          </TouchableOpacity>
         ) : showMenuButton ? (
-          <AnimatedMenuButton
-            isOpen={isMenuOpen}
-            onPress={() => onMenuPress?.()}
-            color={colors.text}
-            size={26}
-          />
+          <TouchableOpacity
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onMenuPress?.();
+            }}
+            style={styles.iconButton}
+          >
+            <Ionicons name={isMenuOpen ? 'close' : 'menu'} size={26} color={colors.text} />
+          </TouchableOpacity>
         ) : showNotificationBell ? (
           <TouchableOpacity
             onPress={() => {
@@ -340,62 +260,104 @@ export function LoopHeader({
         ) : null}
       </View>
 
-      {/* Center - Loop Logo with Swipe Gesture */}
-      <GestureDetector gesture={panGesture}>
-        <Animated.View style={[styles.logoContainer, animatedStyle]}>
-          <TouchableOpacity
-            onPress={handleLogoPress}
-            activeOpacity={0.7}
-            style={styles.logoTouchable}
-          >
-            <LoopLogoVariant size={22} flat />
-
-            {/* Notification Badge */}
-            {notificationCount > 0 && (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>
-                  {notificationCount > 9 ? '9+' : notificationCount}
-                </Text>
-              </View>
-            )}
-
-            {/* Blinking Arrow Hint (appears every 1 min for 5 sec) */}
-            {onDashboardOpen && (
-              <Animated.View style={[styles.blinkingArrow, blinkingArrowStyle]}>
-                <Ionicons name="chevron-down" size={16} color={BrandColors.loopBlue} />
-              </Animated.View>
-            )}
-          </TouchableOpacity>
-        </Animated.View>
-      </GestureDetector>
+      {/* Center - Loop Logo (tap to scroll top / refresh) */}
+      <View style={styles.logoContainer}>
+        <TouchableOpacity
+          onPress={handleLogoPress}
+          activeOpacity={0.7}
+          style={styles.logoTouchable}
+        >
+          <LoopLogoVariant size={22} flat />
+        </TouchableOpacity>
+      </View>
 
       {/* Right Side */}
       <View style={styles.rightSection}>
         {rightAction ? (
           rightAction
+        ) : showSearchButton ? (
+          <View style={styles.rightIconRow}>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onSearchPress?.();
+              }}
+              style={styles.filterButton}
+            >
+              {colorScheme === 'dark' ? (
+                <LinearGradient
+                  colors={['#4A4A4C', '#2A2A2C', '#4A4A4C', '#2A2A2C']}
+                  locations={[0, 0.3, 0.55, 0.85]}
+                  start={{ x: 0.15, y: 0 }}
+                  end={{ x: 0.85, y: 1 }}
+                  style={styles.filterCircleGradient}
+                >
+                  <View style={styles.filterCircleInner}>
+                    <FilterIcon color={colors.text} />
+                  </View>
+                </LinearGradient>
+              ) : (
+                <View style={[styles.filterCircle, {
+                  backgroundColor: 'rgba(229,229,234,0.65)',
+                  borderColor: 'rgba(0,0,0,0.08)',
+                }]}>
+                  <FilterIcon color={colors.text} />
+                </View>
+              )}
+              {/* Active filter dot indicator */}
+              {hasActiveFilters && (
+                <View style={styles.filterDot} />
+              )}
+            </TouchableOpacity>
+            {showChatButton && (
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onChatPress?.();
+                }}
+                style={styles.iconButton}
+              >
+                <View>
+                  <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.text} />
+                  {chatBadgeCount > 0 && (
+                    <View style={styles.chatBadge}>
+                      <Text style={styles.chatBadgeText}>
+                        {chatBadgeCount > 9 ? '9+' : chatBadgeCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </TouchableOpacity>
+            )}
+          </View>
         ) : showFilterButton ? (
           <TouchableOpacity
-            ref={filterButtonRef as any}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              // Measure button position for popover anchor
-              if (filterButtonRef.current) {
-                filterButtonRef.current.measureInWindow((x, y, width, height) => {
-                  // Fallback to reasonable default if measurement returns 0
-                  const anchorX = x > 0 ? x + width : SCREEN_WIDTH - 40;
-                  const anchorY = y > 0 ? y + height : 100;
-                  onFilterPress?.({ x: anchorX, y: anchorY });
-                });
-              } else {
-                // Fallback if ref is not available
-                onFilterPress?.({ x: SCREEN_WIDTH - 40, y: 100 });
-              }
+              onFilterPress?.({ x: SCREEN_WIDTH - 40, y: 100 });
             }}
-            style={styles.iconButton}
+            style={styles.filterButton}
           >
-            <Animated.View style={filterIconStyle}>
-              <FilterBarsIcon size={26} color={colors.text} />
-            </Animated.View>
+            {colorScheme === 'dark' ? (
+              <LinearGradient
+                colors={['#4A4A4C', '#2A2A2C', '#4A4A4C', '#2A2A2C']}
+                locations={[0, 0.3, 0.55, 0.85]}
+                start={{ x: 0.15, y: 0 }}
+                end={{ x: 0.85, y: 1 }}
+                style={styles.filterCircleGradient}
+              >
+                <View style={styles.filterCircleInner}>
+                  <FilterIcon color={colors.text} />
+                </View>
+              </LinearGradient>
+            ) : (
+              <View style={[styles.filterCircle, {
+                backgroundColor: 'rgba(229,229,234,0.65)',
+                borderColor: 'rgba(0,0,0,0.08)',
+              }]}>
+                <FilterIcon color={colors.text} />
+              </View>
+            )}
           </TouchableOpacity>
         ) : showAddButton ? (
           <TouchableOpacity
@@ -409,7 +371,10 @@ export function LoopHeader({
           </TouchableOpacity>
         ) : showSettingsButton ? (
           <TouchableOpacity
-            onPress={handleSettingsPress}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onSettingsPress?.();
+            }}
             style={styles.iconButton}
           >
             <Ionicons name="settings-outline" size={24} color={colors.text} />
@@ -463,44 +428,80 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  logo: {
-    height: 32,
-    width: 80,
-  },
-  logoText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-  },
   rightSection: {
     flex: 1,
     alignItems: 'flex-end',
   },
+  rightIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   iconButton: {
     padding: Spacing.sm,
   },
-  // Notification Badge (on logo)
-  notificationBadge: {
+  chatBadge: {
     position: 'absolute',
-    top: -6,
-    right: -12,
-    backgroundColor: BrandColors.like,
-    borderRadius: 10,
-    minWidth: 20,
-    height: 20,
+    top: -4,
+    right: -4,
+    backgroundColor: BrandColors.error,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 6,
-    borderWidth: 2,
-    borderColor: '#FFFFFF',
+    paddingHorizontal: 4,
   },
-  notificationBadgeText: {
+  chatBadgeText: {
     color: '#FFFFFF',
-    fontSize: 11,
+    fontSize: 9,
     fontWeight: '700',
     includeFontPadding: false,
   },
-  // Bell icon badge (smaller, for bell icon)
+  // Profile avatar button
+  avatarButton: {
+    padding: Spacing.xs,
+    position: 'relative',
+  },
+  avatarContainer: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  avatar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+  },
+  avatarInitials: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: BrandColors.loopBlue,
+    includeFontPadding: false,
+  },
+  avatarBadge: {
+    position: 'absolute',
+    top: 0,
+    right: -2,
+    backgroundColor: BrandColors.error,
+    borderRadius: 8,
+    minWidth: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
+  },
+  avatarBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
+    includeFontPadding: false,
+  },
+  // Bell icon badge
   bellBadge: {
     position: 'absolute',
     top: -4,
@@ -519,11 +520,45 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     includeFontPadding: false,
   },
-  // Blinking Arrow (larger, more prominent)
-  blinkingArrow: {
+  // Circular filter button
+  filterButton: {
+    padding: Spacing.xs,
+    position: 'relative',
+  },
+  filterCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+  },
+  filterCircleGradient: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterCircleInner: {
+    width: 33,
+    height: 33,
+    borderRadius: 16.5,
+    backgroundColor: 'rgba(28,28,30,0.75)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  // Active filter dot on filter circle
+  filterDot: {
     position: 'absolute',
-    bottom: -16,
-    alignSelf: 'center',
+    top: -1,
+    right: 1,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: BrandColors.loopBlue,
+    borderWidth: 1.5,
+    borderColor: '#FFFFFF',
   },
   // Shimmer glow effect
   shimmerContainer: {
@@ -535,7 +570,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   shimmerWrapper: {
-    width: SCREEN_WIDTH * 0.4, // Shimmer gradient width
+    width: SCREEN_WIDTH * 0.4,
     height: 1,
   },
   shimmerGradient: {
