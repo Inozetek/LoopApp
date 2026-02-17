@@ -356,6 +356,10 @@ export default function OnboardingScreen() {
         account_type: accountType,
         ...(birthYear ? { birth_year: birthYear } : {}),
         ...(ageBracket ? { age_bracket: ageBracket } : {}),
+        // Reverse trial: all new users start with 7-day Plus trial
+        subscription_tier: 'plus',
+        subscription_status: 'trialing',
+        subscription_end_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
         preferences: {
           budget: 50,
           max_distance_miles: 10,

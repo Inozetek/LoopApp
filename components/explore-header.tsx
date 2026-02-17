@@ -1,21 +1,36 @@
 /**
  * Explore Header Component
  *
- * Instagram-style header for Explore tab with full-width search bar.
- * Features:
- * - Search input with magnifying glass icon
- * - Filter button on right (opens category filters)
- * - Clean, minimal design
+ * Instagram-style header for Explore tab with full-width search bar
+ * and horizontal category filter chips.
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, Platform } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { Spacing, BorderRadius } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { CATEGORIES } from '@/components/category-selector';
+
+/** Short labels for category chips */
+const SHORT_LABELS: Record<string, string> = {
+  all: 'All',
+  dining: 'Dining',
+  coffee: 'Coffee',
+  nightlife: 'Bars',
+  entertainment: 'Fun',
+  culture: 'Arts',
+  shopping: 'Shopping',
+  fitness: 'Fitness',
+  outdoors: 'Outdoors',
+  events: 'Events',
+  family: 'Family',
+  attractions: 'Sights',
+  everyday: 'Everyday',
+};
 
 interface ExploreHeaderProps {
   searchQuery: string;
@@ -23,6 +38,10 @@ interface ExploreHeaderProps {
   onSearchSubmit?: () => void;
   onFilterPress?: () => void;
   placeholder?: string;
+  selectedCategory: string;
+  onCategoryChange: (categoryId: string) => void;
+  onSearchFocus?: () => void;
+  onSearchBlur?: () => void;
 }
 
 export function ExploreHeader({
@@ -31,6 +50,10 @@ export function ExploreHeader({
   onSearchSubmit,
   onFilterPress,
   placeholder = 'Search activities, places...',
+  selectedCategory,
+  onCategoryChange,
+  onSearchFocus,
+  onSearchBlur,
 }: ExploreHeaderProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -41,59 +64,104 @@ export function ExploreHeader({
     onFilterPress?.();
   };
 
+  const handleCategoryPress = (categoryId: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onCategoryChange(categoryId);
+  };
+
   return (
-    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
-      {/* Search Bar */}
-      <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-        <Ionicons name="search" size={20} color={colors.icon} style={styles.searchIcon} />
-        <TextInput
-          style={[styles.searchInput, { color: colors.text }]}
-          value={searchQuery}
-          onChangeText={onSearchChange}
-          onSubmitEditing={onSearchSubmit}
-          placeholder={placeholder}
-          placeholderTextColor={colors.icon}
-          returnKeyType="search"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {searchQuery.length > 0 && (
+    <View style={[styles.outerContainer, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
+      {/* Search Row */}
+      <View style={styles.searchRow}>
+        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+          <Ionicons name="search" size={20} color={colors.icon} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            value={searchQuery}
+            onChangeText={onSearchChange}
+            onSubmitEditing={onSearchSubmit}
+            onFocus={onSearchFocus}
+            onBlur={onSearchBlur}
+            placeholder={placeholder}
+            placeholderTextColor={colors.icon}
+            returnKeyType="search"
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                onSearchChange('');
+              }}
+              style={styles.clearButton}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Ionicons name="close-circle" size={18} color={colors.icon} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {onFilterPress && (
           <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onSearchChange('');
-            }}
-            style={styles.clearButton}
+            onPress={handleFilterPress}
+            style={[styles.filterButton, { backgroundColor: colors.card }]}
             hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <Ionicons name="close-circle" size={18} color={colors.icon} />
+            <Ionicons name="options-outline" size={24} color={colors.text} />
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Filter Button */}
-      {onFilterPress && (
-        <TouchableOpacity
-          onPress={handleFilterPress}
-          style={[styles.filterButton, { backgroundColor: colors.card }]}
-          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-        >
-          <Ionicons name="options-outline" size={24} color={colors.text} />
-        </TouchableOpacity>
-      )}
+      {/* Category Chips */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipsContainer}
+        style={styles.chipsScroll}
+      >
+        {CATEGORIES.map((cat) => {
+          const isSelected = cat.id === selectedCategory;
+          return (
+            <TouchableOpacity
+              key={cat.id}
+              testID={`category-chip-${cat.id}`}
+              onPress={() => handleCategoryPress(cat.id)}
+              activeOpacity={0.7}
+              style={[
+                styles.chip,
+                {
+                  backgroundColor: isSelected ? cat.color : colors.card,
+                  borderColor: isSelected ? cat.color : colors.card,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: isSelected ? '#FFFFFF' : colors.text },
+                ]}
+              >
+                {SHORT_LABELS[cat.id] || cat.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  outerContainer: {
+    paddingBottom: 0,
+  },
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
     gap: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   searchContainer: {
     flex: 1,
@@ -119,5 +187,25 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  chipsScroll: {
+    maxHeight: 36,
+  },
+  chipsContainer: {
+    paddingHorizontal: Spacing.md,
+    paddingBottom: Spacing.sm,
+    gap: Spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1,
+  },
+  chipText: {
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

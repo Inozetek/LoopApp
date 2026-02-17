@@ -20,7 +20,6 @@ import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 
-type DiscoveryMode = 'for_you' | 'explore';
 type DataSharingLevel = 'minimal' | 'standard' | 'full';
 
 export default function AIPreferencesScreen() {
@@ -32,7 +31,6 @@ export default function AIPreferencesScreen() {
 
   const prefs = user?.preferences || {};
 
-  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(prefs.discovery_mode === 'explore' ? 'explore' : 'for_you');
   const [friendSocialRecs, setFriendSocialRecs] = useState(prefs.friend_social_recs_enabled !== false);
   const [calendarLearning, setCalendarLearning] = useState(prefs.calendar_learning_enabled !== false);
   const [smartScheduling, setSmartScheduling] = useState(prefs.smart_scheduling_enabled ?? false);
@@ -41,11 +39,6 @@ export default function AIPreferencesScreen() {
   const persist = async (updates: Record<string, any>) => {
     const merged = { ...(user?.preferences || {}), ...updates };
     await updateUserProfile({ preferences: merged });
-  };
-
-  const handleDiscoveryMode = (mode: DiscoveryMode) => {
-    setDiscoveryMode(mode);
-    persist({ discovery_mode: mode });
   };
 
   const handleFriendSocialRecs = (val: boolean) => {
@@ -112,22 +105,6 @@ export default function AIPreferencesScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
-        {/* Discovery Mode */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Discovery Mode</Text>
-          <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
-            For You shows personalized picks. Explore surfaces more adventurous suggestions.
-          </Text>
-          <SegmentedControl
-            options={[
-              { label: 'For You', value: 'for_you' },
-              { label: 'Explore', value: 'explore' },
-            ]}
-            selected={discoveryMode}
-            onSelect={handleDiscoveryMode}
-          />
-        </View>
-
         {/* Friend Social Context */}
         <View style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <View style={styles.rowContent}>

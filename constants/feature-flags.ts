@@ -83,6 +83,20 @@ export const FEATURE_FLAGS = {
   ENABLE_MIXED_FEED: process.env.EXPO_PUBLIC_ENABLE_MIXED_FEED === 'true',
 
   /**
+   * Enable Loop Radar — proactive alerts for artists, categories, venues, and friend proximity.
+   * Phase 1: Artist + Category radars with Ticketmaster batch polling
+   * Phase 2: Venue radars + push notifications + Hot Drops
+   * Phase 3: Friend proximity radars
+   */
+  ENABLE_RADAR: process.env.EXPO_PUBLIC_ENABLE_RADAR === 'true',
+
+  /**
+   * Enable Hot Drops — time-limited business promotions with countdown + claims.
+   * Requires ENABLE_RADAR to be true for feed injection.
+   */
+  ENABLE_HOT_DROPS: process.env.EXPO_PUBLIC_ENABLE_HOT_DROPS === 'true',
+
+  /**
    * Enable YouTube-style bottom sheet menus
    * When disabled, falls back to existing modals
    */

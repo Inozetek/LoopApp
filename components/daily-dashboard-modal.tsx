@@ -26,7 +26,6 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { LoopMapView } from '@/components/loop-map-view';
-import { DiscoveryModeToggle, type DiscoveryMode } from '@/components/discovery-mode-toggle';
 import { CategorySelector } from '@/components/category-selector';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, Shadows } from '@/constants/brand';
@@ -44,8 +43,6 @@ interface DailyDashboardModalProps {
   isFirstLoadToday?: boolean;
 
   // Discovery controls
-  discoveryMode?: DiscoveryMode;
-  onDiscoveryModeChange?: (mode: DiscoveryMode) => void;
   selectedCategories?: string[];
   onCategoriesChange?: (categories: string[]) => void;
 
@@ -58,8 +55,6 @@ export function DailyDashboardModal({
   visible,
   onClose,
   isFirstLoadToday = false,
-  discoveryMode = 'for_you',
-  onDiscoveryModeChange,
   selectedCategories = [],
   onCategoriesChange,
   filters,
@@ -530,8 +525,6 @@ function MapView({ tasks, homeLocation, colors }: MapViewProps) {
 // ============================================================================
 
 interface ControlsViewProps {
-  discoveryMode: DiscoveryMode;
-  onDiscoveryModeChange?: (mode: DiscoveryMode) => void;
   selectedCategories: string[];
   onCategoriesChange?: (categories: string[]) => void;
   filters?: FeedFilters;
@@ -540,8 +533,6 @@ interface ControlsViewProps {
 }
 
 function ControlsView({
-  discoveryMode,
-  onDiscoveryModeChange,
   selectedCategories,
   onCategoriesChange,
   filters,
@@ -567,14 +558,6 @@ function ControlsView({
       <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginBottom: Spacing.xl }]}>
         Customize your recommendation feed with discovery mode and filters
       </Text>
-
-      {/* DISCOVERY MODE TOGGLE */}
-      {onDiscoveryModeChange && (
-        <DiscoveryModeToggle
-          mode={discoveryMode}
-          onModeChange={onDiscoveryModeChange}
-        />
-      )}
 
       {/* CATEGORY SELECTOR */}
       {onCategoriesChange && (

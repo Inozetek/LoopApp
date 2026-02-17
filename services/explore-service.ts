@@ -11,6 +11,7 @@ import type { Moment } from '@/types/moment';
 import type { ExploreItem, ExploreRowLayout, ExploreRow } from '@/types/explore';
 import { generateRecommendations, type RecommendationParams, type ScoredRecommendation } from '@/services/recommendations';
 import { getFriendMoments, getPlaceMoments } from '@/services/moments-service';
+import { CATEGORIES } from '@/components/category-selector';
 
 // Progressive distance tiers in miles
 export const DISTANCE_TIERS = [5, 10, 15, 25, 50, 100];
@@ -22,9 +23,33 @@ export interface ExploreBatch {
 }
 
 /**
+ * Map Google Places types[] to our category IDs
+ */
+export function mapToCategoryId(types: string[]): string | undefined {
+  if (!types || types.length === 0) return undefined;
+
+  const joined = types.join(' ').toLowerCase();
+
+  // Order matters: more specific matches first
+  if (joined.includes('cafe') || joined.includes('coffee')) return 'coffee';
+  if (joined.includes('restaurant') || joined.includes('food') || joined.includes('bakery') || joined.includes('meal')) return 'dining';
+  if (joined.includes('bar') || joined.includes('night_club') || joined.includes('nightclub') || joined.includes('liquor')) return 'nightlife';
+  if (joined.includes('museum') || joined.includes('art_gallery') || joined.includes('library') || joined.includes('cultural')) return 'culture';
+  if (joined.includes('gym') || joined.includes('fitness') || joined.includes('spa') || joined.includes('yoga') || joined.includes('wellness')) return 'fitness';
+  if (joined.includes('park') || joined.includes('campground') || joined.includes('hiking') || joined.includes('natural_feature')) return 'outdoors';
+  if (joined.includes('shopping') || joined.includes('store') || joined.includes('mall') || joined.includes('boutique')) return 'shopping';
+  if (joined.includes('movie') || joined.includes('bowling') || joined.includes('amusement') || joined.includes('game') || joined.includes('arcade') || joined.includes('entertainment')) return 'entertainment';
+  if (joined.includes('stadium') || joined.includes('event') || joined.includes('concert') || joined.includes('venue') || joined.includes('theater') || joined.includes('theatre')) return 'events';
+  if (joined.includes('zoo') || joined.includes('aquarium') || joined.includes('playground') || joined.includes('family')) return 'family';
+  if (joined.includes('tourist') || joined.includes('landmark') || joined.includes('monument') || joined.includes('attraction')) return 'attractions';
+
+  return undefined;
+}
+
+/**
  * Convert a ScoredRecommendation to an ExploreItem
  */
-function recommendationToExploreItem(rec: ScoredRecommendation): ExploreItem {
+export function recommendationToExploreItem(rec: ScoredRecommendation): ExploreItem {
   const place = rec.place;
   const apiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
   const photoRef = place?.photos?.[0]?.photo_reference;
@@ -74,6 +99,10 @@ function recommendationToExploreItem(rec: ScoredRecommendation): ExploreItem {
     title: place?.name || 'Unknown',
     subtitle: category,
     rating: place?.rating,
+    priceLevel: place?.price_level,
+    openNow: place?.opening_hours?.open_now,
+    reviewCount: place?.user_ratings_total,
+    categoryId: mapToCategoryId(types),
     tileSize: 'small', // Will be assigned later by assignTileSizes
     recommendation: rec,
   };
@@ -103,8 +132,9 @@ export async function fetchExploreBatch(params: {
   distanceTier: number;
   excludePlaceIds: string[];
   batchSize?: number;
+  categoryFilter?: string;
 }): Promise<ExploreBatch> {
-  const { user, userLocation, distanceTier, excludePlaceIds, batchSize = 30 } = params;
+  const { user, userLocation, distanceTier, excludePlaceIds, batchSize = 30, categoryFilter } = params;
   const maxDistance = DISTANCE_TIERS[distanceTier] || DISTANCE_TIERS[DISTANCE_TIERS.length - 1];
 
   const recParams: RecommendationParams = {
@@ -114,6 +144,7 @@ export async function fetchExploreBatch(params: {
     maxResults: batchSize,
     discoveryMode: 'explore',
     excludePlaceIds,
+    ...(categoryFilter ? { categories: [categoryFilter] } : {}),
   };
 
   const results = await generateRecommendations(recParams);

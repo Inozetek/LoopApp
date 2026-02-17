@@ -32,7 +32,6 @@ import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/const
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
-import { DiscoveryModeToggle, type DiscoveryMode } from '@/components/discovery-mode-toggle';
 
 // Category options for filtering
 const CATEGORIES = [
@@ -65,7 +64,7 @@ export interface SearchFilters {
   openNow: boolean;
   groupOnly: boolean;
   showMap: boolean;
-  discoveryMode: DiscoveryMode; // 'for_you' | 'explore'
+  discoveryMode?: 'for_you' | 'explore';
 }
 
 interface AdvancedSearchModalProps {
@@ -108,7 +107,6 @@ export function AdvancedSearchModal({
   const [timeOfDay, setTimeOfDay] = useState<string[]>(currentFilters.timeOfDay || []);
   const [openNow, setOpenNow] = useState(currentFilters.openNow || false);
   const [groupOnly, setGroupOnly] = useState(currentFilters.groupOnly || false);
-  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>(currentFilters.discoveryMode || 'for_you');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   // Sync internal state with currentFilters whenever the modal opens
@@ -128,7 +126,6 @@ export function AdvancedSearchModal({
       setTimeOfDay(currentFilters.timeOfDay || []);
       setOpenNow(currentFilters.openNow || false);
       setGroupOnly(currentFilters.groupOnly || false);
-      setDiscoveryMode(currentFilters.discoveryMode || 'for_you');
     }
   }, [visible]);
 
@@ -240,7 +237,7 @@ export function AdvancedSearchModal({
       openNow,
       groupOnly,
       showMap: false,
-      discoveryMode,
+      discoveryMode: 'for_you',
     };
 
     onApplyFilters(filters);
@@ -263,7 +260,6 @@ export function AdvancedSearchModal({
     setTimeOfDay([]);
     setOpenNow(false);
     setGroupOnly(false);
-    setDiscoveryMode('for_you');
   };
 
   const getPriceLabel = (value: number) => {
@@ -371,11 +367,6 @@ export function AdvancedSearchModal({
                 }}
               />
             )}
-          </View>
-
-          {/* Discovery Mode Toggle */}
-          <View style={styles.section}>
-            <DiscoveryModeToggle mode={discoveryMode} onModeChange={setDiscoveryMode} />
           </View>
 
           {/* Category Filters */}

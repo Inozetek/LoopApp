@@ -3,9 +3,10 @@
  *
  * 2-tier model: Free → Loop Plus ($3.99/mo, $29.99/yr)
  *
- * Strategy: Focus on VALUE and BENEFITS, not technical limitations
- * Bad: "You've used 5/5 recommendations"
- * Good: "Unlock live recommendations anytime"
+ * Strategy: Gate INSIGHTS, not content. Free users see the same cards
+ * but without AI insights (match score, explanation, time chip, Loop Pick).
+ * Bad: "You've seen your 5 personalized picks for today"
+ * Good: "Unlock AI insights like match scores and personalized explanations on every recommendation"
  */
 
 import { SubscriptionTier } from '@/types/subscription';
@@ -24,16 +25,16 @@ export interface UpgradePrompt {
  */
 export const REFRESH_COOLDOWN_PROMPTS: Record<SubscriptionTier, UpgradePrompt> = {
   free: {
-    title: 'Fresh recommendations coming soon',
-    message: 'Your recommendations update every few hours to give you the best curated picks.\n\nWant live updates anytime? Upgrade to Loop Plus!',
+    title: 'Get more from every recommendation',
+    message: 'Unlock AI insights like match scores and personalized explanations on every recommendation.\n\nUpgrade to Loop Plus for the full experience!',
     primaryButton: 'Upgrade to Plus',
-    secondaryButton: 'Wait for Update',
+    secondaryButton: 'Not Now',
     targetTier: 'plus',
     featureHighlight: [
-      'Live recommendations - always fresh',
+      'AI match scores on every card',
+      'Personalized explanations',
+      'Time context insights',
       'Plan activities with friends',
-      'Calendar sync',
-      'AI-powered insights',
       'Ad-free experience',
     ],
   },
@@ -66,16 +67,16 @@ export const FEATURE_LOCKED_PROMPTS = {
   },
 
   ai_explanations: {
-    title: 'Why did we suggest this?',
-    message: 'Loop Plus members get AI-powered insights explaining why each recommendation is perfect for you.',
+    title: 'See why this is perfect for you',
+    message: 'Loop Plus shows AI-powered match scores, personalized explanations, and time-of-day context on every recommendation.',
     primaryButton: 'Unlock AI Insights',
     secondaryButton: 'Maybe Later',
     targetTier: 'plus' as SubscriptionTier,
     featureHighlight: [
+      'Match score on every card',
       'Personalized explanations',
-      'Match your interests',
-      'Perfect timing',
-      'Smart context awareness',
+      'Time context chips',
+      'Loop Pick badges',
     ],
   },
 
@@ -157,7 +158,7 @@ export function canRefreshNow(lastRefreshTime: number, cooldownHours: number): b
 export const UPGRADE_CTA = {
   free_to_plus: {
     short: 'Upgrade to Plus',
-    long: 'Unlock unlimited recs, group planning & more',
+    long: 'Unlock AI insights on every recommendation',
     price: '$3.99/month',
     annual_price: '$29.99/year',
   },

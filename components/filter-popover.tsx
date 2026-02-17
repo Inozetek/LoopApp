@@ -1,9 +1,9 @@
 /**
  * Filter Popover Component
  *
- * iOS 26 "Liquid Glass" style popover mimicking iOS Phone app's filter UI.
+ * iOS 26 "Liquid Glass" style popover for opening advanced filters.
  * Features:
- * - Simple segmented control: "For You" vs "Explore" modes
+ * - "More Filters" button to open the advanced search sheet
  * - Liquid Glass effect with refraction and specular highlights (iOS 26+)
  * - Skia GPU-accelerated BackdropBlur as secondary tier
  * - Materialization animation (blur-to-clear emergence)
@@ -32,11 +32,10 @@ import Animated, {
   withSpring,
   interpolate,
   Extrapolate,
-  useDerivedValue,
 } from 'react-native-reanimated';
 import { GROK_SPRING, TIMING, BACKDROP } from '@/constants/animations';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import { ThemeColors, Typography, Spacing, BorderRadius } from '@/constants/brand';
 import { FilterSheetFilters, FilterMode } from '@/components/filter-sheet';
 
 // Try to import Liquid Glass, fallback gracefully
@@ -148,14 +147,6 @@ export function FilterPopover({
     ),
   }));
 
-  // Handle mode selection
-  const selectMode = (mode: FilterMode) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onFiltersChange({ ...filters, mode });
-    // Auto-close after selection (like iOS Phone app)
-    setTimeout(() => onClose(), 150);
-  };
-
   // Handle opening advanced filters
   const handleOpenAdvanced = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -259,103 +250,28 @@ export function FilterPopover({
       >
         <GlassBackground>
           <Animated.View style={[styles.content, contentStyle]}>
-            {/* Mode Selection - iOS Phone app style */}
-            <View style={styles.modeSection}>
-              {/* For You Option */}
-              <TouchableOpacity
-                onPress={() => selectMode('for_you')}
-                style={[
-                  styles.modeOption,
-                  filters.mode === 'for_you' && styles.modeOptionSelected,
-                  filters.mode === 'for_you' && { backgroundColor: BrandColors.loopBlue },
-                ]}
-                activeOpacity={0.7}
-              >
+            {/* More Filters Link */}
+            <TouchableOpacity
+              onPress={handleOpenAdvanced}
+              style={styles.advancedButton}
+              activeOpacity={0.7}
+            >
+              <View style={styles.advancedContent}>
                 <Ionicons
-                  name="sparkles"
-                  size={18}
-                  color={filters.mode === 'for_you' ? '#FFFFFF' : colors.text}
+                  name="options-outline"
+                  size={16}
+                  color={colors.textSecondary}
                 />
-                <Text
-                  style={[
-                    styles.modeLabel,
-                    { color: filters.mode === 'for_you' ? '#FFFFFF' : colors.text },
-                  ]}
-                >
-                  For You
+                <Text style={[styles.advancedText, { color: colors.textSecondary }]}>
+                  More Filters
                 </Text>
-                {filters.mode === 'for_you' && (
-                  <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
-
-              {/* Explore Option */}
-              <TouchableOpacity
-                onPress={() => selectMode('explore')}
-                style={[
-                  styles.modeOption,
-                  filters.mode === 'explore' && styles.modeOptionSelected,
-                  filters.mode === 'explore' && { backgroundColor: BrandColors.loopPurple },
-                ]}
-                activeOpacity={0.7}
-              >
-                <Ionicons
-                  name="compass-outline"
-                  size={18}
-                  color={filters.mode === 'explore' ? '#FFFFFF' : colors.text}
-                />
-                <Text
-                  style={[
-                    styles.modeLabel,
-                    { color: filters.mode === 'explore' ? '#FFFFFF' : colors.text },
-                  ]}
-                >
-                  Explore
-                </Text>
-                {filters.mode === 'explore' && (
-                  <Ionicons name="checkmark" size={18} color="#FFFFFF" />
-                )}
-              </TouchableOpacity>
-            </View>
-
-            {/* Divider */}
-            {onOpenAdvanced && (
-              <>
-                <View
-                  style={[
-                    styles.divider,
-                    {
-                      backgroundColor: colorScheme === 'dark'
-                        ? 'rgba(255, 255, 255, 0.1)'
-                        : 'rgba(0, 0, 0, 0.08)',
-                    },
-                  ]}
-                />
-
-                {/* More Filters Link */}
-                <TouchableOpacity
-                  onPress={handleOpenAdvanced}
-                  style={styles.advancedButton}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.advancedContent}>
-                    <Ionicons
-                      name="options-outline"
-                      size={16}
-                      color={colors.textSecondary}
-                    />
-                    <Text style={[styles.advancedText, { color: colors.textSecondary }]}>
-                      More Filters
-                    </Text>
-                  </View>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={16}
-                    color={colors.textSecondary}
-                  />
-                </TouchableOpacity>
-              </>
-            )}
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={16}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
           </Animated.View>
         </GlassBackground>
       </Animated.View>
@@ -393,29 +309,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: Spacing.sm,
-  },
-  modeSection: {
-    gap: Spacing.xs,
-  },
-  modeOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingVertical: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    borderRadius: BorderRadius.md,
-  },
-  modeOptionSelected: {
-    // Background color applied inline
-  },
-  modeLabel: {
-    flex: 1,
-    ...Typography.bodyMedium,
-    fontFamily: 'Urbanist-SemiBold',
-  },
-  divider: {
-    height: 1,
-    marginVertical: Spacing.sm,
   },
   advancedButton: {
     flexDirection: 'row',

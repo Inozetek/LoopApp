@@ -2,7 +2,7 @@
  * Tests for subscription service
  *
  * 2-tier model: Free ($0) + Loop Plus ($3.99/mo)
- * - Free: 5 daily recommendations
+ * - Free: 8 insight-enabled cards per session
  * - Plus: 999 (effectively unlimited)
  *
  * Note: Functions that require database access are tested with mocks.
@@ -27,33 +27,36 @@ jest.mock('@/lib/supabase', () => ({
       upsert: jest.fn(() => ({
         error: null,
       })),
+      update: jest.fn(() => ({
+        eq: jest.fn(),
+      })),
     })),
   },
 }));
 
 describe('subscription-service', () => {
   describe('getDailyLimit', () => {
-    it('should return 5 for free tier', () => {
-      expect(getDailyLimit('free')).toBe(5);
+    it('should return 8 for free tier', () => {
+      expect(getDailyLimit('free')).toBe(8);
     });
 
     it('should return 999 (unlimited) for plus tier', () => {
       expect(getDailyLimit('plus')).toBe(999);
     });
 
-    it('should return 5 for unknown tier (default to free)', () => {
-      expect(getDailyLimit('unknown')).toBe(5);
-      expect(getDailyLimit('')).toBe(5);
+    it('should return 8 for unknown tier (default to free)', () => {
+      expect(getDailyLimit('unknown')).toBe(8);
+      expect(getDailyLimit('')).toBe(8);
     });
 
     it('should handle legacy premium tier as default (free)', () => {
       // Legacy premium falls through to default since it is no longer a tier
-      expect(getDailyLimit('premium')).toBe(5);
+      expect(getDailyLimit('premium')).toBe(8);
     });
 
     it('should handle case sensitivity', () => {
-      expect(getDailyLimit('Free')).toBe(5); // Falls through to default
-      expect(getDailyLimit('PLUS')).toBe(5); // Falls through to default
+      expect(getDailyLimit('Free')).toBe(8); // Falls through to default
+      expect(getDailyLimit('PLUS')).toBe(8); // Falls through to default
     });
   });
 
@@ -70,8 +73,8 @@ describe('subscription-service', () => {
       expect(plusLim).toBe(999);
     });
 
-    it('free tier limit is 5', () => {
-      expect(getDailyLimit('free')).toBe(5);
+    it('free tier limit is 8', () => {
+      expect(getDailyLimit('free')).toBe(8);
     });
   });
 
@@ -102,24 +105,26 @@ describe('DailyLimitCheck interface behavior', () => {
   describe('canView logic', () => {
     it('should allow viewing when viewedToday < dailyLimit', () => {
       const mockCheck = {
-        dailyLimit: 5,
+        dailyLimit: 8,
         viewedToday: 3,
-        canView: 3 < 5,
-        remainingToday: Math.max(0, 5 - 3),
+        canView: 3 < 8,
+        remainingToday: Math.max(0, 8 - 3),
         subscriptionTier: 'free' as const,
+        insightsLimit: 8,
       };
 
       expect(mockCheck.canView).toBe(true);
-      expect(mockCheck.remainingToday).toBe(2);
+      expect(mockCheck.remainingToday).toBe(5);
     });
 
     it('should not allow viewing when viewedToday >= dailyLimit', () => {
       const mockCheck = {
-        dailyLimit: 5,
-        viewedToday: 5,
-        canView: 5 < 5,
-        remainingToday: Math.max(0, 5 - 5),
+        dailyLimit: 8,
+        viewedToday: 8,
+        canView: 8 < 8,
+        remainingToday: Math.max(0, 8 - 8),
         subscriptionTier: 'free' as const,
+        insightsLimit: 8,
       };
 
       expect(mockCheck.canView).toBe(false);
@@ -128,11 +133,12 @@ describe('DailyLimitCheck interface behavior', () => {
 
     it('should handle exceeding limit gracefully', () => {
       const mockCheck = {
-        dailyLimit: 5,
-        viewedToday: 7,
-        canView: 7 < 5,
-        remainingToday: Math.max(0, 5 - 7),
+        dailyLimit: 8,
+        viewedToday: 10,
+        canView: 10 < 8,
+        remainingToday: Math.max(0, 8 - 10),
         subscriptionTier: 'free' as const,
+        insightsLimit: 8,
       };
 
       expect(mockCheck.canView).toBe(false);

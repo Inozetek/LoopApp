@@ -50,6 +50,23 @@ import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity
 import { getCommentCount } from '@/services/comments-service';
 import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service';
 import { ShareBottomSheet } from '@/components/share-bottom-sheet';
+import { InsightsNudge } from '@/components/insights-nudge';
+import { RadarAlertCard } from '@/components/radar-alert-card';
+import { INSIGHTS_LIMIT } from '@/types/subscription';
+import { LinearGradient } from 'expo-linear-gradient';
+import {
+  getPendingRadarAlerts,
+  notificationToRadarMatch,
+  markNotificationViewed,
+  markNotificationDismissed,
+  MAX_RADAR_CARDS_PER_SESSION,
+} from '@/services/radar-service';
+import type { HookNotification, RadarMatch } from '@/types/radar';
+import type { HotDrop } from '@/types/hot-drop';
+import { FEATURE_FLAGS } from '@/constants/feature-flags';
+import { AddRadarSheet, type RadarPrefillData } from '@/components/add-radar-sheet';
+import { HotDropCard } from '@/components/hot-drop-card';
+import { getHotDropsForFeed, claimHotDrop, HOT_DROP_FEED_POSITION } from '@/services/hot-drop-service';
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
@@ -481,12 +498,26 @@ export default function RecommendationFeedScreen() {
   const [isFirstCardVisible, setIsFirstCardVisible] = useState(true);
   const [collapsingFilters, setCollapsingFilters] = useState(false);
 
-  // Discovery mode & category filter state
-  const [discoveryMode, setDiscoveryMode] = useState<'for_you' | 'explore'>('for_you');
+  // Category filter state
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
 
   // Daily limit state for subscription-based limits
   const [dailyLimitInfo, setDailyLimitInfo] = useState<DailyLimitCheck | null>(null);
+
+  // Upgrade card dismissal (per-session)
+  const [upgradeDismissed, setUpgradeDismissed] = useState(false);
+
+  // Radar alerts state
+  const [radarAlerts, setRadarAlerts] = useState<HookNotification[]>([]);
+  const radarAlertsFetched = useRef(false);
+
+  // Add to Radar sheet state (from card action menu)
+  const [showRadarSheet, setShowRadarSheet] = useState(false);
+  const [radarPrefill, setRadarPrefill] = useState<RadarPrefillData | undefined>(undefined);
+
+  // Hot drops state
+  const [hotDrops, setHotDrops] = useState<HotDrop[]>([]);
+  const hotDropsFetched = useRef(false);
 
   // Animated value for filters height
   const filtersHeight = useSharedValue(0);
@@ -683,20 +714,98 @@ export default function RecommendationFeedScreen() {
       filtered = recommendations;
     }
 
-    // Apply daily limit for subscription-based limits (Daily tab)
-    if (dailyLimitInfo) {
-      const maxToShow = dailyLimitInfo.remainingToday;
-      if (maxToShow <= 0) {
-        // User has reached daily limit - return empty array
-        // The UI will show an upgrade prompt
-        return [];
+    return filtered;
+  }, [recommendations, filters, filterSheetFilters]);
+
+  // Build blended feed: unified list with per-card showInsights flag
+  // All cards look identical; free users see AI insights on first 8 only
+  const blendedFeed = useMemo(() => {
+    const insightsLimit = dailyLimitInfo?.insightsLimit ?? INSIGHTS_LIMIT.free;
+    const subscriptionTier = dailyLimitInfo?.subscriptionTier ?? 'free';
+    const isPlus = subscriptionTier === 'plus';
+
+    const items: Recommendation[] = [];
+    let sponsoredInFirstTen = 0;
+
+    filteredRecommendations.forEach((r, i) => {
+      // Enforce max 2 sponsored in first 10 cards (20% ratio)
+      if (r.isSponsored && i < 10) {
+        if (sponsoredInFirstTen >= 2) return; // Skip excess sponsored
+        sponsoredInFirstTen++;
       }
-      // Limit visible recommendations to remaining daily allowance
-      return filtered.slice(0, maxToShow);
+
+      items.push({
+        ...r,
+        cardType: r.cardType || 'ai_curated' as const,
+        showInsights: isPlus || i < insightsLimit,
+      });
+    });
+
+    // Inject radar alert cards at the top of the feed (max 3)
+    if (FEATURE_FLAGS.ENABLE_RADAR && radarAlerts.length > 0) {
+      const radarCards: Recommendation[] = radarAlerts
+        .slice(0, MAX_RADAR_CARDS_PER_SESSION)
+        .map((alert, i) => ({
+          id: `radar-alert-${alert.id}`,
+          cardType: 'radar_alert' as const,
+          title: alert.title,
+          category: alert.eventData?.category || '',
+          location: alert.eventData?.venue || '',
+          distance: '',
+          priceRange: 0,
+          rating: 0,
+          imageUrl: alert.eventData?.imageUrl || '',
+          aiExplanation: '',
+          isSponsored: false,
+          showInsights: false,
+          radarMatch: notificationToRadarMatch(alert),
+          _radarNotification: alert,
+        } as Recommendation & { _radarNotification: HookNotification }));
+
+      items.splice(0, 0, ...radarCards);
     }
 
-    return filtered;
-  }, [recommendations, filters, filterSheetFilters, dailyLimitInfo]);
+    // Inject hot drop cards (max 1, at position 2)
+    if (FEATURE_FLAGS.ENABLE_HOT_DROPS && hotDrops.length > 0) {
+      const hotDropCard: Recommendation = {
+        id: `hot-drop-${hotDrops[0].id}`,
+        cardType: 'hot_drop' as const,
+        title: hotDrops[0].title,
+        category: hotDrops[0].category,
+        location: hotDrops[0].address || '',
+        distance: '',
+        priceRange: 0,
+        rating: 0,
+        imageUrl: hotDrops[0].imageUrl || '',
+        aiExplanation: '',
+        isSponsored: false,
+        showInsights: false,
+      };
+      const insertPos = Math.min(HOT_DROP_FEED_POSITION, items.length);
+      items.splice(insertPos, 0, hotDropCard);
+    }
+
+    // For free users: insert insights nudge after the insights limit
+    if (!isPlus && items.length > insightsLimit && !upgradeDismissed) {
+      const trialDaysLeft = dailyLimitInfo?.trialStatus?.expired ? 0 : undefined;
+      items.splice(insightsLimit + radarAlerts.length, 0, {
+        id: 'insights-nudge',
+        cardType: 'insights_nudge',
+        title: '',
+        category: '',
+        location: '',
+        distance: '',
+        priceRange: 0,
+        rating: 0,
+        imageUrl: '',
+        aiExplanation: '',
+        isSponsored: false,
+        showInsights: false,
+      } as Recommendation);
+    }
+
+    return items;
+  }, [filteredRecommendations, dailyLimitInfo, upgradeDismissed, radarAlerts, hotDrops]);
 
   // Sync refs with state for synchronous access in callbacks (avoid stale closures)
   useEffect(() => {
@@ -723,12 +832,10 @@ export default function RecommendationFeedScreen() {
   );
 
   // Fetch recommendations
-  // modeOverride: when discovery mode just changed, pass the new mode directly
-  //               to avoid stale closure reading the old discoveryMode state
-  // skipDbCache: force fresh generation (used when switching discovery modes)
-  const fetchRecommendations = async (showRefreshIndicator = false, modeOverride?: 'for_you' | 'explore', skipDbCache = false) => {
-    const effectiveMode = modeOverride ?? discoveryMode;
-    console.log('🚀 fetchRecommendations called, user:', user?.id, 'mode:', effectiveMode, 'skipCache:', skipDbCache);
+  // skipDbCache: force fresh generation
+  const fetchRecommendations = async (showRefreshIndicator = false, _modeOverride?: string, skipDbCache = false) => {
+    const effectiveMode = 'for_you' as const;
+    console.log('🚀 fetchRecommendations called, user:', user?.id, 'skipCache:', skipDbCache);
 
     if (!user) {
       console.log('❌ No user, returning early');
@@ -860,6 +967,8 @@ export default function RecommendationFeedScreen() {
           hasEstimatedHours: s.hasEstimatedHours,
           suggestedTime: s.suggestedTime,
           event_metadata: s.place.event_metadata,
+          isCurated: !!(s.place as any)?._isCurated,
+          curatorName: (s.place as any)?._curatorName,
           scoreBreakdown: {
             baseScore: s.scoreBreakdown.baseScore,
             locationScore: s.scoreBreakdown.locationScore,
@@ -1438,6 +1547,33 @@ export default function RecommendationFeedScreen() {
       });
       checkDashboardStatus();
 
+      // Fetch pending radar alerts for feed injection
+      if (FEATURE_FLAGS.ENABLE_RADAR && !radarAlertsFetched.current) {
+        radarAlertsFetched.current = true;
+        getPendingRadarAlerts(user.id).then(alerts => {
+          if (alerts.length > 0) {
+            setRadarAlerts(alerts);
+            console.log(`📡 Loaded ${alerts.length} radar alerts for feed`);
+          }
+        }).catch(err => {
+          console.warn('[Radar] Failed to fetch alerts:', err);
+        });
+      }
+
+      // Fetch hot drops for feed injection
+      if (FEATURE_FLAGS.ENABLE_HOT_DROPS && !hotDropsFetched.current) {
+        hotDropsFetched.current = true;
+        const userTier = user.subscription_tier === 'plus' ? 'plus' : 'free';
+        getHotDropsForFeed(userTier).then(drops => {
+          if (drops.length > 0) {
+            setHotDrops(drops);
+            console.log(`🔥 Loaded ${drops.length} hot drops for feed`);
+          }
+        }).catch(err => {
+          console.warn('[HotDrops] Failed to fetch drops:', err);
+        });
+      }
+
       // REMOVED: Feedback modal on app launch
       // User feedback: "I can't do anything but close it so I don't see the point"
       // Feedback prompts are still available on the Calendar screen where they're more contextual
@@ -1500,6 +1636,16 @@ export default function RecommendationFeedScreen() {
   // Cache handlers per item to prevent recreation
   const handlersCache = useRef<Map<string, any>>(new Map());
 
+  const handleAddToRadar = useCallback((item: Recommendation) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRadarPrefill({
+      hookType: 'venue',
+      entityName: item.title,
+      category: item.category,
+    });
+    setShowRadarSheet(true);
+  }, []);
+
   const getHandlersForItem = useCallback((item: Recommendation, index: number) => {
     const cacheKey = `${item.id}-${index}`;
     if (!handlersCache.current.has(cacheKey)) {
@@ -1513,34 +1659,101 @@ export default function RecommendationFeedScreen() {
           setShowDetailsModal(true);
         },
         onNotInterested: () => handleNotInterested(item, index),
+        onAddToRadar: () => handleAddToRadar(item),
         onShare: () => handleShare(item),
       });
     }
     return handlersCache.current.get(cacheKey);
-  }, [handleAddToCalendar, handleSeeDetails, handleNotInterested, handleShare]);
+  }, [handleAddToCalendar, handleSeeDetails, handleNotInterested, handleAddToRadar, handleShare]);
 
   // RSVP handlers for group plans (mock for demo)
   const handleAcceptRSVP = useCallback((recId: string) => {
     console.log('✅ Accepted RSVP for:', recId);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    setToast({ type: 'success', message: "You're going! We'll notify the group." });
+    setToastMessage("You're going! We'll notify the group.");
+    setShowToast(true);
   }, []);
 
   const handleDeclineRSVP = useCallback((recId: string) => {
     console.log('❌ Declined RSVP for:', recId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setToast({ type: 'info', message: "No problem! We'll let them know." });
+    setToastMessage("No problem! We'll let them know.");
+    setShowToast(true);
   }, []);
 
   const handleMaybeRSVP = useCallback((recId: string) => {
     console.log('❓ Maybe RSVP for:', recId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setToast({ type: 'info', message: "Marked as maybe. You can change this later." });
+    setToastMessage("Marked as maybe. You can change this later.");
+    setShowToast(true);
   }, []);
 
   // Memoized render item to prevent unnecessary re-renders
   const renderItem = useCallback(
     ({ item, index }: { item: Recommendation; index: number }) => {
+      // Handle insights nudge (subtle inline upgrade card)
+      if (item.cardType === 'insights_nudge') {
+        const trialDaysLeft = dailyLimitInfo?.trialStatus?.isTrialing
+          ? dailyLimitInfo.trialStatus.daysLeft
+          : undefined;
+        return (
+          <InsightsNudge
+            trialDaysLeft={trialDaysLeft}
+            onDismiss={() => setUpgradeDismissed(true)}
+          />
+        );
+      }
+
+      // Handle hot drop cards
+      if (item.cardType === 'hot_drop' && hotDrops.length > 0) {
+        const drop = hotDrops[0];
+        const isPlusUser = user?.subscription_tier === 'plus';
+        return (
+          <HotDropCard
+            hotDrop={drop}
+            isPlusUser={isPlusUser}
+            onClaim={async (hotDropId) => {
+              const result = await claimHotDrop(hotDropId, user?.id || 'demo-user-123');
+              if (result.success) {
+                setToastMessage('Claimed! Show this at the venue.');
+                setShowToast(true);
+                // Update local state
+                setHotDrops(prev => prev.map(d =>
+                  d.id === hotDropId
+                    ? { ...d, currentClaims: d.currentClaims + 1 }
+                    : d
+                ));
+              } else {
+                setToastMessage(result.error || 'Could not claim.');
+                setShowToast(true);
+              }
+            }}
+          />
+        );
+      }
+
+      // Handle radar alert cards
+      if (item.cardType === 'radar_alert') {
+        const notification = (item as any)._radarNotification as HookNotification;
+        if (!notification) return null;
+        const radarMatch = item.radarMatch || notificationToRadarMatch(notification);
+        return (
+          <RadarAlertCard
+            notification={notification}
+            radarMatch={radarMatch}
+            index={index}
+            onDismiss={() => {
+              markNotificationDismissed(notification.userId, notification.id);
+              setRadarAlerts(prev => prev.filter(a => a.id !== notification.id));
+            }}
+            onSave={() => {
+              markNotificationViewed(notification.userId, notification.id);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }}
+          />
+        );
+      }
+
       const handlers = getHandlersForItem(item, index);
 
       // Get mock social/group data for this item (Phase 2 demo)
@@ -1553,6 +1766,7 @@ export default function RecommendationFeedScreen() {
           onSeeDetails={handlers.onSeeDetails}
           onComment={handlers.onComment}
           onNotInterested={handlers.onNotInterested}
+          onAddToRadar={handlers.onAddToRadar}
           onShare={handlers.onShare}
           commentsCount={item.commentsCount}
           index={index}
@@ -1563,11 +1777,12 @@ export default function RecommendationFeedScreen() {
           onAcceptRSVP={() => handleAcceptRSVP(item.id)}
           onDeclineRSVP={() => handleDeclineRSVP(item.id)}
           onMaybeRSVP={() => handleMaybeRSVP(item.id)}
-          discoveryMode={discoveryMode}
+          cardType={(item.cardType === 'ai_curated' || item.cardType === 'discovery') ? item.cardType : 'ai_curated'}
+          showInsights={item.showInsights !== false}
         />
       );
     },
-    [getHandlersForItem, removingCardId, handleAcceptRSVP, handleDeclineRSVP, handleMaybeRSVP, discoveryMode]
+    [getHandlersForItem, removingCardId, handleAcceptRSVP, handleDeclineRSVP, handleMaybeRSVP, dailyLimitInfo, colors.textSecondary, radarAlerts, hotDrops, user]
   );
 
   // Phase 1.2: Smart Merge Pull-to-Refresh
@@ -1603,7 +1818,7 @@ export default function RecommendationFeedScreen() {
         excludePlaceIds: recommendations.slice(0, 5).map(r => r.activity?.googlePlaceId).filter(Boolean) as string[], // Only exclude top 5
         timeOfDay: filters.timeOfDay !== 'any' ? filters.timeOfDay : undefined,
         priceRange: filters.priceRange !== 'any' ? filters.priceRange : undefined,
-        discoveryMode,
+        discoveryMode: 'for_you',
         categories: selectedCategories.length > 0 ? selectedCategories : undefined,
       });
 
@@ -1627,6 +1842,8 @@ export default function RecommendationFeedScreen() {
           score: s.score,
           businessHours: s.businessHours,
           hasEstimatedHours: s.hasEstimatedHours,
+          isCurated: !!(s.place as any)?._isCurated,
+          curatorName: (s.place as any)?._curatorName,
           scoreBreakdown: {
             baseScore: s.scoreBreakdown.baseScore,
             locationScore: s.scoreBreakdown.locationScore,
@@ -1674,8 +1891,8 @@ export default function RecommendationFeedScreen() {
           ...prev.slice(0, 40) // Keep bottom 40
         ]);
 
-        // Save new recommendations to DB (with discovery mode tag)
-        await saveRecommendationsToDB(user.id, newRecs, discoveryMode);
+        // Save new recommendations to DB
+        await saveRecommendationsToDB(user.id, newRecs, 'for_you');
 
         // Increment refresh key to force re-render
         setRefreshKey(prev => prev + 1);
@@ -1689,7 +1906,7 @@ export default function RecommendationFeedScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [user, recommendations, searchRadiusRef, filters, getCurrentLocation, saveRecommendationsToDB, discoveryMode]);
+  }, [user, recommendations, searchRadiusRef, filters, getCurrentLocation, saveRecommendationsToDB]);
 
   // Memoized onRefresh handler - calls smart merge refresh
   const handleRefresh = useCallback(() => {
@@ -1816,28 +2033,21 @@ export default function RecommendationFeedScreen() {
     // Store active filters
     setActiveFilters(searchFilters);
 
-    // Sync discovery mode to parent state (drives badge visibility, etc.)
-    if (searchFilters.discoveryMode !== discoveryMode) {
-      setDiscoveryMode(searchFilters.discoveryMode);
-    }
-
     // Trigger haptic feedback
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
     // FAST PATH: If the user only changed basic filters (no custom search location/query),
     // re-filter the existing DB-cached recommendations instead of calling live API.
-    // BUT: If discovery mode changed, we must regenerate to get mode-appropriate content.
     const hasCustomSearch = searchFilters.searchQuery ||
       searchFilters.location ||
       searchFilters.searchType === 'place';
-    const modeChanged = searchFilters.discoveryMode !== discoveryMode;
 
-    if (!hasCustomSearch && !modeChanged && recommendations.length > 0) {
+    if (!hasCustomSearch && recommendations.length > 0) {
       console.log('⚡ Fast filter: Re-filtering cached recommendations (no live API needed)');
 
       // Sync filterSheetFilters for the useMemo filter pipeline
       setFilterSheetFilters({
-        mode: searchFilters.discoveryMode === 'explore' ? 'explore' : 'for_you',
+        mode: 'for_you',
         categories: searchFilters.categories,
         maxDistance: searchFilters.maxDistance,
         priceRange: searchFilters.priceRange[1] === 3 ? 'any' : searchFilters.priceRange[1] as 1 | 2 | 3 | 4,
@@ -1854,16 +2064,9 @@ export default function RecommendationFeedScreen() {
       setToastMessage(
         filterSummary.length > 0
           ? `Filtered by: ${filterSummary.join(', ')}`
-          : searchFilters.discoveryMode === 'explore' ? 'Explore mode' : 'For You'
+          : 'Filters applied'
       );
       setShowToast(true);
-      return;
-    }
-
-    // MODE CHANGE PATH: Discovery mode changed — regenerate with correct mode
-    if (modeChanged && !hasCustomSearch) {
-      console.log(`🔄 Discovery mode changed in filters: ${discoveryMode} → ${searchFilters.discoveryMode}, regenerating...`);
-      fetchRecommendations(true, searchFilters.discoveryMode, false);
       return;
     }
 
@@ -1905,7 +2108,7 @@ export default function RecommendationFeedScreen() {
         date: searchFilters.date,
         timeOfDay: searchFilters.timeOfDay.length > 0 ? searchFilters.timeOfDay : undefined,
         openNow: searchFilters.openNow,
-        discoveryMode: searchFilters.discoveryMode, // Use discovery mode from filters
+        discoveryMode: 'for_you', // Blended feed always uses for_you mode
       };
 
       console.log('🔍 Fetching recommendations with advanced params:', params);
@@ -2026,7 +2229,7 @@ export default function RecommendationFeedScreen() {
       setRefreshKey(prev => prev + 1);
 
       // Save to database (with discovery mode tag)
-      await saveRecommendationsToDB(user.id, dedupedRecommendations, searchFilters.discoveryMode);
+      await saveRecommendationsToDB(user.id, dedupedRecommendations, 'for_you');
 
       // Show toast with filter summary
       const filterSummary = [];
@@ -2223,36 +2426,6 @@ export default function RecommendationFeedScreen() {
     }
   };
 
-  // Handle discovery mode change
-  const handleDiscoveryModeChange = useCallback((mode: 'for_you' | 'explore') => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setDiscoveryMode(mode);
-
-    // Refresh recommendations with new mode — pass mode directly to avoid stale closure,
-    // and skip DB cache so we actually regenerate with the new mode's scoring
-    fetchRecommendations(true, mode, true);
-
-    // Save to database (debounced)
-    if (user) {
-      setTimeout(async () => {
-        try {
-          const prefs = (user.preferences as UserPreferences) || {};
-          await supabase
-            .from('users')
-            .update({
-              preferences: {
-                ...prefs,
-                discovery_mode: mode,
-              }
-            })
-            .eq('id', user.id);
-        } catch (error) {
-          console.error('Error saving discovery mode:', error);
-        }
-      }, 1000);
-    }
-  }, [user, fetchRecommendations]);
-
   // Handle category selection change
   const handleCategoriesChange = useCallback((categories: string[]) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2426,87 +2599,6 @@ export default function RecommendationFeedScreen() {
     );
   }
 
-  // Render daily limit reached state (Daily tab subscription limits)
-  if (dailyLimitInfo && dailyLimitInfo.remainingToday <= 0) {
-    return (
-      <SwipeableLayout>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <LoopHeader
-            showProfileAvatar={true}
-            onProfilePress={() => setShowMainMenu(true)}
-            showSearchButton={true}
-            onSearchPress={() => setShowAdvancedSearch(true)}
-            hasActiveFilters={isFilterSheetActive}
-            notificationCount={notificationCount}
-
-          />
-
-          {/* Daily Limit Reached Message */}
-          <View style={styles.dailyLimitContainer}>
-            <View style={[styles.dailyLimitCard, { backgroundColor: colors.cardBackground }]}>
-              <Ionicons name="time-outline" size={56} color={BrandColors.loopBlue} />
-              <Text style={[Typography.headlineSmall, { color: colors.text, marginTop: Spacing.lg, textAlign: 'center' }]}>
-                You&apos;ve seen all your daily picks!
-              </Text>
-              <Text style={[Typography.bodyMedium, { color: colors.textSecondary, marginTop: Spacing.sm, textAlign: 'center', paddingHorizontal: Spacing.md }]}>
-                {dailyLimitInfo.subscriptionTier === 'free'
-                  ? `Free users get ${dailyLimitInfo.dailyLimit} personalized picks per day. Upgrade for more, or tap Explore to browse unlimited activities.`
-                  : `You&apos;ve viewed ${dailyLimitInfo.dailyLimit} picks today. Come back tomorrow for fresh recommendations, or tap Explore for unlimited browsing.`
-                }
-              </Text>
-
-              {/* Action Buttons */}
-              <View style={styles.dailyLimitActions}>
-                <TouchableOpacity
-                  style={[styles.dailyLimitButton, { backgroundColor: BrandColors.loopBlue }]}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                    router.push('/(tabs)/explore');
-                  }}
-                >
-                  <Ionicons name="compass-outline" size={20} color="#FFFFFF" />
-                  <Text style={[Typography.labelLarge, { color: '#FFFFFF', marginLeft: Spacing.sm }]}>
-                    Go to Explore
-                  </Text>
-                </TouchableOpacity>
-
-                {dailyLimitInfo.subscriptionTier === 'free' && (
-                  <TouchableOpacity
-                    style={[styles.dailyLimitButton, {
-                      backgroundColor: 'transparent',
-                      borderWidth: 1,
-                      borderColor: BrandColors.loopBlue,
-                      marginTop: Spacing.sm
-                    }]}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      Alert.alert(
-                        'Upgrade to Loop Plus',
-                        'Get unlimited recommendations, group planning, calendar sync, and an ad-free experience for just $3.99/month.',
-                        [
-                          { text: 'Not Now', style: 'cancel' },
-                          {
-                            text: 'View Plans',
-                            onPress: () => router.push('/(tabs)/settings'),
-                          },
-                        ]
-                      );
-                    }}
-                  >
-                    <Ionicons name="star-outline" size={20} color={BrandColors.loopBlue} />
-                    <Text style={[Typography.labelLarge, { color: BrandColors.loopBlue, marginLeft: Spacing.sm }]}>
-                      Upgrade for More
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </View>
-      </SwipeableLayout>
-    );
-  }
-
   // Render recommendations list
   return (
     <SwipeableLayout>
@@ -2524,6 +2616,27 @@ export default function RecommendationFeedScreen() {
           }}
           isLoading={USE_SHIMMER_FOR_REFRESH && refreshing}
         />
+
+        {/* Trial Badge (for trialing users) */}
+        {dailyLimitInfo?.trialStatus?.isTrialing && (
+          <TouchableOpacity
+            style={styles.trialBadge}
+            onPress={() => router.push('/(tabs)/settings')}
+            activeOpacity={0.7}
+          >
+            <LinearGradient
+              colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.trialBadgeGradient}
+            >
+              <Ionicons name="star" size={12} color="#FFFFFF" />
+              <Text style={styles.trialBadgeText}>
+                Plus Trial: {dailyLimitInfo.trialStatus.daysLeft} day{dailyLimitInfo.trialStatus.daysLeft === 1 ? '' : 's'} left
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         {/* Welcome Message */}
         <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
@@ -2572,7 +2685,7 @@ export default function RecommendationFeedScreen() {
         <GestureDetector gesture={panGesture}>
           <Animated.View style={{ flex: 1 }}>
             <FeedList
-              data={filteredRecommendations}
+              data={blendedFeed}
               renderItem={renderItem}
               flatListRef={flatListRef}
               handleScroll={handleScroll}
@@ -2587,7 +2700,7 @@ export default function RecommendationFeedScreen() {
               loadingMore={loadingMore}
               feedExhausted={feedExhausted}
               searchRadius={searchRadius}
-              extraData={`${refreshKey}-${discoveryMode}`}
+              extraData={`${refreshKey}`}
               useShimmer={USE_SHIMMER_FOR_REFRESH}
               filters={filters}
               onExpandDistance={handleExpandDistance}
@@ -2679,8 +2792,6 @@ export default function RecommendationFeedScreen() {
           visible={showDashboard}
           onClose={handleDashboardClose}
           isFirstLoadToday={isFirstLoadToday}
-          discoveryMode={discoveryMode}
-          onDiscoveryModeChange={handleDiscoveryModeChange}
           selectedCategories={selectedCategories}
           onCategoriesChange={handleCategoriesChange}
           filters={filters}
@@ -2692,7 +2803,7 @@ export default function RecommendationFeedScreen() {
           visible={showAdvancedSearch}
           onClose={() => setShowAdvancedSearch(false)}
           onApplyFilters={handleApplyAdvancedFilters}
-          currentFilters={activeFilters ? { ...activeFilters, discoveryMode } : { discoveryMode }}
+          currentFilters={activeFilters ? { ...activeFilters, discoveryMode: 'for_you' } : { discoveryMode: 'for_you' }}
           userLocation={
             user
               ? {
@@ -2730,8 +2841,24 @@ export default function RecommendationFeedScreen() {
           onClose={() => setShareSheetVisible(false)}
           recommendation={shareRecommendation}
           onShareSuccess={() => {
-            setToast({ type: 'success', message: 'Shared successfully!' });
+            setToastMessage('Shared successfully!');
+            setShowToast(true);
           }}
+        />
+
+        {/* Add to Radar Sheet (from card action menu) */}
+        <AddRadarSheet
+          visible={showRadarSheet}
+          onClose={() => {
+            setShowRadarSheet(false);
+            setRadarPrefill(undefined);
+          }}
+          onRadarCreated={() => {
+            setToastMessage('Radar created!');
+            setShowToast(true);
+          }}
+          tier={(user?.subscription_tier as 'free' | 'plus') || 'free'}
+          prefillData={radarPrefill}
         />
 
       </View>
@@ -2755,6 +2882,24 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     letterSpacing: 0.3,
     lineHeight: 24,
+  },
+  trialBadge: {
+    alignSelf: 'center',
+    marginBottom: Spacing.xs,
+    borderRadius: 20,
+    overflow: 'hidden',
+  },
+  trialBadgeGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 4,
+    paddingHorizontal: Spacing.md,
+    gap: 4,
+  },
+  trialBadgeText: {
+    ...Typography.labelSmall,
+    color: '#FFFFFF',
+    fontFamily: 'Urbanist-SemiBold',
   },
   feedbackBanner: {
     flexDirection: 'row',
@@ -2830,38 +2975,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.xl,
-  },
-  // Dual Feed Architecture: Daily limit reached UI
-  dailyLimitContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: Spacing.lg,
-  },
-  dailyLimitCard: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: Spacing.xl * 1.5,
-    borderRadius: BorderRadius.lg,
-    width: '100%',
-    maxWidth: 360,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  dailyLimitActions: {
-    marginTop: Spacing.xl,
-    width: '100%',
-  },
-  dailyLimitButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.full,
   },
 });
 

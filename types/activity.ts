@@ -77,6 +77,8 @@ export interface Recommendation {
   isSponsored: boolean;
   isCurated?: boolean; // True for hand-curated "Loop Pick" recommendations
   curatorName?: string; // Curator attribution (e.g., "Sarah, Dallas local")
+  cardType?: 'ai_curated' | 'discovery' | 'upgrade_prompt' | 'section_header' | 'insights_nudge' | 'radar_alert' | 'hot_drop'; // Blended feed card type
+  showInsights?: boolean; // Whether to show AI insight elements (match score, explanation, time chip, Loop Pick)
   commentsCount?: number; // Real comment count from DB (overrides mock)
   score?: number;
   scoreBreakdown?: RecommendationScore;
@@ -86,6 +88,8 @@ export interface Recommendation {
   suggestedTime?: Date; // Recommended visit time when place is open
   // Group planning context
   groupContext?: GroupContext;
+  // Radar alert metadata (present when cardType === 'radar_alert')
+  radarMatch?: import('./radar').RadarMatch;
   // Legacy fields for backward compatibility
   activity?: Activity;
   reason?: string;

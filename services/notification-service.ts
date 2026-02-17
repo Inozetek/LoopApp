@@ -43,7 +43,7 @@ export async function requestNotificationPermissions(): Promise<boolean> {
       return false;
     }
 
-    // For Android, create notification channel
+    // For Android, create notification channels
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync('departure-alerts', {
         name: 'Departure Alerts',
@@ -51,6 +51,15 @@ export async function requestNotificationPermissions(): Promise<boolean> {
         sound: 'default',
         vibrationPattern: [0, 250, 250, 250],
         lightColor: '#FF231F7C',
+      });
+
+      await Notifications.setNotificationChannelAsync('radar-alerts', {
+        name: 'Radar Alerts',
+        importance: Notifications.AndroidImportance.HIGH,
+        sound: 'default',
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: '#7C3AED',
+        description: 'Alerts from your Loop Radar triggers',
       });
     }
 

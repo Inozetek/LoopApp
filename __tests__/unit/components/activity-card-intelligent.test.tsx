@@ -281,39 +281,39 @@ describe('Activity Card Intelligent - Pure Logic', () => {
     });
   });
 
-  describe('Match Badge Visibility (discoveryMode gating)', () => {
+  describe('Match Badge Visibility (showInsights gating)', () => {
     /**
      * Mirrors badge render condition from activity-card-intelligent.tsx:
-     * isStrongMatch && !isEvent && discoveryMode !== 'explore'
+     * isStrongMatch && !isEvent && showInsights
      */
     function shouldShowMatchBadge(
       isStrongMatch: boolean,
       isEvent: boolean,
-      discoveryMode?: 'for_you' | 'explore'
+      showInsights: boolean = true
     ): boolean {
-      return isStrongMatch && !isEvent && discoveryMode !== 'explore';
+      return isStrongMatch && !isEvent && showInsights;
     }
 
-    it('should show badge for strong match in For You mode', () => {
-      expect(shouldShowMatchBadge(true, false, 'for_you')).toBe(true);
+    it('should show badge for strong match with insights enabled', () => {
+      expect(shouldShowMatchBadge(true, false, true)).toBe(true);
     });
 
-    it('should show badge for strong match when discoveryMode is undefined', () => {
-      expect(shouldShowMatchBadge(true, false, undefined)).toBe(true);
+    it('should show badge for strong match when showInsights defaults to true', () => {
+      expect(shouldShowMatchBadge(true, false)).toBe(true);
     });
 
-    it('should hide badge in Explore mode even for strong matches', () => {
-      expect(shouldShowMatchBadge(true, false, 'explore')).toBe(false);
+    it('should hide badge when showInsights is false', () => {
+      expect(shouldShowMatchBadge(true, false, false)).toBe(false);
     });
 
-    it('should hide badge for events regardless of mode', () => {
-      expect(shouldShowMatchBadge(true, true, 'for_you')).toBe(false);
-      expect(shouldShowMatchBadge(true, true, 'explore')).toBe(false);
+    it('should hide badge for events regardless of showInsights', () => {
+      expect(shouldShowMatchBadge(true, true, true)).toBe(false);
+      expect(shouldShowMatchBadge(true, true, false)).toBe(false);
     });
 
-    it('should hide badge for weak matches regardless of mode', () => {
-      expect(shouldShowMatchBadge(false, false, 'for_you')).toBe(false);
-      expect(shouldShowMatchBadge(false, false, 'explore')).toBe(false);
+    it('should hide badge for weak matches regardless of showInsights', () => {
+      expect(shouldShowMatchBadge(false, false, true)).toBe(false);
+      expect(shouldShowMatchBadge(false, false, false)).toBe(false);
     });
   });
 
@@ -321,15 +321,15 @@ describe('Activity Card Intelligent - Pure Logic', () => {
     /**
      * Mirrors getTimeContextLabel from activity-card-intelligent.tsx
      * No longer depends on timeScore — computed fresh from category + current hour.
-     * Hidden in Explore mode (personalization signal).
+     * Hidden when showInsights is false (personalization signal).
      */
     function getTimeContextLabel(
       category: string,
       currentHour: number,
-      discoveryMode?: 'for_you' | 'explore',
+      showInsights: boolean = true,
       suggestedTime?: Date
     ): { icon: string; label: string } | null {
-      if (discoveryMode === 'explore') return null;
+      if (!showInsights) return null;
 
       const cat = category.toLowerCase();
 
@@ -364,81 +364,81 @@ describe('Activity Card Intelligent - Pure Logic', () => {
       return null; // No match for this category at this time → no chip
     }
 
-    // Explore mode gating
-    it('should return null in Explore mode regardless of category/time', () => {
-      expect(getTimeContextLabel('coffee', 8, 'explore')).toBeNull();
-      expect(getTimeContextLabel('bar', 23, 'explore')).toBeNull();
-      expect(getTimeContextLabel('dining', 19, 'explore')).toBeNull();
+    // showInsights gating
+    it('should return null when showInsights is false regardless of category/time', () => {
+      expect(getTimeContextLabel('coffee', 8, false)).toBeNull();
+      expect(getTimeContextLabel('bar', 23, false)).toBeNull();
+      expect(getTimeContextLabel('dining', 19, false)).toBeNull();
     });
 
     // Morning (5-11)
     it('should return "Morning spot" for coffee in the morning', () => {
-      const result = getTimeContextLabel('coffee', 8, 'for_you');
+      const result = getTimeContextLabel('coffee', 8, true);
       expect(result).toEqual({ icon: '☕', label: 'Morning spot' });
     });
 
     it('should return "Morning workout" for fitness in the morning', () => {
-      const result = getTimeContextLabel('fitness', 7, 'for_you');
+      const result = getTimeContextLabel('fitness', 7, true);
       expect(result).toEqual({ icon: '💪', label: 'Morning workout' });
     });
 
     it('should return "Brunch spot" for brunch in the morning', () => {
-      const result = getTimeContextLabel('breakfast & brunch', 10, 'for_you');
+      const result = getTimeContextLabel('breakfast & brunch', 10, true);
       expect(result).toEqual({ icon: '🍳', label: 'Brunch spot' });
     });
 
     // Afternoon (12-16)
     it('should return "Lunch spot" for dining at noon', () => {
-      const result = getTimeContextLabel('dining', 12, 'for_you');
+      const result = getTimeContextLabel('dining', 12, true);
       expect(result).toEqual({ icon: '🍽️', label: 'Lunch spot' });
     });
 
     it('should return "Afternoon pick-me-up" for coffee in afternoon', () => {
-      const result = getTimeContextLabel('cafe', 14, 'for_you');
+      const result = getTimeContextLabel('cafe', 14, true);
       expect(result).toEqual({ icon: '☕', label: 'Afternoon pick-me-up' });
     });
 
     it('should return "Afternoon find" for shopping in afternoon', () => {
-      const result = getTimeContextLabel('shopping', 15, 'for_you');
+      const result = getTimeContextLabel('shopping', 15, true);
       expect(result).toEqual({ icon: '🛍️', label: 'Afternoon find' });
     });
 
     // Evening (17-20)
     it('should return "Dinner spot" for restaurant in evening', () => {
-      const result = getTimeContextLabel('restaurant', 19, 'for_you');
+      const result = getTimeContextLabel('restaurant', 19, true);
       expect(result).toEqual({ icon: '🍽️', label: 'Dinner spot' });
     });
 
     it('should return "Tonight" for bar in evening', () => {
-      const result = getTimeContextLabel('bar', 20, 'for_you');
+      const result = getTimeContextLabel('bar', 20, true);
       expect(result).toEqual({ icon: '🍸', label: 'Tonight' });
     });
 
     it('should return "Tonight" for entertainment in evening', () => {
-      const result = getTimeContextLabel('entertainment', 19, 'for_you');
+      const result = getTimeContextLabel('entertainment', 19, true);
       expect(result).toEqual({ icon: '🎵', label: 'Tonight' });
     });
 
     // Late night (21+)
     it('should return "Late night" for nightlife after 9pm', () => {
-      const result = getTimeContextLabel('nightlife', 23, 'for_you');
+      const result = getTimeContextLabel('nightlife', 23, true);
       expect(result).toEqual({ icon: '🌙', label: 'Late night' });
     });
 
     // No match — unmatched categories return null (no generic fallback)
     it('should return null for unmatched category at any time', () => {
-      expect(getTimeContextLabel('parks', 14, 'for_you')).toBeNull();
-      expect(getTimeContextLabel('parks', 8, 'for_you')).toBeNull();
+      expect(getTimeContextLabel('parks', 14, true)).toBeNull();
+      expect(getTimeContextLabel('parks', 8, true)).toBeNull();
     });
 
     it('should return null for unmatched category in early morning hours', () => {
-      const result = getTimeContextLabel('shopping', 3, 'for_you');
+      const result = getTimeContextLabel('shopping', 3, true);
       expect(result).toBeNull();
     });
 
-    // Works without discoveryMode (defaults to showing chips)
-    it('should show chips when discoveryMode is undefined', () => {
-      const result = getTimeContextLabel('coffee', 8, undefined);
+    // Works with default showInsights (true, showing chips)
+    it('should show chips when showInsights defaults to true', () => {
+      const result = getTimeContextLabel('coffee', 8);
       expect(result).toEqual({ icon: '☕', label: 'Morning spot' });
     });
   });

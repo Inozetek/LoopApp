@@ -3,6 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useRef } from 'react';
 import { View, LogBox } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useFonts, Urbanist_300Light, Urbanist_400Regular, Urbanist_500Medium, Urbanist_600SemiBold } from '@expo-google-fonts/urbanist';
 import * as SplashScreen from 'expo-splash-screen';
@@ -17,6 +18,7 @@ import { ErrorBoundary } from '@/components/error-boundary';
 import { Colors } from '@/constants/theme';
 import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
 import { initializeErrorLogging } from '@/utils/error-logger';
+import { handleRadarNotificationTap } from '@/services/radar-push-service';
 
 // Suppress known auth errors that are handled gracefully
 LogBox.ignoreLogs([
@@ -55,6 +57,19 @@ function RootLayoutNav() {
       // In a real production app, you might want to show an error screen
     }
   }, []);
+
+  // Listen for notification taps (deep-linking for radar alerts)
+  useEffect(() => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data as Record<string, unknown>;
+      const radarData = handleRadarNotificationTap(data);
+      if (radarData) {
+        // Navigate to feed — the radar alert will be highlighted in-feed
+        router.push('/(tabs)');
+      }
+    });
+    return () => subscription.remove();
+  }, [router]);
 
   // Track auth state to avoid redundant logging on tab switches
   const lastAuthState = useRef<string>('');

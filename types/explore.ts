@@ -17,6 +17,10 @@ export interface ExploreItem {
   title: string;           // place name or moment caption
   subtitle?: string;       // category or user name
   rating?: number;         // places only
+  priceLevel?: number;     // 0-4 from Google Places
+  openNow?: boolean;       // from opening_hours.open_now
+  reviewCount?: number;    // from user_ratings_total
+  categoryId?: string;     // mapped category ID (e.g., 'dining', 'coffee')
   tileSize: 'small' | 'large'; // layout assignment
 
   // Original data references

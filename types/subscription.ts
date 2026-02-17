@@ -11,6 +11,24 @@
 
 export type SubscriptionTier = 'free' | 'plus';
 
+/**
+ * Number of cards per session that show AI insights (match score, explanation, time chip, Loop Pick)
+ * Free users see insights on first 8 cards; Plus users see insights on all cards.
+ */
+export const INSIGHTS_LIMIT = {
+  free: 8,
+  plus: Infinity,
+} as const;
+
+/**
+ * Reverse trial status for new users (7-day Plus trial)
+ */
+export interface TrialStatus {
+  isTrialing: boolean;
+  daysLeft: number;
+  expired: boolean;
+}
+
 export interface TierLimits {
   // Refresh frequency
   refresh_interval_hours: number; // 0 = unlimited
@@ -110,6 +128,12 @@ export const TIER_BADGES: Record<SubscriptionTier, { label: string; color: strin
     emoji: '🟢',
   },
 };
+
+/**
+ * Radar (hooks) limits per tier — re-exported from types/radar.ts for convenience
+ */
+export { RADAR_LIMITS } from './radar';
+export type { RadarLimits } from './radar';
 
 /**
  * Data freshness indicators (user-facing)

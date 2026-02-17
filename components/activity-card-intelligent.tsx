@@ -36,6 +36,8 @@ import {
   type LikeResult,
   type FriendWhoLiked,
 } from '@/services/likes-service';
+import { CardActionMenu } from '@/components/card-action-menu';
+import { FEATURE_FLAGS } from '@/constants/feature-flags';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_MARGIN = 8; // Minimal margins for near edge-to-edge cards
@@ -141,6 +143,7 @@ interface ActivityCardIntelligentProps {
   onAddToCalendar: () => void;
   onSeeDetails: () => void;
   onNotInterested?: () => void;
+  onAddToRadar?: () => void;
   onLike?: () => void;
   onComment?: () => void;
   onShare?: () => void;
@@ -159,8 +162,11 @@ interface ActivityCardIntelligentProps {
   // Pending invitation state (for pulsing border)
   hasPendingInvitation?: boolean;
 
-  // Discovery mode — hides match badge in 'explore' mode
-  discoveryMode?: 'for_you' | 'explore';
+  // Card type — kept for analytics tracking
+  cardType?: 'ai_curated' | 'discovery';
+
+  // Whether to show AI insight elements (match score, explanation, time chip, Loop Pick)
+  showInsights?: boolean;
 }
 
 function ActivityCardIntelligentComponent({
@@ -168,6 +174,7 @@ function ActivityCardIntelligentComponent({
   onAddToCalendar,
   onSeeDetails,
   onNotInterested,
+  onAddToRadar,
   onLike,
   onComment,
   onShare,
@@ -182,7 +189,8 @@ function ActivityCardIntelligentComponent({
   onDeclineRSVP,
   onMaybeRSVP,
   hasPendingInvitation = false,
-  discoveryMode,
+  cardType = 'ai_curated',
+  showInsights = true,
 }: ActivityCardIntelligentProps) {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -199,6 +207,9 @@ function ActivityCardIntelligentComponent({
     sponsorBoost: 0,
     finalScore: recommendation.score || 0,
   };
+
+  // Action menu state (three-dot menu)
+  const [actionMenuVisible, setActionMenuVisible] = useState(false);
 
   // Animation - entrance
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -510,9 +521,9 @@ function ActivityCardIntelligentComponent({
   }
 
   // Time context label for metadata row — computed fresh from category + current hour
-  // Hidden in Explore mode (personalization signal belongs to For You only)
+  // Hidden when insights are not shown (personalization signal belongs to insight-enabled cards only)
   const getTimeContextLabel = (): { icon: string; label: string } | null => {
-    if (discoveryMode === 'explore') return null;
+    if (!showInsights) return null;
 
     const hour = new Date().getHours();
     const cat = recommendation.category?.toLowerCase() || '';
@@ -588,6 +599,7 @@ function ActivityCardIntelligentComponent({
   // Group plans user accepted get glow border
   const finalScore = score.finalScore || recommendation.score || 0;
   const getBorderColor = () => {
+    if (!showInsights) return colors.border; // No-insights cards — no glow
     if (userHasAccepted) {
       return BrandColors.loopBlue; // User accepted group plan - cyan glow
     } else if (finalScore >= 60) {
@@ -628,11 +640,11 @@ function ActivityCardIntelligentComponent({
         styles.card,
         {
           backgroundColor: colors.card,
-          borderWidth: hasPendingInvitation ? 2.5 : (userHasAccepted ? 2 : (isStrongMatch ? 1.5 : (colorScheme === 'dark' ? 0 : 1))),
+          borderWidth: hasPendingInvitation ? 2.5 : (userHasAccepted ? 2 : (isStrongMatch && showInsights ? 1.5 : (colorScheme === 'dark' ? 0 : 1))),
           borderColor: hasPendingInvitation ? pulseBorderColor : getBorderColor(),
         },
-        // Subtle glow effect for strong AI matches
-        isStrongMatch && !userHasAccepted && !hasPendingInvitation && styles.strongMatchGlow,
+        // Subtle glow effect for strong AI matches (only when insights shown)
+        isStrongMatch && showInsights && !userHasAccepted && !hasPendingInvitation && styles.strongMatchGlow,
         // Pulsing glow for pending invitations
         hasPendingInvitation && styles.pendingInvitationGlow,
       ]}>
@@ -691,11 +703,17 @@ function ActivityCardIntelligentComponent({
           />
 
           {/* THREE-DOT MENU BUTTON (Top Left) */}
-          {onNotInterested && (
+          {(onNotInterested || onAddToRadar) && (
             <Pressable
               style={styles.menuButton}
-              onPress={onNotInterested}
-              onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (FEATURE_FLAGS.ENABLE_RADAR && onAddToRadar) {
+                  setActionMenuVisible(true);
+                } else {
+                  onNotInterested?.();
+                }
+              }}
             >
               <IconSymbol name="ellipsis.circle.fill" size={28} color="rgba(255, 255, 255, 0.9)" />
             </Pressable>
@@ -703,8 +721,8 @@ function ActivityCardIntelligentComponent({
 
           {/* BADGES OVERLAY ON IMAGE */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
-            {/* AI Match Badge (subtle, for strong matches — hidden in Explore mode) */}
-            {isStrongMatch && !isEvent && discoveryMode !== 'explore' && (
+            {/* AI Match Badge (subtle, for strong matches — hidden when insights off) */}
+            {isStrongMatch && !isEvent && showInsights && (
               <View style={styles.aiMatchBadge}>
                 <LinearGradient
                   colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
@@ -735,16 +753,16 @@ function ActivityCardIntelligentComponent({
               </View>
             )}
 
-            {/* Loop Pick Badge (curated recommendations — For You only) */}
-            {isCurated && !isEvent && discoveryMode !== 'explore' && (
+            {/* Loop Pick Badge (curated recommendations — only when insights shown) */}
+            {isCurated && !isEvent && showInsights && (
               <View style={styles.loopPickBadge}>
                 <Ionicons name="star" size={11} color="#FFFFFF" />
                 <Text style={styles.loopPickText}>Loop Pick</Text>
               </View>
             )}
 
-            {/* Trending Badge (high engagement — Explore mode only) */}
-            {isTrending && !isEvent && !isCurated && discoveryMode === 'explore' && (
+            {/* Trending Badge (high engagement — always visible) */}
+            {isTrending && !isEvent && !isCurated && (
               <View style={styles.trendingBadge}>
                 <Ionicons name="flame" size={12} color="#FFFFFF" />
                 <Text style={styles.trendingText}>Trending</Text>
@@ -843,13 +861,15 @@ function ActivityCardIntelligentComponent({
             </View>
           )}
 
-          {/* AI Explanation - Clean, natural language */}
-          <View style={styles.aiExplanation}>
-            <IconSymbol name="sparkles" size={14} color={colors.primary} />
-            <Text style={[styles.aiText, { color: colors.textSecondary }]} numberOfLines={2}>
-              {getAIExplanation()}
-            </Text>
-          </View>
+          {/* AI Explanation - Clean, natural language (hidden when insights off) */}
+          {showInsights && (
+            <View style={styles.aiExplanation}>
+              <IconSymbol name="sparkles" size={14} color={colors.primary} />
+              <Text style={[styles.aiText, { color: colors.textSecondary }]} numberOfLines={2}>
+                {getAIExplanation()}
+              </Text>
+            </View>
+          )}
 
           {/* Event Description (for events only) */}
           {isEvent && recommendation.description && typeof recommendation.description === 'string' && recommendation.description.trim() !== '' && (
@@ -1007,6 +1027,15 @@ function ActivityCardIntelligentComponent({
           <View style={styles.acceptedGlow} pointerEvents="none" />
         )}
       </Animated.View>
+
+      {/* Card Action Menu (three-dot) */}
+      <CardActionMenu
+        visible={actionMenuVisible}
+        onClose={() => setActionMenuVisible(false)}
+        onAddToRadar={onAddToRadar}
+        onNotInterested={onNotInterested}
+        activityName={recommendation.title}
+      />
     </Animated.View>
   );
 }

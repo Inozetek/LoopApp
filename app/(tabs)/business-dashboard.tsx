@@ -27,6 +27,9 @@ import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors, Typography } from '@/constants/brand';
 import { supabase } from '@/lib/supabase';
+import { FEATURE_FLAGS } from '@/constants/feature-flags';
+import { CreateHotDropSheet } from '@/components/create-hot-drop-sheet';
+import type { BusinessTier } from '@/services/hot-drop-service';
 
 interface BusinessAnalytics {
   impressions: number;
@@ -44,6 +47,7 @@ export default function BusinessDashboardScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [analytics, setAnalytics] = useState<BusinessAnalytics | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
+  const [showHotDropSheet, setShowHotDropSheet] = useState(false);
 
   // Fetch business analytics
   const fetchAnalytics = async () => {
@@ -235,16 +239,24 @@ export default function BusinessDashboardScreen() {
             style={[styles.actionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Alert.alert('Add Promotion', 'Promotions feature coming soon!');
+              if (FEATURE_FLAGS.ENABLE_HOT_DROPS) {
+                setShowHotDropSheet(true);
+              } else {
+                Alert.alert('Add Promotion', 'Promotions feature coming soon!');
+              }
             }}
           >
             <View style={[styles.actionIconContainer, { backgroundColor: BrandColors.loopOrange + '20' }]}>
               <Ionicons name="megaphone-outline" size={24} color={BrandColors.loopOrange} />
             </View>
             <View style={styles.actionContent}>
-              <Text style={[styles.actionTitle, { color: colors.text }]}>Add Promotion</Text>
+              <Text style={[styles.actionTitle, { color: colors.text }]}>
+                {FEATURE_FLAGS.ENABLE_HOT_DROPS ? 'Create Hot Drop' : 'Add Promotion'}
+              </Text>
               <Text style={[styles.actionDescription, { color: colors.textSecondary }]}>
-                Create special offers for Loop users
+                {FEATURE_FLAGS.ENABLE_HOT_DROPS
+                  ? 'Launch a time-limited deal for Loop users'
+                  : 'Create special offers for Loop users'}
               </Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
@@ -303,6 +315,23 @@ export default function BusinessDashboardScreen() {
         {/* Footer spacing */}
         <View style={{ height: Spacing.xl * 2 }} />
       </ScrollView>
+
+      {/* Create Hot Drop Sheet */}
+      {FEATURE_FLAGS.ENABLE_HOT_DROPS && (
+        <CreateHotDropSheet
+          visible={showHotDropSheet}
+          onClose={() => setShowHotDropSheet(false)}
+          onCreated={() => {
+            Alert.alert('Success', 'Your Hot Drop is now live!');
+          }}
+          businessId={businessProfile?.id || ''}
+          businessName={businessProfile?.business_name || user?.name || ''}
+          businessTier={(businessProfile?.subscription_tier as BusinessTier) || 'organic'}
+          businessAddress={businessProfile?.address}
+          businessLatitude={businessProfile?.latitude}
+          businessLongitude={businessProfile?.longitude}
+        />
+      )}
     </View>
   );
 }
