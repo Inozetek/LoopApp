@@ -147,8 +147,8 @@ interface ActivityCardIntelligentProps {
   onLike?: () => void;
   onComment?: () => void;
   onShare?: () => void;
-  likesCount?: number;      // Mock for MVP - derived from ID if not provided
-  commentsCount?: number;   // Mock for MVP - derived from ID if not provided
+  likesCount?: number;
+  commentsCount?: number;
   index: number;
   isRemoving?: boolean; // Trigger slide-out animation when added to calendar
 

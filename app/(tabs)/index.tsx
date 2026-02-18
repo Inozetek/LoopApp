@@ -47,7 +47,7 @@ import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/das
 import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
 import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities } from '@/services/feedback-service';
-import { getCommentCount } from '@/services/comments-service';
+import { getBatchCommentCounts } from '@/services/comments-service';
 import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service';
 import { ShareBottomSheet } from '@/components/share-bottom-sheet';
 import { InsightsNudge } from '@/components/insights-nudge';
@@ -462,12 +462,7 @@ export default function RecommendationFeedScreen() {
         // Mark as fetched immediately to prevent duplicate requests
         newPlaceIds.forEach(id => commentCountsFetched.current.add(id));
 
-        const counts = await Promise.all(
-          newPlaceIds.map(id => getCommentCount(id).catch(() => 0))
-        );
-
-        const countMap = new Map<string, number>();
-        newPlaceIds.forEach((id, i) => countMap.set(id, counts[i]));
+        const countMap = await getBatchCommentCounts(newPlaceIds);
 
         setRecommendations(prev => prev.map(r => {
           const placeId = r.activity?.googlePlaceId;

@@ -81,6 +81,46 @@ export async function getCommentCount(placeId: string): Promise<number> {
   return count ?? 0;
 }
 
+/**
+ * Fetch comment counts for multiple places in a single query.
+ * Returns a Map of placeId → count. Missing place IDs default to 0.
+ */
+export async function getBatchCommentCounts(
+  placeIds: string[],
+): Promise<Map<string, number>> {
+  const result = new Map<string, number>();
+  if (placeIds.length === 0) return result;
+
+  // Supabase doesn't support GROUP BY directly in the JS client,
+  // so we use an RPC or fall back to individual counts.
+  // Approach: fetch all active comment place_ids in one query, count client-side.
+  const { data, error } = await supabase
+    .from('comments')
+    .select('place_id')
+    .in('place_id', placeIds)
+    .eq('status', 'active');
+
+  if (error) {
+    console.error('Error fetching batch comment counts:', error);
+    // Initialize all to 0 on error
+    placeIds.forEach(id => result.set(id, 0));
+    return result;
+  }
+
+  // Count occurrences client-side
+  (data || []).forEach((row: any) => {
+    const pid = row.place_id;
+    result.set(pid, (result.get(pid) || 0) + 1);
+  });
+
+  // Fill in zeros for places with no comments
+  placeIds.forEach(id => {
+    if (!result.has(id)) result.set(id, 0);
+  });
+
+  return result;
+}
+
 export async function postComment(
   userId: string,
   placeId: string,
