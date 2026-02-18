@@ -6,7 +6,7 @@
  */
 
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -27,17 +27,7 @@ export function UpgradeFeedCard({ dailyAiLimit, onDismiss }: UpgradeFeedCardProp
 
   const handleUpgrade = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    Alert.alert(
-      'Upgrade to Loop Plus',
-      `Get unlimited personalized recommendations, group planning, calendar sync, and an ad-free experience for just $${TIER_PRICING.plus}/month.`,
-      [
-        { text: 'Not Now', style: 'cancel' },
-        {
-          text: 'View Plans',
-          onPress: () => router.push('/(tabs)/settings'),
-        },
-      ]
-    );
+    router.push('/paywall' as any);
   };
 
   return (

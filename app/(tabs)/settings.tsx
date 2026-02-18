@@ -262,7 +262,7 @@ export default function SettingsScreen() {
             </Text>
             <TouchableOpacity
               style={[styles.upgradeButton, { backgroundColor: BrandColors.loopBlue }]}
-              onPress={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); router.push('/paywall' as any); }}
             >
               <Text style={styles.upgradeButtonText}>
                 {user?.subscription_tier === 'free' ? 'Upgrade to Plus' : 'Manage Subscription'}
