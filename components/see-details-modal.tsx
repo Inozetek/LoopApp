@@ -34,7 +34,7 @@ import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
 import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
 import { extractReviewTopics, type ReviewTopic } from '@/utils/review-topics';
 import { getMatchingPartners, openAffiliateLink, trackAffiliateClick, type MatchedPartner } from '@/services/affiliate-service';
-import { getComments, postComment, type Comment } from '@/services/comments-service';
+import { getComments, postComment, markHelpful, type Comment } from '@/services/comments-service';
 import { getLikesCount } from '@/services/likes-service';
 import { useAuth } from '@/contexts/auth-context';
 import { DragHandle } from '@/components/drag-handle';
@@ -217,6 +217,8 @@ export function SeeDetailsModal({
   const [commentText, setCommentText] = useState('');
   const [isPostingComment, setIsPostingComment] = useState(false);
   const [showCommentInput, setShowCommentInput] = useState(false);
+  const [commentRating, setCommentRating] = useState<number | null>(null);
+  const [helpedComments, setHelpedComments] = useState<Set<string>>(new Set());
 
   // Fetch reviews + Loop comments when modal opens
   useEffect(() => {
@@ -257,6 +259,8 @@ export function SeeDetailsModal({
       setReviewTopics([]);
       setShowCommentInput(false);
       setCommentText('');
+      setCommentRating(null);
+      setHelpedComments(new Set());
       setLikesCount(0);
     }
   }, [visible, recommendation?.activity?.googlePlaceId]);
@@ -276,10 +280,11 @@ export function SeeDetailsModal({
 
     setIsPostingComment(true);
     try {
-      const comment = await postComment(user.id, placeId, commentText.trim());
+      const comment = await postComment(user.id, placeId, commentText.trim(), commentRating ?? undefined);
       if (comment) {
         setLoopComments(prev => [{ ...comment, userName: 'You' }, ...prev]);
         setCommentText('');
+        setCommentRating(null);
         setShowCommentInput(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
@@ -660,7 +665,18 @@ export function SeeDetailsModal({
                           {loopComments.slice(0, 5).map((comment) => (
                             <View key={comment.id} style={[styles.loopCommentCard, { borderBottomColor: colors.border }]}>
                               <View style={styles.loopCommentHeader}>
-                                <View style={[styles.loopCommentDot, { backgroundColor: BrandColors.success }]} />
+                                {comment.userAvatar ? (
+                                  <Image
+                                    source={{ uri: comment.userAvatar }}
+                                    style={styles.loopCommentAvatar}
+                                  />
+                                ) : (
+                                  <View style={[styles.loopCommentAvatar, { backgroundColor: BrandColors.loopBlue }]}>
+                                    <Text style={styles.loopCommentAvatarText}>
+                                      {(comment.userName || 'L')[0].toUpperCase()}
+                                    </Text>
+                                  </View>
+                                )}
                                 <Text style={[styles.loopCommentAuthor, { color: colors.text }]}>
                                   {comment.userName}
                                 </Text>
@@ -668,9 +684,43 @@ export function SeeDetailsModal({
                                   {formatCommentDate(comment.createdAt)}
                                 </Text>
                               </View>
+                              {comment.rating != null && comment.rating > 0 && (
+                                <View style={styles.loopCommentStars}>
+                                  {[1, 2, 3, 4, 5].map((star) => (
+                                    <IconSymbol
+                                      key={star}
+                                      name={star <= (comment.rating ?? 0) ? 'star.fill' : 'star'}
+                                      size={12}
+                                      color={star <= (comment.rating ?? 0) ? '#FFD700' : colors.icon}
+                                    />
+                                  ))}
+                                </View>
+                              )}
                               <Text style={[styles.loopCommentText, { color: colors.text }]} numberOfLines={3}>
                                 {comment.text}
                               </Text>
+                              <TouchableOpacity
+                                style={styles.helpfulButton}
+                                onPress={() => {
+                                  if (helpedComments.has(comment.id)) return;
+                                  setHelpedComments(prev => new Set(prev).add(comment.id));
+                                  setLoopComments(prev =>
+                                    prev.map(c => c.id === comment.id ? { ...c, helpfulCount: c.helpfulCount + 1 } : c)
+                                  );
+                                  markHelpful(comment.id);
+                                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                                }}
+                                disabled={helpedComments.has(comment.id)}
+                              >
+                                <Ionicons
+                                  name={helpedComments.has(comment.id) ? 'thumbs-up' : 'thumbs-up-outline'}
+                                  size={14}
+                                  color={helpedComments.has(comment.id) ? BrandColors.loopBlue : colors.icon}
+                                />
+                                <Text style={[styles.helpfulText, { color: helpedComments.has(comment.id) ? BrandColors.loopBlue : colors.icon }]}>
+                                  {comment.helpfulCount > 0 ? comment.helpfulCount : 'Helpful'}
+                                </Text>
+                              </TouchableOpacity>
                             </View>
                           ))}
                         </View>
@@ -702,6 +752,24 @@ export function SeeDetailsModal({
                             maxLength={500}
                             autoFocus
                           />
+                          <View style={styles.starRatingRow}>
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <TouchableOpacity
+                                key={star}
+                                onPress={() => setCommentRating(commentRating === star ? null : star)}
+                                hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                              >
+                                <IconSymbol
+                                  name={star <= (commentRating ?? 0) ? 'star.fill' : 'star'}
+                                  size={22}
+                                  color={star <= (commentRating ?? 0) ? '#FFD700' : colors.icon}
+                                />
+                              </TouchableOpacity>
+                            ))}
+                            <Text style={[{ fontSize: 12, marginLeft: 4 }, { color: colors.icon }]}>
+                              {commentRating ? `${commentRating}/5` : 'Rate (optional)'}
+                            </Text>
+                          </View>
                           <View style={styles.commentInputActions}>
                             <TouchableOpacity onPress={() => { setShowCommentInput(false); setCommentText(''); }}>
                               <Text style={[styles.commentCancelText, { color: colors.icon }]}>Cancel</Text>
@@ -783,9 +851,15 @@ export function SeeDetailsModal({
                       )}
 
                       {reviews.length === 0 && loopComments.length === 0 && (
-                        <Text style={[styles.noReviewsText, { color: colors.icon }]}>
-                          Be the first to share your experience!
-                        </Text>
+                        <View style={styles.emptyCommentState}>
+                          <Ionicons name="chatbubble-ellipses-outline" size={36} color={colors.icon} />
+                          <Text style={[styles.emptyCommentTitle, { color: colors.text }]}>
+                            No reviews yet
+                          </Text>
+                          <Text style={[styles.emptyCommentSubtitle, { color: colors.icon }]}>
+                            Be the first to share your experience!
+                          </Text>
+                        </View>
                       )}
                     </>
                   )}
@@ -1498,10 +1572,23 @@ const styles = StyleSheet.create({
     gap: 6,
     marginBottom: 4,
   },
-  loopCommentDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  loopCommentAvatar: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center' as const,
+    justifyContent: 'center' as const,
+  },
+  loopCommentAvatarText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '700' as const,
+  },
+  loopCommentStars: {
+    flexDirection: 'row' as const,
+    gap: 2,
+    paddingLeft: 30,
+    marginBottom: 2,
   },
   loopCommentAuthor: {
     fontSize: 14,
@@ -1513,7 +1600,35 @@ const styles = StyleSheet.create({
   loopCommentText: {
     fontSize: 14,
     lineHeight: 20,
-    paddingLeft: 14,
+    paddingLeft: 30,
+  },
+  helpfulButton: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 4,
+    paddingLeft: 30,
+    paddingTop: 6,
+  },
+  helpfulText: {
+    fontSize: 12,
+  },
+  starRatingRow: {
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
+    gap: 6,
+    marginTop: 8,
+  },
+  emptyCommentState: {
+    alignItems: 'center' as const,
+    paddingVertical: 24,
+    gap: 6,
+  },
+  emptyCommentTitle: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  emptyCommentSubtitle: {
+    fontSize: 14,
   },
   addCommentButton: {
     flexDirection: 'row',
