@@ -33,6 +33,7 @@ import Animated, {
   withSequence,
   interpolate,
   Easing,
+  runOnJS,
 } from 'react-native-reanimated';
 import { GROK_SPRING } from '@/constants/animations';
 
@@ -42,6 +43,7 @@ const AnimatedLine = Animated.createAnimatedComponent(Line);
 interface OnboardingLoopAnimationProps {
   currentStep: number;
   size?: number;
+  onComplete?: () => void;
 }
 
 // Node positions in a pentagonal loop layout (normalized 0-1)
@@ -73,6 +75,7 @@ const NODE_COLORS = [
 export function OnboardingLoopAnimation({
   currentStep,
   size = 280,
+  onComplete,
 }: OnboardingLoopAnimationProps) {
   // Animation values for each node (0 = hidden, 1 = visible)
   const node0 = useSharedValue(0);
@@ -152,6 +155,11 @@ export function OnboardingLoopAnimation({
         -1,
         true
       ));
+      // Fire onComplete after closing animation finishes
+      if (onComplete) {
+        const timer = setTimeout(() => onComplete(), 1300);
+        return () => clearTimeout(timer);
+      }
     } else {
       edge3.value = withTiming(0, { duration: 300 });
       edge4.value = withTiming(0, { duration: 300 });
@@ -170,7 +178,7 @@ export function OnboardingLoopAnimation({
       const scale = index === 0 ? centerPulse.value : 1;
       return {
         r: (index === 0 ? centerRadius : baseRadius) * nodeValue.value * scale,
-        opacity: nodeValue.value * 0.8,
+        opacity: nodeValue.value * 0.9,
       };
     });
   };
@@ -188,16 +196,16 @@ export function OnboardingLoopAnimation({
         y1: from.y * size,
         x2: interpolate(progress, [0, 1], [from.x * size, to.x * size]),
         y2: interpolate(progress, [0, 1], [from.y * size, to.y * size]),
-        opacity: progress * 0.5,
-        strokeWidth: 1.5,
+        opacity: progress * 0.7,
+        strokeWidth: 2.5,
       };
     });
   };
 
   // Closing glow animated props
   const closingGlowProps = useAnimatedProps(() => ({
-    r: size * 0.15 * closingGlow.value,
-    opacity: closingGlow.value * 0.15,
+    r: size * 0.25 * closingGlow.value,
+    opacity: closingGlow.value * 0.3,
   }));
 
   // Create animated props arrays (must call hooks at top level)
@@ -271,6 +279,6 @@ const styles = StyleSheet.create({
   svg: {
     position: 'absolute',
     alignSelf: 'center',
-    opacity: 0.2,
+    opacity: 0.45,
   },
 });

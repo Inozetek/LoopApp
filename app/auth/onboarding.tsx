@@ -978,7 +978,11 @@ export default function OnboardingScreen() {
       {/* Background loop animation — personal flow only */}
       {!isBusiness && (
         <View style={styles.loopAnimationWrap}>
-          <OnboardingLoopAnimation currentStep={step} size={280} />
+          <OnboardingLoopAnimation
+            currentStep={step}
+            size={280}
+            onComplete={() => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success)}
+          />
         </View>
       )}
 
