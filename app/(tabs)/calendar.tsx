@@ -54,6 +54,7 @@ import { createMarkedDates } from '@/utils/calendar';
 import { getCurrentLocation } from '@/services/location-service';
 import {
   getPendingFeedbackActivities,
+  getPastEventsNeedingFeedback,
   markEventAsCompleted,
   shouldPromptForFeedback,
   CompletedActivity,
@@ -250,6 +251,8 @@ export default function CalendarScreen() {
   // Feedback modal state
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackActivity, setFeedbackActivity] = useState<CompletedActivity | null>(null);
+  // Track event IDs that need feedback (auto-detected past events)
+  const [eventsNeedingFeedback, setEventsNeedingFeedback] = useState<Set<string>>(new Set());
 
   // Edit task modal state
   const [showEditModal, setShowEditModal] = useState(false);
@@ -533,6 +536,11 @@ export default function CalendarScreen() {
 
       console.log(`✅ Found ${data?.length || 0} events for ${selectedDate}`);
       setEvents(data || []);
+
+      // Load which past events need feedback (for "How was it?" chip)
+      getPastEventsNeedingFeedback(user.id).then(pending => {
+        setEventsNeedingFeedback(new Set(pending.map(p => p.eventId)));
+      }).catch(() => {});
     } catch (error) {
       console.error('Error loading events:', error);
     } finally {
@@ -1258,9 +1266,33 @@ export default function CalendarScreen() {
                 </View>
               </View>
 
-              {/* Mark as Complete button - only show if event has ended and not already completed */}
+              {/* "How was it?" chip for past events needing feedback (auto-detected) */}
               {event.status === 'scheduled' &&
-                new Date(event.end_time) < new Date() && (
+                new Date(event.end_time) < new Date() &&
+                eventsNeedingFeedback.has(event.id) && (
+                  <TouchableOpacity
+                    style={[styles.completeButton, { borderColor: BrandColors.loopGreen, backgroundColor: BrandColors.loopGreen + '10' }]}
+                    onPress={() => handleMarkAsComplete(event)}
+                  >
+                    <Ionicons
+                      name="chatbubble-ellipses-outline"
+                      size={18}
+                      color={BrandColors.loopGreen}
+                    />
+                    <Text
+                      style={[
+                        Typography.labelMedium,
+                        { color: BrandColors.loopGreen, marginLeft: 6 },
+                      ]}
+                    >
+                      How was it?
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              {/* Fallback: original "Rate Activity" for past events not in auto-detected set */}
+              {event.status === 'scheduled' &&
+                new Date(event.end_time) < new Date() &&
+                !eventsNeedingFeedback.has(event.id) && (
                   <TouchableOpacity
                     style={[styles.completeButton, { borderColor: Colors[colorScheme ?? 'light'].border }]}
                     onPress={() => handleMarkAsComplete(event)}

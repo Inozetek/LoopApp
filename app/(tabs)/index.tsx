@@ -46,7 +46,7 @@ import { handleError } from '@/utils/error-handler';
 import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
 import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
-import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities } from '@/services/feedback-service';
+import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities, getPastEventsNeedingFeedback } from '@/services/feedback-service';
 import { getBatchCommentCounts } from '@/services/comments-service';
 import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service';
 import { ShareBottomSheet } from '@/components/share-bottom-sheet';
@@ -1615,8 +1615,14 @@ export default function RecommendationFeedScreen() {
   // Check for pending feedback count on mount (for banner)
   useEffect(() => {
     if (!user) return;
-    getPendingFeedbackActivities(user.id).then(activities => {
-      setPendingFeedbackCount(activities.length);
+    Promise.all([
+      getPendingFeedbackActivities(user.id),
+      getPastEventsNeedingFeedback(user.id),
+    ]).then(([completed, past]) => {
+      // Deduplicate by eventId (completed events may overlap with past events)
+      const seenIds = new Set(completed.map(a => a.eventId));
+      const uniquePast = past.filter(a => !seenIds.has(a.eventId));
+      setPendingFeedbackCount(completed.length + uniquePast.length);
       setFeedbackBannerDismissed(false);
     }).catch(() => {});
   }, [user]);

@@ -187,30 +187,108 @@ export async function getRecommendationIdForActivity(
 }
 
 /**
- * Check if user should see feedback prompt
- * Returns true if there are pending activities and user hasn't been prompted recently
+ * Find past events (end_time < now, within 48 hours) that haven't received feedback,
+ * regardless of whether the user explicitly marked them "completed".
+ *
+ * This enables automatic feedback prompting — the user doesn't need to tap
+ * "Rate Activity" first. Events that were cancelled are excluded.
+ */
+export async function getPastEventsNeedingFeedback(
+  userId: string
+): Promise<CompletedActivity[]> {
+  if (userId === DEMO_USER_ID) return [];
+
+  try {
+    const now = new Date();
+    const twoDaysAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+
+    // Find events that have ended in the last 48 hours and aren't cancelled
+    const { data: pastEvents, error: eventsError } = await supabase
+      .from('calendar_events')
+      .select('id, title, category, activity_id, end_time, completed_at, source, address, google_place_id')
+      .eq('user_id', userId)
+      .in('status', ['scheduled', 'completed'])
+      .lt('end_time', now.toISOString())
+      .gt('end_time', twoDaysAgo.toISOString())
+      .order('end_time', { ascending: false });
+
+    if (eventsError) throw eventsError;
+    if (!pastEvents || pastEvents.length === 0) return [];
+
+    const events = pastEvents as any[];
+
+    // Check which already have feedback
+    const eventActivityIds = events
+      .map((e) => e.activity_id)
+      .filter((id) => id !== null);
+
+    let feedbackActivityIds = new Set<string>();
+
+    if (eventActivityIds.length > 0) {
+      const { data: feedbackData } = await (supabase
+        .from('feedback') as any)
+        .select('activity_id')
+        .eq('user_id', userId)
+        .in('activity_id', eventActivityIds);
+
+      if (feedbackData) {
+        feedbackActivityIds = new Set(
+          (feedbackData as any[]).map((f) => f.activity_id)
+        );
+      }
+    }
+
+    // Filter out events that already have feedback
+    return events
+      .filter((event) => {
+        if (event.activity_id && feedbackActivityIds.has(event.activity_id)) {
+          return false;
+        }
+        return true;
+      })
+      .map((event) => ({
+        eventId: event.id,
+        activityId: event.activity_id,
+        activityName: event.title,
+        activityCategory: event.category || 'other',
+        completedAt: event.completed_at || event.end_time,
+        recommendationId: null,
+        place: event.google_place_id || event.activity_id ? {
+          id: event.google_place_id || event.activity_id || event.id,
+          name: event.title,
+          address: event.address || undefined,
+        } : undefined,
+      }));
+  } catch (error) {
+    console.error('Error fetching past events needing feedback:', error);
+    return [];
+  }
+}
+
+/**
+ * Check if user should see feedback prompt.
+ *
+ * Priority order:
+ * 1. Explicitly completed events without feedback (highest priority)
+ * 2. Past scheduled events without feedback (auto-detected)
  */
 export async function shouldPromptForFeedback(
   userId: string
 ): Promise<{ shouldPrompt: boolean; activity?: CompletedActivity }> {
   try {
-    const pendingActivities = await getPendingFeedbackActivities(userId);
-
-    if (pendingActivities.length === 0) {
-      return { shouldPrompt: false };
+    // First check explicitly completed events (existing behavior)
+    const completedPending = await getPendingFeedbackActivities(userId);
+    if (completedPending.length > 0) {
+      return { shouldPrompt: true, activity: completedPending[0] };
     }
 
-    // Return the most recent completed activity
-    const activity = pendingActivities[0];
+    // Then check auto-detected past events
+    const pastPending = await getPastEventsNeedingFeedback(userId);
+    if (pastPending.length > 0) {
+      return { shouldPrompt: true, activity: pastPending[0] };
+    }
 
-    // Check if we've already prompted for this specific activity
-    // (You could store prompt history in localStorage or a database table)
-    // For MVP, we'll just return the first pending activity
-
-    return {
-      shouldPrompt: true,
-      activity,
-    };
+    return { shouldPrompt: false };
   } catch (error) {
     console.error('Error checking feedback prompt:', error);
     return { shouldPrompt: false };
