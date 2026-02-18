@@ -100,6 +100,9 @@ export default function OnboardingScreen() {
   const [businessName, setBusinessName] = useState('');
   const [businessCategory, setBusinessCategory] = useState('');
   const [businessDescription, setBusinessDescription] = useState('');
+  const [businessPhone, setBusinessPhone] = useState('');
+  const [businessWebsite, setBusinessWebsite] = useState('');
+  const [businessTier, setBusinessTier] = useState<'organic' | 'boosted' | 'premium'>('organic');
 
   // Refs
   const firstNameRef = useRef<TextInput>(null);
@@ -167,7 +170,7 @@ export default function OnboardingScreen() {
   }, [step, isBusiness]);
 
   const PERSONAL_TOTAL = 4; // last step index (5 steps: 0-4)
-  const BUSINESS_TOTAL = 3; // last step index (4 steps: 0-3)
+  const BUSINESS_TOTAL = 5; // last step index (6 steps: 0-5)
   const TOTAL_STEPS = isBusiness ? BUSINESS_TOTAL : PERSONAL_TOTAL;
 
   // ============================================================================
@@ -292,6 +295,12 @@ export default function OnboardingScreen() {
       }
       setStep(3);
     } else if (step === 3) {
+      // Phone & website — optional, always advance
+      setStep(4);
+    } else if (step === 4) {
+      // Tier selection — always advance (defaults to organic)
+      setStep(5);
+    } else if (step === 5) {
       completeOnboarding();
     }
   }
@@ -385,10 +394,18 @@ export default function OnboardingScreen() {
       });
 
       if (!error && isBusiness) {
+        const trialEnd = businessTier !== 'organic'
+          ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+          : null;
         await updateBusinessProfile({
           business_name: businessName.trim(),
           business_category: businessCategory,
           business_description: businessDescription.trim() || null,
+          business_phone: businessPhone.trim() || null,
+          business_website: businessWebsite.trim() || null,
+          subscription_tier: businessTier,
+          subscription_status: businessTier !== 'organic' ? 'trialing' : 'active',
+          trial_ends_at: trialEnd,
           address: formattedHomeAddress,
           location: homeLocation as any,
         } as any);
@@ -936,12 +953,124 @@ export default function OnboardingScreen() {
 
   function renderBusinessStep3() {
     return (
+      <View style={styles.bizStepContent}>
+        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+          Contact details
+        </Text>
+        <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
+          Optional — helps customers reach you
+        </Text>
+
+        <View style={styles.bizNameSection}>
+          <TextInput
+            style={[styles.bizInput, { borderColor: theme.border, color: theme.text }]}
+            placeholder="Phone number (optional)"
+            placeholderTextColor={theme.textSubtle}
+            value={businessPhone}
+            onChangeText={setBusinessPhone}
+            keyboardType="phone-pad"
+            editable={!isLoading}
+          />
+          <TextInput
+            style={[styles.bizInput, { borderColor: theme.border, color: theme.text }]}
+            placeholder="Website URL (optional)"
+            placeholderTextColor={theme.textSubtle}
+            value={businessWebsite}
+            onChangeText={setBusinessWebsite}
+            keyboardType="url"
+            autoCapitalize="none"
+            editable={!isLoading}
+          />
+        </View>
+      </View>
+    );
+  }
+
+  const TIER_OPTIONS: { tier: 'organic' | 'boosted' | 'premium'; name: string; price: string; features: string[] }[] = [
+    {
+      tier: 'organic',
+      name: 'Organic',
+      price: 'Free',
+      features: ['Listed in database', 'Appears when best match', 'No algorithmic boost'],
+    },
+    {
+      tier: 'boosted',
+      name: 'Boosted',
+      price: '$49/mo',
+      features: ['+15% algorithm boost', '"Sponsored" label', 'Basic analytics', '30-day free trial'],
+    },
+    {
+      tier: 'premium',
+      name: 'Premium',
+      price: '$149/mo',
+      features: ['+30% algorithm boost', 'Top placement', 'Full analytics dashboard', '30-day free trial'],
+    },
+  ];
+
+  function renderBusinessStep4() {
+    return (
+      <View style={styles.bizStepContent}>
+        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+          Choose your plan
+        </Text>
+        <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
+          Boost your visibility to nearby Loop users
+        </Text>
+
+        <View style={styles.bizTierList}>
+          {TIER_OPTIONS.map((option) => {
+            const isSelected = businessTier === option.tier;
+            return (
+              <TouchableOpacity
+                key={option.tier}
+                style={[
+                  styles.bizTierCard,
+                  {
+                    borderColor: isSelected ? theme.accent : theme.border,
+                    backgroundColor: isSelected ? theme.accentMuted : 'transparent',
+                  },
+                ]}
+                onPress={() => {
+                  setBusinessTier(option.tier);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.bizTierHeader}>
+                  <Text style={[styles.bizTierName, { color: isSelected ? theme.accent : theme.text }]}>
+                    {option.name}
+                  </Text>
+                  <Text style={[styles.bizTierPrice, { color: isSelected ? theme.accent : theme.textMuted }]}>
+                    {option.price}
+                  </Text>
+                </View>
+                {option.features.map((feat, i) => (
+                  <Text key={i} style={[styles.bizTierFeature, { color: theme.textMuted }]}>
+                    {feat}
+                  </Text>
+                ))}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      </View>
+    );
+  }
+
+  function renderBusinessStep5() {
+    const tierLabel = businessTier === 'organic' ? '' : ` (${businessTier === 'boosted' ? 'Boosted' : 'Premium'} — 30-day trial)`;
+    return (
       <View style={[styles.bizStepContent, styles.centeredStep]}>
         <Text style={[styles.bizStepTitle, { color: theme.text, textAlign: 'center' }]}>
-          You&apos;re all set
+          You&apos;re all set{tierLabel ? '!' : ''}
         </Text>
+        {tierLabel ? (
+          <View style={[styles.bizTierBadge, { backgroundColor: theme.accent }]}>
+            <Text style={styles.bizTierBadgeText}>{businessTier === 'boosted' ? 'Boosted' : 'Premium'} Trial</Text>
+          </View>
+        ) : null}
         <Text style={[styles.bizStepSubtitle, { color: theme.textMuted, textAlign: 'center' }]}>
-          Your business will appear in Loop recommendations{'\n'}for nearby users
+          Your business will appear in Loop recommendations{'\n'}for nearby users{tierLabel}
         </Text>
       </View>
     );
@@ -958,6 +1087,8 @@ export default function OnboardingScreen() {
         case 1: return renderBusinessStep1();
         case 2: return renderBusinessStep2();
         case 3: return renderBusinessStep3();
+        case 4: return renderBusinessStep4();
+        case 5: return renderBusinessStep5();
       }
     } else {
       switch (step) {
@@ -1467,5 +1598,46 @@ const styles = StyleSheet.create({
   bizDividerText: {
     paddingHorizontal: 14,
     fontSize: 13,
+  },
+  bizTierList: {
+    gap: 12,
+    marginTop: 16,
+  },
+  bizTierCard: {
+    borderWidth: 1.5,
+    borderRadius: 12,
+    padding: 16,
+  },
+  bizTierHeader: {
+    flexDirection: 'row' as const,
+    justifyContent: 'space-between' as const,
+    alignItems: 'center' as const,
+    marginBottom: 8,
+  },
+  bizTierName: {
+    fontSize: 18,
+    fontWeight: '700' as const,
+  },
+  bizTierPrice: {
+    fontSize: 16,
+    fontWeight: '600' as const,
+  },
+  bizTierFeature: {
+    fontSize: 13,
+    lineHeight: 20,
+    paddingLeft: 4,
+  },
+  bizTierBadge: {
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 8,
+    marginBottom: 4,
+    alignSelf: 'center' as const,
+  },
+  bizTierBadgeText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700' as const,
   },
 });
