@@ -269,7 +269,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.lg,
   },
   heroTitle: {
-    ...Typography.headingLarge,
+    ...Typography.headlineLarge,
     color: '#FFFFFF',
     marginTop: Spacing.sm,
   },
