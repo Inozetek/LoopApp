@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import type { DiscoveryStyle } from '@/types/database';
 
 type DataSharingLevel = 'minimal' | 'standard' | 'full';
 
@@ -35,6 +36,7 @@ export default function AIPreferencesScreen() {
   const [calendarLearning, setCalendarLearning] = useState(prefs.calendar_learning_enabled !== false);
   const [smartScheduling, setSmartScheduling] = useState(prefs.smart_scheduling_enabled ?? false);
   const [dataSharingLevel, setDataSharingLevel] = useState<DataSharingLevel>(prefs.data_sharing_level || 'standard');
+  const [discoveryStyle, setDiscoveryStyleState] = useState<DiscoveryStyle>(prefs.discovery_style || 'balanced');
 
   const persist = async (updates: Record<string, any>) => {
     const merged = { ...(user?.preferences || {}), ...updates };
@@ -59,6 +61,17 @@ export default function AIPreferencesScreen() {
   const handleDataSharing = (level: DataSharingLevel) => {
     setDataSharingLevel(level);
     persist({ data_sharing_level: level });
+  };
+
+  const handleDiscoveryStyle = (style: DiscoveryStyle) => {
+    setDiscoveryStyleState(style);
+    persist({ discovery_style: style });
+  };
+
+  const DISCOVERY_STYLE_DESCRIPTIONS: Record<DiscoveryStyle, string> = {
+    explorer: 'You\'ll see more new and unfamiliar places. Great for adventurous users.',
+    balanced: 'A mix of your favorites and new discoveries. The default experience.',
+    creature_of_habit: 'Emphasizes places you already know and love. Perfect for routine-oriented users.',
   };
 
   const SegmentedControl = ({
@@ -162,6 +175,23 @@ export default function AIPreferencesScreen() {
             value={smartScheduling}
             onValueChange={handleSmartScheduling}
             trackColor={{ true: BrandColors.loopBlue }}
+          />
+        </View>
+
+        {/* Discovery Style */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Discovery Style</Text>
+          <Text style={[styles.sectionDescription, { color: colors.textSecondary }]}>
+            {DISCOVERY_STYLE_DESCRIPTIONS[discoveryStyle]}
+          </Text>
+          <SegmentedControl
+            options={[
+              { label: 'Explorer', value: 'explorer' },
+              { label: 'Balanced', value: 'balanced' },
+              { label: 'Habitual', value: 'creature_of_habit' },
+            ]}
+            selected={discoveryStyle}
+            onSelect={handleDiscoveryStyle}
           />
         </View>
 

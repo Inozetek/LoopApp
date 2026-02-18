@@ -2,15 +2,16 @@
  * Onboarding Loop Animation
  *
  * SVG-based background animation that grows as user progresses through onboarding.
- * Each step (0-4) adds a node to a visual route. On the final step,
+ * Each step (0-5) adds a node to a visual route. On the final step,
  * the route closes into a loop shape and pulses.
  *
- * Visual Progression:
+ * Visual Progression (hexagonal layout):
  * Step 0: "You" center dot — single cyan pulse
  * Step 1: "Identity" node — path draws to upper-right
- * Step 2: "Interests" cluster — dots branch around node 2
- * Step 3: "Home" node — path draws to bottom-left
- * Step 4: Loop closes — path connects back, glow pulse, morph ready
+ * Step 2: "Interests" cluster — dots branch to right
+ * Step 3: "Style" node — path draws to lower-right (discovery style)
+ * Step 4: "Home" node — path draws to bottom-left
+ * Step 5: Loop closes — "Ready" node + path connects back, glow pulse
  */
 
 import React, { useEffect } from 'react';
@@ -46,28 +47,31 @@ interface OnboardingLoopAnimationProps {
   onComplete?: () => void;
 }
 
-// Node positions in a pentagonal loop layout (normalized 0-1)
+// Node positions in a hexagonal loop layout (normalized 0-1)
 const NODES = [
   { x: 0.50, y: 0.50 }, // Step 0: Center "You"
-  { x: 0.75, y: 0.28 }, // Step 1: Upper-right "Identity"
-  { x: 0.82, y: 0.62 }, // Step 2: Right "Interests"
-  { x: 0.50, y: 0.80 }, // Step 3: Bottom "Home"
-  { x: 0.22, y: 0.55 }, // Step 4: Left "Ready" (closes the loop)
+  { x: 0.75, y: 0.25 }, // Step 1: Upper-right "Identity"
+  { x: 0.85, y: 0.55 }, // Step 2: Right "Interests"
+  { x: 0.65, y: 0.80 }, // Step 3: Lower-right "Style" (NEW)
+  { x: 0.35, y: 0.80 }, // Step 4: Bottom-left "Home" (shifted)
+  { x: 0.18, y: 0.50 }, // Step 5: Left "Ready" (shifted, closes loop)
 ];
 
 // Connections between nodes (path segments)
 const EDGES = [
   [0, 1], // Step 1: Center → Upper-right
   [1, 2], // Step 2: Upper-right → Right
-  [2, 3], // Step 3: Right → Bottom
-  [3, 4], // Step 4: Bottom → Left
-  [4, 0], // Step 4: Left → Center (closes loop)
+  [2, 3], // Step 3: Right → Lower-right
+  [3, 4], // Step 4: Lower-right → Bottom-left
+  [4, 5], // Step 5: Bottom-left → Left
+  [5, 0], // Step 5: Left → Center (closes loop)
 ];
 
 const NODE_COLORS = [
   '#00BCD4', // Cyan
   '#4FC3F7', // Light Blue
   '#09DB98', // Green
+  '#FF6B6B', // Coral (Style)
   '#FF9800', // Orange
   '#E040FB', // Purple
 ];
@@ -83,7 +87,8 @@ export function OnboardingLoopAnimation({
   const node2 = useSharedValue(0);
   const node3 = useSharedValue(0);
   const node4 = useSharedValue(0);
-  const nodeValues = [node0, node1, node2, node3, node4];
+  const node5 = useSharedValue(0);
+  const nodeValues = [node0, node1, node2, node3, node4, node5];
 
   // Animation values for edges (0 = hidden, 1 = visible)
   const edge0 = useSharedValue(0);
@@ -91,12 +96,13 @@ export function OnboardingLoopAnimation({
   const edge2 = useSharedValue(0);
   const edge3 = useSharedValue(0);
   const edge4 = useSharedValue(0);
-  const edgeValues = [edge0, edge1, edge2, edge3, edge4];
+  const edge5 = useSharedValue(0);
+  const edgeValues = [edge0, edge1, edge2, edge3, edge4, edge5];
 
   // Center pulse (continuous after step 0)
   const centerPulse = useSharedValue(1);
 
-  // Final glow (step 4 closing animation)
+  // Final glow (step 5 closing animation)
   const closingGlow = useSharedValue(0);
 
   useEffect(() => {
@@ -131,7 +137,7 @@ export function OnboardingLoopAnimation({
       node2.value = withTiming(0, { duration: 300 });
     }
 
-    // Step 3: Show node 3 + edge
+    // Step 3: Show node 3 + edge (Style)
     if (currentStep >= 3) {
       edge2.value = withDelay(100, withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }));
       node3.value = withDelay(400, withSpring(1, GROK_SPRING));
@@ -140,12 +146,21 @@ export function OnboardingLoopAnimation({
       node3.value = withTiming(0, { duration: 300 });
     }
 
-    // Step 4: Show node 4 + last two edges + closing glow
+    // Step 4: Show node 4 + edge (Home)
     if (currentStep >= 4) {
       edge3.value = withDelay(100, withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }));
       node4.value = withDelay(400, withSpring(1, GROK_SPRING));
+    } else {
+      edge3.value = withTiming(0, { duration: 300 });
+      node4.value = withTiming(0, { duration: 300 });
+    }
+
+    // Step 5: Show node 5 + last two edges + closing glow
+    if (currentStep >= 5) {
+      edge4.value = withDelay(100, withTiming(1, { duration: 500, easing: Easing.out(Easing.cubic) }));
+      node5.value = withDelay(400, withSpring(1, GROK_SPRING));
       // Close the loop
-      edge4.value = withDelay(700, withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }));
+      edge5.value = withDelay(700, withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) }));
       // Glow pulse
       closingGlow.value = withDelay(1200, withRepeat(
         withSequence(
@@ -161,9 +176,9 @@ export function OnboardingLoopAnimation({
         return () => clearTimeout(timer);
       }
     } else {
-      edge3.value = withTiming(0, { duration: 300 });
       edge4.value = withTiming(0, { duration: 300 });
-      node4.value = withTiming(0, { duration: 300 });
+      edge5.value = withTiming(0, { duration: 300 });
+      node5.value = withTiming(0, { duration: 300 });
       closingGlow.value = withTiming(0, { duration: 300 });
     }
   }, [currentStep]);
@@ -214,14 +229,16 @@ export function OnboardingLoopAnimation({
   const nodeProps2 = createNodeProps(node2, 2);
   const nodeProps3 = createNodeProps(node3, 3);
   const nodeProps4 = createNodeProps(node4, 4);
-  const allNodeProps = [nodeProps0, nodeProps1, nodeProps2, nodeProps3, nodeProps4];
+  const nodeProps5 = createNodeProps(node5, 5);
+  const allNodeProps = [nodeProps0, nodeProps1, nodeProps2, nodeProps3, nodeProps4, nodeProps5];
 
   const edgeProps0 = createEdgeProps(edge0, 0);
   const edgeProps1 = createEdgeProps(edge1, 1);
   const edgeProps2 = createEdgeProps(edge2, 2);
   const edgeProps3 = createEdgeProps(edge3, 3);
   const edgeProps4 = createEdgeProps(edge4, 4);
-  const allEdgeProps = [edgeProps0, edgeProps1, edgeProps2, edgeProps3, edgeProps4];
+  const edgeProps5 = createEdgeProps(edge5, 5);
+  const allEdgeProps = [edgeProps0, edgeProps1, edgeProps2, edgeProps3, edgeProps4, edgeProps5];
 
   return (
     <Svg
@@ -242,7 +259,7 @@ export function OnboardingLoopAnimation({
       </Defs>
 
       <G>
-        {/* Closing glow (step 4 only) */}
+        {/* Closing glow (step 5 only) */}
         <AnimatedCircle
           cx={NODES[0].x * size}
           cy={NODES[0].y * size}

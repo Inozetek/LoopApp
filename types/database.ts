@@ -293,12 +293,16 @@ export type CalendarEvent = Database['public']['Tables']['calendar_events']['Row
 export type CalendarEventInsert = Database['public']['Tables']['calendar_events']['Insert']
 export type CalendarEventUpdate = Database['public']['Tables']['calendar_events']['Update']
 
+// Discovery style preference
+export type DiscoveryStyle = 'explorer' | 'balanced' | 'creature_of_habit';
+
 // User preferences type
 export interface UserPreferences {
   budget: number
   max_distance_miles: number
   preferred_times: string[]
   notification_enabled: boolean
+  discovery_style?: DiscoveryStyle
 }
 
 // User interests type

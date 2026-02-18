@@ -13,7 +13,7 @@
 import { getCachedUnsplashImage } from './unsplash';
 import { getBusinessHours, suggestVisitTime } from '@/utils/business-hours';
 import { supabase } from '@/lib/supabase';
-import type { User } from '@/types/database';
+import type { User, DiscoveryStyle } from '@/types/database';
 import type { Activity, UnifiedActivity, SearchParams as MultiSourceSearchParams } from '@/types/activity';
 
 // Multi-source integration
@@ -79,6 +79,14 @@ const GENERIC_PLACE_PATTERNS = [
   /ups store/i, /fedex/i, /post office/i, /usps/i, /dmv/i,
   /laundromat/i, /car wash/i, /storage/i, /self storage/i,
 ];
+
+// Discovery style scoring configuration
+// Shapes how aggressively Loop favours familiar vs novel places
+export const DISCOVERY_STYLE_CONFIG = {
+  explorer:          { nonMatchingBase: 18, visitMultiplier: 0.5, recencyMultiplier: 0.5, maxPerCategory: 2, categoryGroups: 8 },
+  balanced:          { nonMatchingBase: 12, visitMultiplier: 1.0, recencyMultiplier: 1.0, maxPerCategory: 3, categoryGroups: 5 },
+  creature_of_habit: { nonMatchingBase: 6,  visitMultiplier: 1.5, recencyMultiplier: 0.6, maxPerCategory: 4, categoryGroups: 3 },
+} as const;
 
 // Type definitions (copied from legacy for compatibility)
 export type PlaceLocation = { lat: number; lng: number };
@@ -1152,15 +1160,18 @@ export async function generateRecommendations(
   const isExploreMode = params.discoveryMode === 'explore';
   console.log(`🔄 Mode: ${isInfiniteScrollMode ? 'Infinite Scroll' : 'Fresh Load'} | ${isExploreMode ? 'Explore' : 'Curated'}`);
 
-  // Query 3-5 different category groups in parallel to get variety
-  // Prioritize user interests, but also include some variety
-  // OPTIMIZATION: For infinite scroll, query fewer categories (5 instead of 12) for faster loading
-  // Explore mode: Always query more categories (8) for maximum variety
+  // Read discovery style preference (defaults to 'balanced')
+  const discoveryStyle: DiscoveryStyle = user.preferences?.discovery_style || 'balanced';
+  const styleConfig = DISCOVERY_STYLE_CONFIG[discoveryStyle];
+
+  // Query category groups in parallel for variety
+  // Discovery style influences base count: explorer=8, balanced=5, creature_of_habit=3
+  // Explore mode always overrides to 8; infinite scroll uses styleConfig base
   const groupsToQuery = isExploreMode
     ? categoryGroups.slice(0, 8) // Explore mode: 8 category groups for variety
     : isInfiniteScrollMode
-      ? categoryGroups.slice(0, 5)
-      : categoryGroups.slice(0, 3);
+      ? categoryGroups.slice(0, Math.max(styleConfig.categoryGroups, 5))
+      : categoryGroups.slice(0, styleConfig.categoryGroups);
   const fetchLimit = isExploreMode ? 40 : isInfiniteScrollMode ? 50 : 20; // Explore mode: 40 per category
 
   console.log(`🔍 Querying ${groupsToQuery.length} category groups in parallel (${fetchLimit} results each)`);
@@ -1494,6 +1505,8 @@ export async function generateRecommendations(
       timeOfDay,
       recentlyShown, // Pass recency map for soft exclusion penalty
       upcomingCalendarEvents, // NEW: Pass calendar events for context-aware location scoring
+      discoveryStyle, // Discovery style preference shapes scoring
+      discoveryMode: params.discoveryMode, // Fix: pass through for explore vs for_you scoring
     });
 
     // Removed zero-score threshold filter - let all places through
@@ -1672,8 +1685,8 @@ export async function generateRecommendations(
     // Continue without filtering - don't break recommendations if this fails
   }
 
-  // Step 4: Apply business rules
-  const finalRecommendations = applyBusinessRules(shuffledRecommendations, maxResults);
+  // Step 4: Apply business rules (discovery style shapes category diversity)
+  const finalRecommendations = applyBusinessRules(shuffledRecommendations, maxResults, discoveryStyle);
 
   console.log(`Returning ${finalRecommendations.length} recommendations`);
 
@@ -1719,6 +1732,8 @@ function calculateActivityScore(params: {
     hasFriendMoments: boolean;
     friendMomentsCount: number;
   }>;
+  discoveryStyle?: DiscoveryStyle;
+  discoveryMode?: 'for_you' | 'explore';
 }): ScoredRecommendation['scoreBreakdown'] {
   const {
     place,
@@ -1733,8 +1748,10 @@ function calculateActivityScore(params: {
     visitHistoryByAddress,
     visitHistoryByPlaceId,
     feedbackByPlaceId,
-    friendSocialContext
+    friendSocialContext,
+    discoveryStyle = 'balanced',
   } = params;
+  const styleConfig = DISCOVERY_STYLE_CONFIG[discoveryStyle];
 
   let baseScore = 0;
   let locationScore = 0;
@@ -1776,13 +1793,13 @@ function calculateActivityScore(params: {
     baseScore = 20; // Other interests - GOOD match
     if (isEvent) baseScore += 3; // Event bonus → 23 total
   } else {
-    // Discovery mode affects non-matching interests
+    // Discovery mode + discovery style affect non-matching interests
     if (discoveryMode === 'explore') {
       baseScore = 15; // More generous in explore mode - encourage discovery
       if (isEvent) baseScore += 2; // Event bonus → 17 total
     } else {
-      baseScore = 10; // Conservative in curated mode - focus on known interests
-      if (isEvent) baseScore += 2; // Event bonus → 12 total
+      baseScore = styleConfig.nonMatchingBase; // Shaped by discovery style preference
+      if (isEvent) baseScore += 2; // Event bonus
     }
   }
 
@@ -2012,20 +2029,20 @@ function calculateActivityScore(params: {
     }
 
     if (visitCount > 0) {
-      // Boost based on frequency (similar to Google Timeline but even stronger since they used Loop!)
+      // Boost based on frequency, scaled by discovery style visitMultiplier
+      // explorer: 0.5x (de-emphasise repeats), creature_of_habit: 1.5x (love repeats)
+      let rawBoost = 0;
       if (visitCount >= 10) {
-        loopVisitHistoryBoost = 40; // Frequent favorite (10+ visits via Loop)
-        console.log(`🔄 LOOP REGULAR: ${place.name} (${visitCount} visits, +40 points)`);
+        rawBoost = 40; // Frequent favorite (10+ visits via Loop)
       } else if (visitCount >= 5) {
-        loopVisitHistoryBoost = 30; // Regular spot (5-9 visits)
-        console.log(`🔄 LOOP FREQUENT: ${place.name} (${visitCount} visits, +30 points)`);
+        rawBoost = 30; // Regular spot (5-9 visits)
       } else if (visitCount >= 2) {
-        loopVisitHistoryBoost = 20; // Repeat visitor (2-4 visits)
-        console.log(`🔄 LOOP REPEAT: ${place.name} (${visitCount} visits, +20 points)`);
+        rawBoost = 20; // Repeat visitor (2-4 visits)
       } else {
-        loopVisitHistoryBoost = 15; // Been here once (1 visit)
-        console.log(`🔄 LOOP VISITED: ${place.name} (${visitCount} visit, +15 points)`);
+        rawBoost = 15; // Been here once (1 visit)
       }
+      loopVisitHistoryBoost = Math.round(rawBoost * styleConfig.visitMultiplier);
+      console.log(`🔄 LOOP VISIT: ${place.name} (${visitCount} visits, +${loopVisitHistoryBoost} pts, ${discoveryStyle} ×${styleConfig.visitMultiplier})`);
     }
   }
 
@@ -2152,25 +2169,27 @@ function calculateActivityScore(params: {
 
   // === RECENCY PENALTY (Strengthened to prevent repetition) ===
   // Stronger exponential decay to prevent seeing same places repeatedly
+  // Scaled by discovery style: creature_of_habit gets softer penalty (0.6x),
+  // explorer gets softer penalty too (0.5x — they won't see repeats often anyway)
   let recencyPenalty = 0;
   if (recentlyShown && recentlyShown.has(place.place_id)) {
     const { hoursSince } = recentlyShown.get(place.place_id)!;
 
+    let rawPenalty = 0;
     if (hoursSince < 6) {
-      recencyPenalty = -40; // Just shown recently - strong penalty
-      console.log(`⏱️  ${place.name}: -40 pts (shown ${hoursSince.toFixed(1)}h ago)`);
+      rawPenalty = -40; // Just shown recently - strong penalty
     } else if (hoursSince < 12) {
-      recencyPenalty = -30; // Very recent - heavy penalty
-      console.log(`⏱️  ${place.name}: -30 pts (shown ${hoursSince.toFixed(1)}h ago)`);
+      rawPenalty = -30; // Very recent - heavy penalty
     } else if (hoursSince < 24) {
-      recencyPenalty = -25; // Recent - significant penalty
-      console.log(`⏱️  ${place.name}: -25 pts (shown ${hoursSince.toFixed(1)}h ago)`);
+      rawPenalty = -25; // Recent - significant penalty
     } else if (hoursSince < 48) {
-      recencyPenalty = -12; // Moderate penalty 24-48h
-      console.log(`⏱️  ${place.name}: -12 pts (shown ${hoursSince.toFixed(1)}h ago)`);
+      rawPenalty = -12; // Moderate penalty 24-48h
     } else if (hoursSince < 72) {
-      recencyPenalty = -5; // Light penalty 48-72h
-      console.log(`⏱️  ${place.name}: -5 pts (shown ${hoursSince.toFixed(1)}h ago)`);
+      rawPenalty = -5; // Light penalty 48-72h
+    }
+    recencyPenalty = Math.round(rawPenalty * styleConfig.recencyMultiplier);
+    if (recencyPenalty !== 0) {
+      console.log(`⏱️  ${place.name}: ${recencyPenalty} pts (shown ${hoursSince.toFixed(1)}h ago, ${discoveryStyle} ×${styleConfig.recencyMultiplier})`);
     }
     // After 72h: no penalty (fully eligible)
   }
@@ -2715,7 +2734,8 @@ function preventConsecutiveDuplicates(
  */
 function applyBusinessRules(
   recommendations: ScoredRecommendation[],
-  maxResults: number
+  maxResults: number,
+  discoveryStyle: DiscoveryStyle = 'balanced',
 ): ScoredRecommendation[] {
   // Rule 1: Max 2 sponsored activities in top 5
   const top5 = recommendations.slice(0, 5);
@@ -2752,9 +2772,9 @@ function applyBusinessRules(
   // If you have 10 great Italian restaurants nearby, user sees all 10
   let balancedRecommendations = dedupedRecommendations;
 
-  // Rule 4: Category diversity — limit any single category to max 3 in top 10
-  // Search the full result set (not just 15) for diverse replacements
-  const MAX_PER_CATEGORY_IN_TOP_10 = 3;
+  // Rule 4: Category diversity — limit shaped by discovery style
+  // explorer=2 (force variety), balanced=3, creature_of_habit=4 (allow repeats)
+  const MAX_PER_CATEGORY_IN_TOP_10 = DISCOVERY_STYLE_CONFIG[discoveryStyle].maxPerCategory;
   const top10 = balancedRecommendations.slice(0, 10);
   const rest = balancedRecommendations.slice(10);
 

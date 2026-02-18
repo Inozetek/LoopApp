@@ -35,6 +35,7 @@ import { INTEREST_GROUPS } from '@/constants/activity-categories';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
 import { OnboardingLoopAnimation } from '@/components/onboarding-loop-animation';
 import { GROK_SPRING } from '@/constants/animations';
+import type { DiscoveryStyle } from '@/types/database';
 
 // 12 quick interests for the picker
 const QUICK_INTERESTS = [
@@ -95,6 +96,7 @@ export default function OnboardingScreen() {
   const [isSyncingCalendar, setIsSyncingCalendar] = useState(false);
   const [interestError, setInterestError] = useState(false);
   const [birthYear, setBirthYear] = useState<number | null>(null);
+  const [discoveryStyle, setDiscoveryStyle] = useState<DiscoveryStyle>('balanced');
 
   // Business flow state
   const [businessName, setBusinessName] = useState('');
@@ -169,7 +171,7 @@ export default function OnboardingScreen() {
     }
   }, [step, isBusiness]);
 
-  const PERSONAL_TOTAL = 4; // last step index (5 steps: 0-4)
+  const PERSONAL_TOTAL = 5; // last step index (6 steps: 0-5)
   const BUSINESS_TOTAL = 5; // last step index (6 steps: 0-5)
   const TOTAL_STEPS = isBusiness ? BUSINESS_TOTAL : PERSONAL_TOTAL;
 
@@ -271,6 +273,8 @@ export default function OnboardingScreen() {
     } else if (step === 3) {
       setStep(4);
     } else if (step === 4) {
+      setStep(5);
+    } else if (step === 5) {
       completeOnboarding();
     }
   }
@@ -375,6 +379,7 @@ export default function OnboardingScreen() {
           preferred_times: ['evening', 'weekend'],
           notification_enabled: notificationsEnabled,
           smart_learning: smartLearning,
+          discovery_style: discoveryStyle,
         },
         privacy_settings: {
           share_loop_with: 'friends',
@@ -651,6 +656,59 @@ export default function OnboardingScreen() {
   }
 
   function renderPersonalStep3() {
+    const options: { key: DiscoveryStyle; icon: string; title: string; desc: string }[] = [
+      { key: 'explorer', icon: 'compass-outline', title: 'explorer', desc: 'I love finding new places and trying new things' },
+      { key: 'balanced', icon: 'swap-horizontal-outline', title: 'balanced', desc: 'A mix — my go-to spots plus some new finds' },
+      { key: 'creature_of_habit', icon: 'heart-outline', title: 'creature of habit', desc: 'Help me make the most of the places I already love' },
+    ];
+
+    return (
+      <View style={styles.stepInner}>
+        <Text style={[styles.convoTitle, { color: theme.text }]}>
+          how do you discover?
+        </Text>
+        <Text style={[styles.convoSub, { color: theme.textMuted, marginBottom: 20 }]}>
+          this shapes your recommendations — you can change it anytime
+        </Text>
+
+        {options.map((opt) => {
+          const selected = discoveryStyle === opt.key;
+          return (
+            <TouchableOpacity
+              key={opt.key}
+              style={[
+                styles.discoveryCard,
+                {
+                  borderColor: selected ? theme.accent : theme.border,
+                  backgroundColor: selected ? theme.accentMuted : theme.card,
+                },
+              ]}
+              onPress={() => {
+                setDiscoveryStyle(opt.key);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={opt.icon as any}
+                size={28}
+                color={selected ? theme.accent : theme.textMuted}
+                style={{ marginBottom: 8 }}
+              />
+              <Text style={[styles.discoveryCardTitle, { color: selected ? theme.accent : theme.text }]}>
+                {opt.title}
+              </Text>
+              <Text style={[styles.discoveryCardDesc, { color: theme.textMuted }]}>
+                {opt.desc}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+    );
+  }
+
+  function renderPersonalStep4() {
     return (
       <View style={styles.stepInner}>
         <Text style={[styles.convoTitle, { color: theme.text }]}>
@@ -722,7 +780,7 @@ export default function OnboardingScreen() {
     );
   }
 
-  function renderPersonalStep4() {
+  function renderPersonalStep5() {
     const readiness = getReadinessPercent();
     const checks = [
       { label: 'calendar', done: calendarConnected },
@@ -1097,6 +1155,7 @@ export default function OnboardingScreen() {
         case 2: return renderPersonalStep2();
         case 3: return renderPersonalStep3();
         case 4: return renderPersonalStep4();
+        case 5: return renderPersonalStep5();
       }
     }
     return null;
@@ -1436,7 +1495,26 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 
-  // ── Summary card (step 4) ──
+  // ── Discovery style cards (step 3) ──
+  discoveryCard: {
+    padding: 16,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 12,
+    alignItems: 'center',
+  },
+  discoveryCardTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  discoveryCardDesc: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+
+  // ── Summary card (step 5) ──
   summaryCard: {
     padding: 20,
     borderRadius: 14,
