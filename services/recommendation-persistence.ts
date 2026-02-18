@@ -53,6 +53,7 @@ export async function saveRecommendationsToDB(
       google_place_id: rec.activity?.googlePlaceId || rec.id,
       place_name: rec.title,
       category: rec.category,
+      photo_url: rec.activity?.photoUrl || rec.photoUrl || null,
       status: 'pending',
       confidence_score: Math.max(0.01, (rec.score || 1) / 100), // Normalize to 0.01-1 (constraint requires > 0)
       last_shown_at: now.toISOString(), // Track when shown
