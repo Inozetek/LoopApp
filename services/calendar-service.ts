@@ -5,6 +5,38 @@ import { calculateTravelTimeWithBuffer } from '@/utils/route-calculations';
 
 const GOOGLE_MAPS_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
+/**
+ * Category keyword map for auto-detecting event categories from titles.
+ */
+const CATEGORY_KEYWORDS: Record<string, string[]> = {
+  fitness: ['gym', 'workout', 'yoga', 'pilates', 'crossfit', 'run', 'swim', 'cycling', 'exercise', 'training', 'hike', 'hiking'],
+  dining: ['dinner', 'lunch', 'brunch', 'restaurant', 'cafe', 'coffee', 'breakfast', 'eat', 'food'],
+  work: ['meeting', 'standup', 'sprint', 'review', 'sync', 'interview', 'retro', 'planning', 'office', 'conference'],
+  entertainment: ['concert', 'show', 'movie', 'theater', 'theatre', 'festival', 'game', 'gig', 'comedy', 'museum'],
+  social: ['birthday', 'party', 'wedding', 'reunion', 'hangout', 'bbq', 'potluck', 'happy hour', 'drinks', 'bar'],
+};
+
+/**
+ * Infer a calendar event category from its title using keyword matching.
+ * Returns the first matching category or 'personal' as fallback.
+ */
+export function inferCategory(title: string): string {
+  if (!title) return 'personal';
+  const lower = title.toLowerCase();
+  for (const [category, keywords] of Object.entries(CATEGORY_KEYWORDS)) {
+    if (keywords.some(kw => lower.includes(kw))) {
+      return category;
+    }
+  }
+  return 'personal';
+}
+
+export interface SyncProgressInfo {
+  current: number;
+  total: number;
+  currentTitle: string;
+}
+
 export interface CalendarPermissionResult {
   granted: boolean;
   canAskAgain: boolean;
@@ -314,7 +346,7 @@ export async function syncSelectedEventsToDatabase(
             user_id: userId,
             title: event.title,
             description: event.notes || null,
-            category: 'personal',
+            category: inferCategory(event.title),
             location: {
               type: 'Point',
               coordinates: [geocoded.lng, geocoded.lat],
@@ -350,6 +382,82 @@ export async function syncSelectedEventsToDatabase(
     };
   } catch (error) {
     console.error('❌ Sync failed:', error);
+    return {
+      success: false,
+      eventsSynced,
+      errors: [...errors, error instanceof Error ? error.message : 'Unknown error'],
+    };
+  }
+}
+
+/**
+ * Sync selected calendar events with progress callbacks.
+ * Wraps syncSelectedEventsToDatabase with per-event progress reporting.
+ */
+export async function syncSelectedEventsWithProgress(
+  userId: string,
+  selectedEvents: CalendarEvent[],
+  onProgress: (info: SyncProgressInfo) => void,
+): Promise<SyncResult> {
+  const errors: string[] = [];
+  let eventsSynced = 0;
+  const eventsWithLocation = selectedEvents.filter(
+    (event) => event.location && event.location.trim().length > 0
+  );
+  const total = eventsWithLocation.length;
+
+  try {
+    // Delete existing external calendar events for matching IDs
+    const externalIds = eventsWithLocation.map(e => e.id);
+    if (externalIds.length > 0) {
+      await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('user_id', userId)
+        .in('external_event_id', externalIds);
+    }
+
+    for (let i = 0; i < eventsWithLocation.length; i++) {
+      const event = eventsWithLocation[i];
+      onProgress({ current: i + 1, total, currentTitle: event.title });
+
+      try {
+        const geocoded = await geocodeAddress(event.location || '');
+        if (!geocoded) {
+          errors.push(`Couldn't geocode: ${event.title}`);
+          continue;
+        }
+
+        const { error: insertError } = await supabase
+          .from('calendar_events')
+          .insert({
+            user_id: userId,
+            title: event.title,
+            description: event.notes || null,
+            category: inferCategory(event.title),
+            location: { type: 'Point', coordinates: [geocoded.lng, geocoded.lat] },
+            address: event.location || '',
+            start_time: event.startDate.toISOString(),
+            end_time: event.endDate.toISOString(),
+            all_day: event.allDay,
+            source: Platform.OS === 'ios' ? 'apple_calendar' : 'google_calendar',
+            external_calendar_id: event.calendarId,
+            external_event_id: event.id,
+            status: 'scheduled',
+          });
+
+        if (insertError) {
+          errors.push(`Failed to sync: ${event.title}`);
+        } else {
+          eventsSynced++;
+        }
+      } catch (error) {
+        errors.push(`Failed to process: ${event.title}`);
+      }
+    }
+
+    return { success: errors.length === 0, eventsSynced, errors };
+  } catch (error) {
     return {
       success: false,
       eventsSynced,
@@ -421,7 +529,7 @@ export async function syncCalendarToDatabase(
             user_id: userId,
             title: event.title,
             description: event.notes || null,
-            category: 'personal', // Default category for imported events
+            category: inferCategory(event.title),
             location: {
               type: 'Point',
               coordinates: [geocoded.lng, geocoded.lat], // PostGIS uses [lng, lat] order

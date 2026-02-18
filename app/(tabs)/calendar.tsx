@@ -50,6 +50,7 @@ import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
 import { CalendarHeader } from '@/components/calendar-header';
 import { TaskDetailsModal } from '@/components/task-details-modal';
+import { createMarkedDates } from '@/utils/calendar';
 import { getCurrentLocation } from '@/services/location-service';
 import {
   getPendingFeedbackActivities,
@@ -63,7 +64,9 @@ import {
   checkCalendarPermissions,
   fetchCalendarEventsForPreview,
   syncSelectedEventsToDatabase,
+  syncSelectedEventsWithProgress,
   CalendarEventPreview,
+  SyncProgressInfo,
 } from '@/services/calendar-service';
 
 // Parse IEEE 754 double from hex string
@@ -221,6 +224,7 @@ export default function CalendarScreen() {
     return `${year}-${month}-${day}`;
   });
   const [events, setEvents] = useState<CalendarEvent[]>([]);
+  const [monthEvents, setMonthEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'loop'>('list'); // Toggle between list and map view
@@ -264,6 +268,8 @@ export default function CalendarScreen() {
 
   // Calendar sync state
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<SyncProgressInfo | null>(null);
+  const [syncResult, setSyncResult] = useState<{ count: number; errors: number } | null>(null);
   const [freeTimeSlots, setFreeTimeSlots] = useState<Array<{
     start: Date;
     end: Date;
@@ -289,6 +295,13 @@ export default function CalendarScreen() {
     // Auto-prompting based on time alone is problematic because we can't verify
     // the user actually went to the location.
   }, [selectedDate]);
+
+  // Load month events for calendar dots on mount + after any event mutations
+  useEffect(() => {
+    if (selectedDate && user) {
+      loadMonthEvents(selectedDate.slice(0, 7));
+    }
+  }, [user, events]);
 
   // Load free time slots on mount so they're available before a sync
   useEffect(() => {
@@ -433,31 +446,34 @@ export default function CalendarScreen() {
 
     try {
       setIsSyncing(true);
+      setSyncProgress(null);
+      setSyncResult(null);
       setShowSyncPreview(false);
 
       console.log(`📅 Syncing ${selectedEvents.length} selected events...`);
 
-      const result = await syncSelectedEventsToDatabase(user.id, selectedEvents);
+      const result = await syncSelectedEventsWithProgress(
+        user.id,
+        selectedEvents,
+        (info) => setSyncProgress(info),
+      );
+
+      setSyncProgress(null);
 
       if (result.success) {
         console.log(`✅ Synced ${result.eventsSynced} events`);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
         await loadEvents();
         await loadFreeTime();
-
-        Alert.alert(
-          'Calendar Synced',
-          `Successfully synced ${result.eventsSynced} events from your device calendar.`,
-          [{ text: 'OK' }]
-        );
+        setSyncResult({ count: result.eventsSynced, errors: 0 });
+        // Auto-dismiss success card after 4 seconds
+        setTimeout(() => setSyncResult(null), 4000);
       } else if (result.errors.length > 0) {
         console.error('❌ Sync errors:', result.errors);
-        Alert.alert(
-          'Sync Completed with Errors',
-          `Synced ${result.eventsSynced} events, but ${result.errors.length} failed.`,
-          [{ text: 'OK' }]
-        );
+        await loadEvents();
+        await loadFreeTime();
+        setSyncResult({ count: result.eventsSynced, errors: result.errors.length });
+        setTimeout(() => setSyncResult(null), 5000);
       }
     } catch (error) {
       console.error('❌ Error syncing calendar:', error);
@@ -521,6 +537,28 @@ export default function CalendarScreen() {
       console.error('Error loading events:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMonthEvents = async (yearMonth: string) => {
+    if (!user || user.id === 'demo-user-123') return;
+
+    try {
+      const startOfMonth = new Date(`${yearMonth}-01T00:00:00`);
+      const endOfMonth = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + 1, 0, 23, 59, 59);
+
+      const { data, error } = await supabase
+        .from('calendar_events')
+        .select('*')
+        .eq('user_id', user.id)
+        .gte('start_time', startOfMonth.toISOString())
+        .lte('start_time', endOfMonth.toISOString())
+        .order('start_time', { ascending: true });
+
+      if (error) throw error;
+      setMonthEvents(data || []);
+    } catch (error) {
+      console.error('Error loading month events:', error);
     }
   };
 
@@ -786,13 +824,11 @@ export default function CalendarScreen() {
     );
   };
 
-  // Mark dates with events
-  const markedDates = {
-    [selectedDate]: {
-      selected: true,
-      selectedColor: BrandColors.loopBlue,
-    },
-  };
+  // Mark dates with colored category dots + selected date highlight
+  const markedDates = useMemo(
+    () => createMarkedDates(monthEvents as any, selectedDate),
+    [monthEvents, selectedDate]
+  );
 
   const toggleViewMode = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -980,7 +1016,9 @@ export default function CalendarScreen() {
             key={colorScheme}
             current={selectedDate}
             onDayPress={onDayPress}
+            markingType={'multi-dot'}
             markedDates={markedDates}
+            onMonthChange={(month) => loadMonthEvents(month.dateString.slice(0, 7))}
             theme={{
               calendarBackground: Colors[colorScheme ?? 'light'].background,
               textSectionTitleColor: isDark ? BrandColors.veryLightGray : BrandColors.lightGray,
@@ -1064,6 +1102,43 @@ export default function CalendarScreen() {
                 <Text style={[Typography.labelMedium, { color: colors.icon }]}>Not now</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        )}
+
+        {/* Sync progress indicator */}
+        {isSyncing && syncProgress && (
+          <View style={[styles.syncProgressCard, { backgroundColor: isDark ? '#1a2332' : '#EFF6FF', borderColor: BrandColors.loopBlue + '30' }]}>
+            <Text style={[Typography.labelMedium, { color: colors.text }]}>
+              Syncing {syncProgress.current} of {syncProgress.total}
+            </Text>
+            <Text style={[Typography.bodySmall, { color: colors.icon }]} numberOfLines={1}>
+              {syncProgress.currentTitle}
+            </Text>
+            <View style={[styles.syncProgressBarBg, { backgroundColor: colors.border }]}>
+              <View
+                style={[
+                  styles.syncProgressBarFill,
+                  { width: `${(syncProgress.current / syncProgress.total) * 100}%`, backgroundColor: BrandColors.loopBlue },
+                ]}
+              />
+            </View>
+          </View>
+        )}
+
+        {/* Sync success card */}
+        {syncResult && (
+          <View style={[styles.syncSuccessCard, { backgroundColor: isDark ? '#1a2d1a' : '#ECFDF5', borderColor: BrandColors.success + '30' }]}>
+            <Ionicons name={syncResult.errors > 0 ? 'alert-circle' : 'checkmark-circle'} size={22} color={syncResult.errors > 0 ? '#F59E0B' : BrandColors.success} />
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={[Typography.labelMedium, { color: colors.text }]}>
+                {syncResult.errors > 0
+                  ? `Synced ${syncResult.count} events (${syncResult.errors} failed)`
+                  : `${syncResult.count} events synced`}
+              </Text>
+            </View>
+            <TouchableOpacity onPress={() => setSyncResult(null)}>
+              <Ionicons name="close" size={18} color={colors.icon} />
+            </TouchableOpacity>
           </View>
         )}
 
@@ -2707,5 +2782,32 @@ const styles = StyleSheet.create({
   },
   syncImportButtonDisabled: {
     opacity: 0.5,
+  },
+  syncProgressCard: {
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    padding: Spacing.md,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    gap: 4,
+  },
+  syncProgressBarBg: {
+    height: 4,
+    borderRadius: 2,
+    marginTop: 4,
+    overflow: 'hidden' as const,
+  },
+  syncProgressBarFill: {
+    height: '100%' as const,
+    borderRadius: 2,
+  },
+  syncSuccessCard: {
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    padding: Spacing.sm,
+    borderRadius: BorderRadius.md,
+    borderWidth: 1,
+    flexDirection: 'row' as const,
+    alignItems: 'center' as const,
   },
 });
