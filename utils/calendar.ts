@@ -3,6 +3,7 @@
  */
 
 import { CalendarEvent } from '@/types/database';
+import { BrandColors } from '@/constants/brand';
 import { CATEGORY_COLORS, CATEGORY_ICONS, EventCategory, EventWithColor, MarkedDate } from '@/constants/calendar';
 
 /**
@@ -24,10 +25,15 @@ export function formatTimeRange(start: Date, end: Date): string {
 }
 
 /**
- * Format date for calendar key (YYYY-MM-DD)
+ * Format date for calendar key (YYYY-MM-DD) using LOCAL time zone.
+ * Using toISOString() would return UTC, causing events near midnight
+ * to appear on the wrong day for users west of UTC.
  */
 export function formatDateKey(date: Date): string {
-  return date.toISOString().split('T')[0];
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /**
@@ -114,6 +120,7 @@ export function createMarkedDates(
     const dots = dayEvents.slice(0, 3).map(event => ({
       key: event.id,
       color: event.color,
+      selectedDotColor: '#FFFFFF',
     }));
 
     markedDates[dateKey] = {
@@ -127,7 +134,7 @@ export function createMarkedDates(
     markedDates[selectedDate] = {
       ...markedDates[selectedDate],
       selected: true,
-      selectedColor: '#0066FF',
+      selectedColor: BrandColors.loopBlue,
       selectedTextColor: '#FFFFFF',
     };
   }
