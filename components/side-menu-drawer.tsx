@@ -28,7 +28,7 @@ import Animated, {
   Extrapolate,
 } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
-import { GROK_SPRING, TIMING, MENU_DIMENSIONS, SCALES } from '@/constants/animations';
+import { GROK_SPRING, TIMING, MENU_DIMENSIONS, SCALES, BLUR } from '@/constants/animations';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const MENU_WIDTH = SCREEN_WIDTH * MENU_DIMENSIONS.widthPercentage;
@@ -172,7 +172,7 @@ export function SideMenuDrawer({
           <Animated.View style={[styles.menu, menuStyle]}>
             {/* Glass blur effect for menu background */}
             <BlurView
-              intensity={Platform.OS === 'ios' ? 80 : 100}
+              intensity={Platform.OS === 'ios' ? BLUR.menuIntensityIOS : BLUR.menuIntensityAndroid}
               tint="dark"
               style={StyleSheet.absoluteFill}
             />
@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: MENU_WIDTH,
-    backgroundColor: 'rgba(20, 20, 20, 0.95)',
+    backgroundColor: 'transparent',
     shadowColor: '#000',
     shadowOffset: { width: 4, height: 0 },
     shadowOpacity: 0.3,
@@ -220,7 +220,7 @@ const styles = StyleSheet.create({
   },
   menuBackground: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(25, 25, 25, 0.9)',
+    backgroundColor: `rgba(20, 20, 20, ${BLUR.overlayOpacityDark})`,
   },
   menuContentContainer: {
     flex: 1,

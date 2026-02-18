@@ -32,7 +32,7 @@ import Animated, {
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { BlurView } from 'expo-blur';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { GROK_SPRING, TIMING, MENU_DIMENSIONS } from '@/constants/animations';
+import { GROK_SPRING, TIMING, MENU_DIMENSIONS, BLUR } from '@/constants/animations';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -175,7 +175,7 @@ export function AnimatedDrawer({
           >
             {/* Glass blur background */}
             <BlurView
-              intensity={Platform.OS === 'ios' ? 80 : 100}
+              intensity={Platform.OS === 'ios' ? BLUR.menuIntensityIOS : BLUR.menuIntensityAndroid}
               tint="dark"
               style={StyleSheet.absoluteFill}
             />
@@ -185,8 +185,8 @@ export function AnimatedDrawer({
                 {
                   backgroundColor:
                     colorScheme === 'dark'
-                      ? 'rgba(20, 20, 20, 0.92)'
-                      : 'rgba(255, 255, 255, 0.92)',
+                      ? `rgba(20, 20, 20, ${BLUR.overlayOpacityDark})`
+                      : `rgba(255, 255, 255, ${BLUR.overlayOpacityLight})`,
                 },
               ]}
             />

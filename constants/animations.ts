@@ -160,3 +160,14 @@ export const MENU_DIMENSIONS = {
   /** Drag threshold percentage for closing */
   dragThreshold: 0.3,
 } as const;
+
+/**
+ * Menu blur / glass effect constants
+ * Lower overlay opacity lets the BlurView show through for a frosted-glass look.
+ */
+export const BLUR = {
+  menuIntensityIOS: 100,
+  menuIntensityAndroid: 120,
+  overlayOpacityDark: 0.55,
+  overlayOpacityLight: 0.60,
+} as const;
