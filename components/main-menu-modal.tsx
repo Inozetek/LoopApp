@@ -22,6 +22,12 @@ import {
   ScrollView,
   Image,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useAnimatedProps,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,9 +35,11 @@ import * as Haptics from 'expo-haptics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import { MENU_CONTENT_BLUR } from '@/constants/animations';
 import { useAuth } from '@/contexts/auth-context';
 import { useMenuAnimation } from '@/contexts/menu-animation-context';
 import { AnimatedDrawer } from '@/components/animated-drawer';
+import { AnimatedBlurView, SUPPORTS_MATERIALIZATION_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
 
 interface MainMenuModalProps {
   visible: boolean;
@@ -39,6 +47,8 @@ interface MainMenuModalProps {
   notificationCount?: number;
   onOpenDashboard?: () => void;
   onOpenHistory?: () => void;
+  /** When true, the drawer was opened by a gesture (skip opening spring) */
+  gestureControlled?: boolean;
 }
 
 interface DrawerItemProps {
@@ -92,6 +102,7 @@ export function MainMenuModal({
   notificationCount = 0,
   onOpenDashboard,
   onOpenHistory,
+  gestureControlled = false,
 }: MainMenuModalProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -104,6 +115,24 @@ export function MainMenuModal({
   useEffect(() => {
     setMenuOpen(visible);
   }, [visible, setMenuOpen]);
+
+  // Materialization: menu content emerges from blurred/transparent to sharp/opaque
+  const materializeStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(menuProgress.value, [0, 0.5, 1], [0, 0.6, 1], Extrapolate.CLAMP),
+  }));
+
+  // Blur overlay on menu content that clears as menu opens (materialization)
+  const materializeBlurProps = useAnimatedProps(() => ({
+    intensity: SUPPORTS_MATERIALIZATION_BLUR
+      ? interpolate(menuProgress.value, [0, 1], [MENU_CONTENT_BLUR.menuMaterializeBlur, 0], Extrapolate.CLAMP)
+      : MENU_CONTENT_BLUR.menuMaterializeBlur,
+  }));
+
+  const materializeBlurStyle = useAnimatedStyle(() => ({
+    opacity: SUPPORTS_MATERIALIZATION_BLUR
+      ? (menuProgress.value < 0.99 ? 1 : 0)
+      : interpolate(menuProgress.value, [0, 0.4, 1], [1, 0.05, 0], Extrapolate.CLAMP),
+  }));
 
   const navigateAndClose = (route: string) => {
     onClose();
@@ -133,14 +162,16 @@ export function MainMenuModal({
       onClose={onClose}
       side="left"
       menuProgress={menuProgress}
+      gestureControlled={gestureControlled}
     >
-      <View
+      <Animated.View
         style={[
           styles.contentWrapper,
           {
             paddingTop: insets.top,
             paddingBottom: insets.bottom + Spacing.md,
           },
+          materializeStyle,
         ]}
       >
         {/* Header */}
@@ -254,7 +285,16 @@ export function MainMenuModal({
             </Text>
           </View>
         </ScrollView>
-      </View>
+
+        {/* Materialization blur: starts blurred, clears as menu opens */}
+        <AnimatedBlurView
+          animatedProps={materializeBlurProps}
+          tint="dark"
+          experimentalBlurMethod={ANDROID_BLUR_METHOD}
+          style={[StyleSheet.absoluteFill, materializeBlurStyle]}
+          pointerEvents="none"
+        />
+      </Animated.View>
     </AnimatedDrawer>
   );
 }

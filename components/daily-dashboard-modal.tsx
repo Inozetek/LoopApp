@@ -19,8 +19,16 @@ import {
   ScrollView,
   Dimensions,
   ActivityIndicator,
-  Animated,
 } from 'react-native';
+import ReanimatedAnimated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedProps,
+  withSpring,
+  withTiming,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -29,11 +37,15 @@ import { LoopMapView } from '@/components/loop-map-view';
 import { CategorySelector } from '@/components/category-selector';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, Shadows } from '@/constants/brand';
+import { MODAL_SPRING, TIMING, BOTTOM_SHEET_BLUR } from '@/constants/animations';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
 import type { DashboardData, DashboardView, DashboardNotification } from '@/types/dashboard';
 import { fetchDashboardData, markDashboardViewed, dismissNotification } from '@/services/dashboard-aggregator';
 import { useAuth } from '@/contexts/auth-context';
 import type { FeedFilters } from '@/components/feed-filters';
 import { DragHandle } from '@/components/drag-handle';
+
+const Animated = ReanimatedAnimated;
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -68,9 +80,10 @@ export function DailyDashboardModal({
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Animation values
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Reanimated values
+  const slideY = useSharedValue(SCREEN_HEIGHT);
+  const backdropProgress = useSharedValue(0);
+  const modalScale = useSharedValue<number>(BOTTOM_SHEET_BLUR.sheetInitialScale);
 
   // Fetch dashboard data when modal opens
   useEffect(() => {
@@ -82,34 +95,39 @@ export function DailyDashboardModal({
   // Open/close animation
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          friction: 8,
-          tension: 65,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      slideY.value = withSpring(0, MODAL_SPRING);
+      backdropProgress.value = withTiming(1, TIMING.backdropFadeIn);
+      modalScale.value = withSpring(1, MODAL_SPRING);
     } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      slideY.value = withTiming(SCREEN_HEIGHT, { duration: 250 });
+      backdropProgress.value = withTiming(0, TIMING.backdropFadeOut);
+      modalScale.value = withTiming(BOTTOM_SHEET_BLUR.sheetInitialScale, { duration: 200 });
     }
   }, [visible]);
+
+  // Animated styles
+  const backdropBlurProps = useAnimatedProps(() => ({
+    intensity: SUPPORTS_ANIMATED_BLUR
+      ? interpolate(backdropProgress.value, [0, 1], [0, BOTTOM_SHEET_BLUR.backdropIntensityIOS], Extrapolate.CLAMP)
+      : BOTTOM_SHEET_BLUR.backdropIntensityAndroid,
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: SUPPORTS_ANIMATED_BLUR
+      ? (backdropProgress.value > 0.01 ? 1 : 0)
+      : backdropProgress.value,
+  }));
+
+  const backdropOverlayStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(backdropProgress.value, [0, 1], [0, BOTTOM_SHEET_BLUR.backdropOverlayOpacity], Extrapolate.CLAMP),
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: slideY.value },
+      { scale: modalScale.value },
+    ],
+  }));
 
   const loadDashboardData = async () => {
     if (!user) return;
@@ -158,16 +176,22 @@ export function DailyDashboardModal({
       transparent
       onRequestClose={handleClose}
     >
-      {/* Fade backdrop - tap to close */}
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+      {/* Frosted glass backdrop */}
+      <AnimatedBlurView
+        animatedProps={backdropBlurProps}
+        tint="dark"
+        experimentalBlurMethod={ANDROID_BLUR_METHOD}
+        style={[StyleSheet.absoluteFill, backdropStyle]}
+      >
         <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
-      </Animated.View>
+      </AnimatedBlurView>
+      <Animated.View style={[styles.overlay, backdropOverlayStyle]} pointerEvents="none" />
 
       {/* Sliding panel */}
       <Animated.View
         style={[
           styles.modalContainer,
-          { transform: [{ translateY: slideAnim }] },
+          sheetStyle,
         ]}
       >
         <View style={[styles.modal, { backgroundColor: colors.background }]}>
@@ -769,7 +793,7 @@ const styles = StyleSheet.create({
   // Modal overlay + container (custom animated bottom sheet)
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: '#000',
   },
   modalContainer: {
     position: 'absolute',

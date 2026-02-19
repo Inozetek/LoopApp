@@ -12,7 +12,6 @@ import {
   Pressable,
   ScrollView,
   Image,
-  Animated,
   Dimensions,
   FlatList,
   Linking,
@@ -22,13 +21,24 @@ import {
   TextInput,
   ActivityIndicator,
 } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  useAnimatedProps,
+  withSpring,
+  withTiming,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { Recommendation } from '@/types/activity';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors, ScoreBarColors } from '@/constants/brand';
+import { MODAL_SPRING, TIMING, BOTTOM_SHEET_BLUR } from '@/constants/animations';
 import { IconSymbol } from '@/components/ui/icon-symbol';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
 import { getStaticMapUrl } from '@/utils/maps';
 import { AFFILIATE_CONFIG } from '@/constants/affiliate-config';
 import { getPlaceReviews, type PlaceReview } from '@/services/google-places';
@@ -198,8 +208,9 @@ export function SeeDetailsModal({
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
 
-  const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideY = useSharedValue(SCREEN_HEIGHT);
+  const backdropProgress = useSharedValue(0);
+  const modalScale = useSharedValue<number>(BOTTOM_SHEET_BLUR.sheetInitialScale);
   const scrollViewRef = useRef<ScrollView>(null);
   const commentsYRef = useRef(0);
   const { user } = useAuth();
@@ -297,34 +308,39 @@ export function SeeDetailsModal({
 
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          friction: 9,
-          tension: 80,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 180,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      slideY.value = withSpring(0, MODAL_SPRING);
+      backdropProgress.value = withTiming(1, TIMING.backdropFadeIn);
+      modalScale.value = withSpring(1, MODAL_SPRING);
     } else {
-      Animated.parallel([
-        Animated.timing(slideAnim, {
-          toValue: SCREEN_HEIGHT,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      slideY.value = withTiming(SCREEN_HEIGHT, { duration: 250 });
+      backdropProgress.value = withTiming(0, TIMING.backdropFadeOut);
+      modalScale.value = withTiming(BOTTOM_SHEET_BLUR.sheetInitialScale, { duration: 200 });
     }
   }, [visible]);
+
+  // Animated styles
+  const backdropBlurProps = useAnimatedProps(() => ({
+    intensity: SUPPORTS_ANIMATED_BLUR
+      ? interpolate(backdropProgress.value, [0, 1], [0, BOTTOM_SHEET_BLUR.backdropIntensityIOS], Extrapolate.CLAMP)
+      : BOTTOM_SHEET_BLUR.backdropIntensityAndroid,
+  }));
+
+  const backdropStyle = useAnimatedStyle(() => ({
+    opacity: SUPPORTS_ANIMATED_BLUR
+      ? (backdropProgress.value > 0.01 ? 1 : 0)
+      : backdropProgress.value,
+  }));
+
+  const backdropOverlayStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(backdropProgress.value, [0, 1], [0, BOTTOM_SHEET_BLUR.backdropOverlayOpacity], Extrapolate.CLAMP),
+  }));
+
+  const sheetStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateY: slideY.value },
+      { scale: modalScale.value },
+    ],
+  }));
 
   if (!recommendation) return null;
 
@@ -394,14 +410,21 @@ export function SeeDetailsModal({
       transparent
       onRequestClose={handleClose}
     >
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
+      {/* Frosted glass backdrop */}
+      <AnimatedBlurView
+        animatedProps={backdropBlurProps}
+        tint="dark"
+        experimentalBlurMethod={ANDROID_BLUR_METHOD}
+        style={[StyleSheet.absoluteFill, backdropStyle]}
+      >
         <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
-      </Animated.View>
+      </AnimatedBlurView>
+      <Animated.View style={[styles.overlay, backdropOverlayStyle]} pointerEvents="none" />
 
       <Animated.View
         style={[
           styles.modalContainer,
-          { transform: [{ translateY: slideAnim }] },
+          sheetStyle,
         ]}
       >
         <View style={[styles.modal, { backgroundColor: colors.card }]}>
@@ -1290,7 +1313,7 @@ export function SeeDetailsModal({
 const styles = StyleSheet.create({
   overlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: '#000',
   },
   modalContainer: {
     position: 'absolute',

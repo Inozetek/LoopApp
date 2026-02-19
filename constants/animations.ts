@@ -50,6 +50,15 @@ export const MODAL_SPRING = {
 } as const;
 
 /**
+ * Menu open spring — slower, smoother for icon press / programmatic open.
+ * Gives a premium, deliberate feel (vs the snappier GROK_SPRING used for close).
+ */
+export const MENU_OPEN_SPRING = {
+  duration: 500,
+  dampingRatio: 0.82,
+} as const;
+
+/**
  * Snappy spring for collapsible sections
  */
 export const COLLAPSIBLE_SPRING = {
@@ -170,4 +179,45 @@ export const BLUR = {
   menuIntensityAndroid: 120,
   overlayOpacityDark: 0.55,
   overlayOpacityLight: 0.60,
+} as const;
+
+/**
+ * Menu content blur / transition constants
+ * Grok-style dual-direction blur swap when menu opens:
+ * - Background (main content): sharp → blurred + scaled + shifted
+ * - Menu content: blurred/invisible → sharp/opaque (materialization)
+ */
+export const MENU_CONTENT_BLUR = {
+  /** Max blur intensity on the background when menu is open (iOS) */
+  backgroundBlurIntensity: 140,
+  /** Starting blur on menu content before it sharpens (iOS: intensity animates down; Android: fixed intensity, opacity fades) */
+  menuMaterializeBlur: 70,
+  /** Background scale when menu is open */
+  contentScale: 0.92,
+  /** Background shift to the right (px) */
+  contentTranslateX: 60,
+  /** Rounded corners on background */
+  contentBorderRadius: 20,
+  /** Backdrop opacity behind the drawer (solid black feel) */
+  backdropOpacity: 0.85,
+  /** Blur intensity on the drawer panel itself (frosted glass) */
+  drawerBlurIntensity: 120,
+  /** Starting opacity of drawer dark overlay (panel bg) */
+  drawerMinOpacity: 0.55,
+  /** Final opacity of drawer dark overlay when fully open */
+  drawerMaxOpacity: 0.97,
+} as const;
+
+/**
+ * Bottom sheet blur constants for frosted glass modals
+ */
+export const BOTTOM_SHEET_BLUR = {
+  /** Backdrop blur intensity for native platforms (iOS + Android via dimezisBlurView) */
+  backdropIntensityIOS: 25,
+  /** Backdrop blur intensity fallback for web / opacity-based path */
+  backdropIntensityAndroid: 35,
+  /** Semi-transparent overlay on top of blur */
+  backdropOverlayOpacity: 0.25,
+  /** Sheet scale when appearing (materialization) */
+  sheetInitialScale: 0.97,
 } as const;
