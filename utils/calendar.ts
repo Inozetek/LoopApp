@@ -116,8 +116,8 @@ export function createMarkedDates(
   const grouped = groupEventsByDate(events);
 
   grouped.forEach((dayEvents, dateKey) => {
-    // Create dots for multiple events (max 3 visible)
-    const dots = dayEvents.slice(0, 3).map(event => ({
+    // Create dots for all events (pill component caps visible segments)
+    const dots = dayEvents.map(event => ({
       key: event.id,
       color: event.color,
       selectedDotColor: '#FFFFFF',
@@ -126,7 +126,6 @@ export function createMarkedDates(
     markedDates[dateKey] = {
       marked: true,
       dots,
-      ...(dayEvents.length > 3 ? { extraCount: dayEvents.length - 3 } : {}),
     };
   });
 

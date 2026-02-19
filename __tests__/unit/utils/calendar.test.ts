@@ -125,7 +125,7 @@ function createMarkedDates(
   const grouped = groupEventsByDate(events);
 
   grouped.forEach((dayEvents, dateKey) => {
-    const dots = dayEvents.slice(0, 3).map(event => ({
+    const dots = dayEvents.map(event => ({
       key: event.id,
       color: event.color,
       selectedDotColor: '#FFFFFF',
@@ -134,7 +134,6 @@ function createMarkedDates(
     markedDates[dateKey] = {
       marked: true,
       dots,
-      ...(dayEvents.length > 3 ? { extraCount: dayEvents.length - 3 } : {}),
     };
   });
 
@@ -252,7 +251,7 @@ describe('createMarkedDates', () => {
     expect(result['2025-06-15'].dots![0].color).toBe(CATEGORY_COLORS.dining);
   });
 
-  it('caps dots at 3 per day', () => {
+  it('passes all event dots for the day (pill caps rendering)', () => {
     const events = [
       makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
       makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
@@ -262,10 +261,11 @@ describe('createMarkedDates', () => {
     ];
 
     const result = createMarkedDates(events);
-    expect(result['2025-06-15'].dots).toHaveLength(3);
+    // All 5 events passed through — rendering component caps visible segments
+    expect(result['2025-06-15'].dots).toHaveLength(5);
   });
 
-  it('includes extraCount when more than 3 events exist on a day', () => {
+  it('does not include extraCount (no longer needed with pill)', () => {
     const events = [
       makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
       makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
@@ -275,40 +275,7 @@ describe('createMarkedDates', () => {
     ];
 
     const result = createMarkedDates(events);
-    expect(result['2025-06-15'].extraCount).toBe(2);
-  });
-
-  it('does not include extraCount when 3 or fewer events exist', () => {
-    const events = [
-      makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
-      makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
-      makeEvent({ id: '3', start_time: '2025-06-15T12:00:00.000Z' }),
-    ];
-
-    const result = createMarkedDates(events);
     expect(result['2025-06-15'].extraCount).toBeUndefined();
-  });
-
-  it('does not include extraCount for a single event', () => {
-    const events = [
-      makeEvent({ id: '1', start_time: '2025-06-15T10:00:00.000Z' }),
-    ];
-
-    const result = createMarkedDates(events);
-    expect(result['2025-06-15'].extraCount).toBeUndefined();
-  });
-
-  it('calculates correct extraCount for exactly 4 events', () => {
-    const events = [
-      makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
-      makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
-      makeEvent({ id: '3', start_time: '2025-06-15T12:00:00.000Z' }),
-      makeEvent({ id: '4', start_time: '2025-06-15T14:00:00.000Z' }),
-    ];
-
-    const result = createMarkedDates(events);
-    expect(result['2025-06-15'].dots).toHaveLength(3);
-    expect(result['2025-06-15'].extraCount).toBe(1);
   });
 
   it('includes selectedDotColor on every dot', () => {

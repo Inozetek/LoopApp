@@ -1048,7 +1048,7 @@ export default function CalendarScreen() {
                 textSectionTitleColor: isDark ? BrandColors.veryLightGray : BrandColors.lightGray,
                 selectedDayBackgroundColor: BrandColors.loopBlue,
                 selectedDayTextColor: BrandColors.white,
-                todayTextColor: BrandColors.loopBlue,
+                todayTextColor: BrandColors.loopGreen,
                 dayTextColor: Colors[colorScheme ?? 'light'].text,
                 textDisabledColor: isDark ? BrandColors.lightGray : '#d9e1e8',
                 monthTextColor: Colors[colorScheme ?? 'light'].text,
