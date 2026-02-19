@@ -2,7 +2,10 @@
  * AnimatedDrawer - Reusable Grok-style slide-in/slide-out drawer
  *
  * Extracted from MainMenuModal. Supports left or right side,
- * glass blur background, spring physics, pan gesture to close.
+ * frosted-glass blur background, spring physics, pan gesture to close.
+ *
+ * The drawer panel is a transparent blur with a dark overlay that
+ * animates in opacity — not a solid #0A0A0A rectangle.
  *
  * Usage:
  *   <AnimatedDrawer visible={visible} onClose={onClose} side="left">
@@ -22,6 +25,8 @@ import {
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedProps,
+  useDerivedValue,
   withSpring,
   withTiming,
   interpolate,
@@ -30,9 +35,9 @@ import Animated, {
   SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BlurView } from 'expo-blur';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { GROK_SPRING, TIMING, MENU_DIMENSIONS, BLUR } from '@/constants/animations';
+import { GROK_SPRING, MENU_OPEN_SPRING, TIMING, MENU_DIMENSIONS, MENU_CONTENT_BLUR } from '@/constants/animations';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -44,6 +49,8 @@ interface AnimatedDrawerProps {
   children: React.ReactNode;
   /** Optional shared value for syncing main content scale animation */
   menuProgress?: SharedValue<number>;
+  /** When true, the drawer was opened by a gesture — skip the opening spring in useEffect */
+  gestureControlled?: boolean;
 }
 
 export function AnimatedDrawer({
@@ -53,6 +60,7 @@ export function AnimatedDrawer({
   widthPercentage = MENU_DIMENSIONS.widthPercentage,
   children,
   menuProgress,
+  gestureControlled = false,
 }: AnimatedDrawerProps) {
   const colorScheme = useColorScheme();
   const drawerWidth = SCREEN_WIDTH * widthPercentage;
@@ -65,10 +73,15 @@ export function AnimatedDrawer({
 
   useEffect(() => {
     if (visible) {
-      translateX.value = withSpring(0, GROK_SPRING);
-      backdropOpacity.value = withTiming(0.5, TIMING.backdropFadeIn);
-      if (menuProgress) {
-        menuProgress.value = withSpring(1, GROK_SPRING);
+      // If gesture-controlled, the gesture already drove menuProgress and translateX
+      // — don't run the opening spring (it would fight the gesture position).
+      if (!gestureControlled) {
+        // Programmatic open (icon press) — use slower, premium spring
+        translateX.value = withSpring(0, MENU_OPEN_SPRING);
+        backdropOpacity.value = withTiming(MENU_CONTENT_BLUR.backdropOpacity, TIMING.backdropFadeIn);
+        if (menuProgress) {
+          menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+        }
       }
     } else {
       translateX.value = withSpring(offscreenX, { ...GROK_SPRING, duration: 250 });
@@ -78,6 +91,15 @@ export function AnimatedDrawer({
       }
     }
   }, [visible]);
+
+  // When gesture-controlled, derive translateX from menuProgress to keep them in sync
+  useDerivedValue(() => {
+    if (gestureControlled && visible) {
+      const progress = menuProgress ? menuProgress.value : 0;
+      translateX.value = interpolate(progress, [0, 1], [offscreenX, 0], Extrapolate.CLAMP);
+      backdropOpacity.value = interpolate(progress, [0, 1], [0, MENU_CONTENT_BLUR.backdropOpacity], Extrapolate.CLAMP);
+    }
+  });
 
   // Pan gesture for interactive closing
   const panGesture = Gesture.Pan()
@@ -90,7 +112,7 @@ export function AnimatedDrawer({
           const clampedX = Math.max(-drawerWidth, tx);
           translateX.value = clampedX;
           const progress = 1 + clampedX / drawerWidth;
-          backdropOpacity.value = interpolate(progress, [0, 1], [0, 0.5], Extrapolate.CLAMP);
+          backdropOpacity.value = interpolate(progress, [0, 1], [0, MENU_CONTENT_BLUR.backdropOpacity], Extrapolate.CLAMP);
           if (menuProgress) {
             menuProgress.value = progress;
           }
@@ -101,7 +123,7 @@ export function AnimatedDrawer({
           const clampedX = Math.min(drawerWidth, tx);
           translateX.value = clampedX;
           const progress = 1 - clampedX / drawerWidth;
-          backdropOpacity.value = interpolate(progress, [0, 1], [0, 0.5], Extrapolate.CLAMP);
+          backdropOpacity.value = interpolate(progress, [0, 1], [0, MENU_CONTENT_BLUR.backdropOpacity], Extrapolate.CLAMP);
           if (menuProgress) {
             menuProgress.value = progress;
           }
@@ -130,7 +152,7 @@ export function AnimatedDrawer({
         runOnJS(onClose)();
       } else {
         translateX.value = withSpring(0, GROK_SPRING);
-        backdropOpacity.value = withTiming(0.5, TIMING.backdropFadeIn);
+        backdropOpacity.value = withTiming(MENU_CONTENT_BLUR.backdropOpacity, TIMING.backdropFadeIn);
         if (menuProgress) {
           menuProgress.value = withSpring(1, GROK_SPRING);
         }
@@ -144,6 +166,40 @@ export function AnimatedDrawer({
   const drawerStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
   }));
+
+  // Drawer panel blur: intensity animates with menu progress
+  const drawerBlurProps = useAnimatedProps(() => ({
+    intensity: SUPPORTS_ANIMATED_BLUR
+      ? interpolate(
+          menuProgress ? menuProgress.value : (visible ? 1 : 0),
+          [0, 1],
+          [0, MENU_CONTENT_BLUR.drawerBlurIntensity],
+          Extrapolate.CLAMP,
+        )
+      : MENU_CONTENT_BLUR.drawerBlurIntensity,
+  }));
+
+  // Dark overlay on the drawer panel: fades from drawerMinOpacity → drawerMaxOpacity
+  const drawerOverlayStyle = useAnimatedStyle(() => {
+    const progress = menuProgress ? menuProgress.value : (visible ? 1 : 0);
+    return {
+      opacity: interpolate(
+        progress,
+        [0, 1],
+        [MENU_CONTENT_BLUR.drawerMinOpacity, MENU_CONTENT_BLUR.drawerMaxOpacity],
+        Extrapolate.CLAMP,
+      ),
+    };
+  });
+
+  // Drawer blur visibility (for Android opacity fallback)
+  const drawerBlurStyle = useAnimatedStyle(() => {
+    if (SUPPORTS_ANIMATED_BLUR) return { opacity: 1 };
+    const progress = menuProgress ? menuProgress.value : (visible ? 1 : 0);
+    return {
+      opacity: interpolate(progress, [0, 1], [0, 1], Extrapolate.CLAMP),
+    };
+  });
 
   if (!visible) return null;
 
@@ -173,20 +229,23 @@ export function AnimatedDrawer({
               },
             ]}
           >
-            {/* Glass blur background */}
-            <BlurView
-              intensity={Platform.OS === 'ios' ? BLUR.menuIntensityIOS : BLUR.menuIntensityAndroid}
+            {/* Frosted glass blur on top for subtle texture during transition */}
+            <AnimatedBlurView
+              animatedProps={drawerBlurProps}
               tint="dark"
-              style={StyleSheet.absoluteFill}
+              experimentalBlurMethod={ANDROID_BLUR_METHOD}
+              style={[StyleSheet.absoluteFill, drawerBlurStyle]}
             />
-            <View
+            {/* Dark overlay on top of blur */}
+            <Animated.View
               style={[
-                styles.drawerBackground,
+                styles.drawerOverlay,
+                drawerOverlayStyle,
                 {
                   backgroundColor:
                     colorScheme === 'dark'
-                      ? `rgba(20, 20, 20, ${BLUR.overlayOpacityDark})`
-                      : `rgba(255, 255, 255, ${BLUR.overlayOpacityLight})`,
+                      ? '#0A0A0A'
+                      : '#111111',
                 },
               ]}
             />
@@ -216,8 +275,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 20,
     elevation: 20,
+    overflow: 'hidden',
   },
-  drawerBackground: {
+  drawerOverlay: {
     ...StyleSheet.absoluteFillObject,
   },
 });

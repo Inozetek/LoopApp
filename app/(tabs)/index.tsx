@@ -1,9 +1,11 @@
 import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react';
-import { View, FlatList, StyleSheet, RefreshControl, Text, TouchableOpacity, ActivityIndicator, Modal, SafeAreaView, Alert } from 'react-native';
+import { View, FlatList, StyleSheet, RefreshControl, Text, TouchableOpacity, ActivityIndicator, Modal, SafeAreaView, Alert, Dimensions } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedProps,
   withTiming,
+  withSpring,
   withDelay,
   interpolate,
   Extrapolate,
@@ -29,6 +31,9 @@ import { ConflictWarningModal } from '@/components/conflict-warning-modal';
 import { FeedFiltersBar, type FeedFilters } from '@/components/feed-filters';
 import { type FilterSheetFilters } from '@/components/filter-sheet';
 import { MainMenuModal } from '@/components/main-menu-modal';
+import { useMenuAnimation } from '@/contexts/menu-animation-context';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
+import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
 import { RecommendationHistoryModal } from '@/components/recommendation-history-modal';
 import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
 import { checkDailyLimit, type DailyLimitCheck } from '@/services/subscription-service';
@@ -354,6 +359,30 @@ export default function RecommendationFeedScreen() {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
 
+  // Menu animation: blur + scale main content when drawer opens
+  const { menuProgress } = useMenuAnimation();
+
+  const menuContentStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: interpolate(menuProgress.value, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
+      { translateX: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP) },
+    ],
+    borderRadius: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
+    overflow: menuProgress.value > 0.01 ? 'hidden' as const : 'visible' as const,
+  }));
+
+  const menuBlurAnimatedProps = useAnimatedProps(() => ({
+    intensity: SUPPORTS_ANIMATED_BLUR
+      ? interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
+      : MENU_CONTENT_BLUR.backgroundBlurIntensity,
+  }));
+
+  const menuBlurOverlayStyle = useAnimatedStyle(() => ({
+    opacity: SUPPORTS_ANIMATED_BLUR
+      ? (menuProgress.value > 0.01 ? 1 : 0)
+      : interpolate(menuProgress.value, [0, 1], [0, 1], Extrapolate.CLAMP),
+  }));
+
   // Deep link params for scrolling to specific cards (from notifications)
   const { highlightPlanId, scrollToCard } = useLocalSearchParams<{
     highlightPlanId?: string;
@@ -419,6 +448,87 @@ export default function RecommendationFeedScreen() {
 
   // Main menu modal state
   const [showMainMenu, setShowMainMenu] = useState(false);
+  const [menuGestureControlled, setMenuGestureControlled] = useState(false);
+
+  // Edge gesture + button swipe for opening menu
+  const DRAWER_WIDTH = Dimensions.get('window').width * MENU_DIMENSIONS.widthPercentage;
+  const EDGE_ZONE_MENU = 30; // px from left edge to trigger menu gesture
+
+  /** Shared handler: drive menuProgress from drag translation */
+  const handleMenuDrag = useCallback((translationX: number) => {
+    'worklet';
+    const progress = Math.min(translationX / DRAWER_WIDTH, 1);
+    menuProgress.value = Math.max(0, progress);
+  }, [DRAWER_WIDTH, menuProgress]);
+
+  /** Open the menu modal when gesture crosses threshold (called from JS) */
+  const openMenuFromGesture = useCallback(() => {
+    if (!showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [showMainMenu]);
+
+  /** Shared handler: end of drag — snap open or closed */
+  const handleMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    if (translationX > 60 || velocityX > 600) {
+      // Snap open
+      menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showMainMenu) {
+        setMenuGestureControlled(true);
+        setShowMainMenu(true);
+      }
+    } else {
+      // Snap closed
+      menuProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowMainMenu(false);
+      setMenuGestureControlled(false);
+    }
+  }, [showMainMenu, menuProgress, DRAWER_WIDTH]);
+
+  /** JS-thread callbacks for LoopHeader onMenuDrag / onMenuDragEnd */
+  const handleHeaderMenuDrag = useCallback((translationX: number) => {
+    const progress = Math.min(translationX / DRAWER_WIDTH, 1);
+    menuProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [DRAWER_WIDTH, menuProgress, showMainMenu]);
+
+  const handleHeaderMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    handleMenuDragEnd(translationX, velocityX);
+  }, [handleMenuDragEnd]);
+
+  /** Left-edge pan gesture for opening menu */
+  const menuEdgeGesture = Gesture.Pan()
+    .activeOffsetX([10, 999])
+    .failOffsetY([-15, 15])
+    .onBegin((event) => {
+      // Only activate when touch starts in the left edge zone
+      if (event.absoluteX > EDGE_ZONE_MENU) {
+        // Cancel by setting a flag — we can't dynamically cancel, but onUpdate will check
+      }
+    })
+    .onUpdate((event) => {
+      if (event.absoluteX - event.translationX > EDGE_ZONE_MENU) return; // started outside edge
+      const progress = Math.min(event.translationX / DRAWER_WIDTH, 1);
+      menuProgress.value = Math.max(0, progress);
+      if (progress > 0.05) {
+        runOnJS(openMenuFromGesture)();
+      }
+    })
+    .onEnd((event) => {
+      if (event.absoluteX - event.translationX > EDGE_ZONE_MENU) return;
+      runOnJS(handleMenuDragEnd)(event.translationX, event.velocityX);
+    })
+    .runOnJS(false);
+
+  // Reset gestureControlled when menu closes
+  const handleCloseMenu = useCallback(() => {
+    setShowMainMenu(false);
+    setMenuGestureControlled(false);
+  }, []);
 
   // Filters state
   const [filters, setFilters] = useState<FeedFilters>({
@@ -2575,16 +2685,19 @@ export default function RecommendationFeedScreen() {
   // Render loading state
   if (loading) {
     return (
-      <SwipeableLayout>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <SwipeableLayout disableLeftEdgeSwipe>
+        <GestureDetector gesture={menuEdgeGesture}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
           <LoopHeader
             showProfileAvatar={true}
-            onProfilePress={() => setShowMainMenu(true)}
+            onProfilePress={() => { setMenuGestureControlled(false); setShowMainMenu(true); }}
             showSearchButton={true}
             onSearchPress={() => setShowAdvancedSearch(true)}
             hasActiveFilters={isFilterSheetActive}
             notificationCount={notificationCount}
-
+            onMenuDrag={handleHeaderMenuDrag}
+            onMenuDragEnd={handleHeaderMenuDragEnd}
           />
           {seedingCity ? (
             <View style={[styles.seedingContainer, { backgroundColor: colors.background }]}>
@@ -2605,7 +2718,17 @@ export default function RecommendationFeedScreen() {
               showsVerticalScrollIndicator={false}
             />
           )}
+          {/* Blur overlay for menu transition */}
+          <AnimatedBlurView
+            animatedProps={menuBlurAnimatedProps}
+            tint="dark"
+            experimentalBlurMethod={ANDROID_BLUR_METHOD}
+            style={[StyleSheet.absoluteFill, menuBlurOverlayStyle]}
+            pointerEvents="none"
+          />
+        </Animated.View>
         </View>
+        </GestureDetector>
       </SwipeableLayout>
     );
   }
@@ -2613,38 +2736,55 @@ export default function RecommendationFeedScreen() {
   // Render empty state
   if (recommendations.length === 0) {
     return (
-      <SwipeableLayout>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <SwipeableLayout disableLeftEdgeSwipe>
+        <GestureDetector gesture={menuEdgeGesture}>
+        <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
           <LoopHeader
             showProfileAvatar={true}
-            onProfilePress={() => setShowMainMenu(true)}
+            onProfilePress={() => { setMenuGestureControlled(false); setShowMainMenu(true); }}
             showSearchButton={true}
             onSearchPress={() => setShowAdvancedSearch(true)}
             hasActiveFilters={isFilterSheetActive}
             notificationCount={notificationCount}
-
+            onMenuDrag={handleHeaderMenuDrag}
+            onMenuDragEnd={handleHeaderMenuDragEnd}
           />
           <EmptyState
             icon="sparkles"
             title="No recommendations yet"
             message="Pull down to refresh and find activities near you"
           />
+          {/* Blur overlay for menu transition */}
+          <AnimatedBlurView
+            animatedProps={menuBlurAnimatedProps}
+            tint="dark"
+            experimentalBlurMethod={ANDROID_BLUR_METHOD}
+            style={[StyleSheet.absoluteFill, menuBlurOverlayStyle]}
+            pointerEvents="none"
+          />
+        </Animated.View>
         </View>
+        </GestureDetector>
       </SwipeableLayout>
     );
   }
 
   // Render recommendations list
   return (
-    <SwipeableLayout>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SwipeableLayout disableLeftEdgeSwipe>
+      <GestureDetector gesture={menuEdgeGesture}>
+      <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
         <LoopHeader
           showProfileAvatar={true}
-          onProfilePress={() => setShowMainMenu(true)}
+          onProfilePress={() => { setMenuGestureControlled(false); setShowMainMenu(true); }}
           showSearchButton={true}
           onSearchPress={() => setShowAdvancedSearch(true)}
           hasActiveFilters={isFilterSheetActive}
           notificationCount={notificationCount}
+          onMenuDrag={handleHeaderMenuDrag}
+          onMenuDragEnd={handleHeaderMenuDragEnd}
           onLogoPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -2863,10 +3003,11 @@ export default function RecommendationFeedScreen() {
         {/* Profile Drawer (formerly Main Menu) */}
         <MainMenuModal
           visible={showMainMenu}
-          onClose={() => setShowMainMenu(false)}
+          onClose={handleCloseMenu}
           notificationCount={notificationCount}
           onOpenDashboard={() => setShowDashboard(true)}
           onOpenHistory={() => setShowHistory(true)}
+          gestureControlled={menuGestureControlled}
         />
 
         {/* Recommendation History Modal */}
@@ -2901,7 +3042,17 @@ export default function RecommendationFeedScreen() {
           prefillData={radarPrefill}
         />
 
+        {/* Blur overlay for menu transition */}
+        <AnimatedBlurView
+          animatedProps={menuBlurAnimatedProps}
+          tint="dark"
+          experimentalBlurMethod={ANDROID_BLUR_METHOD}
+          style={[StyleSheet.absoluteFill, menuBlurOverlayStyle]}
+          pointerEvents="none"
+        />
+      </Animated.View>
       </View>
+      </GestureDetector>
     </SwipeableLayout>
   );
 }
