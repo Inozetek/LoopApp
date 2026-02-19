@@ -50,9 +50,17 @@ const NOTIFICATION_FILTERS: { id: NotificationFilter; label: string; icon: strin
 interface NotificationsTrayModalProps {
   visible: boolean;
   onClose: () => void;
+  onFeedbackRequest?: (data: {
+    eventId: string;
+    activityId: string | null;
+    activityName: string;
+    activityCategory: string;
+    completedAt: string;
+    place?: { id: string; name: string; address?: string };
+  }) => void;
 }
 
-export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayModalProps) {
+export function NotificationsTrayModal({ visible, onClose, onFeedbackRequest }: NotificationsTrayModalProps) {
   const { user } = useAuth();
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -75,7 +83,7 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
         case 'social':
           return ['friend_activity', 'pending_invite', 'family_in_town', 'activity_share', 'activity_invite'].includes(n.notification_type);
         case 'reminders':
-          return ['loops_planned', 'event_reminder'].includes(n.notification_type);
+          return ['loops_planned', 'event_reminder', 'feedback_reminder'].includes(n.notification_type);
         default:
           return true;
       }
@@ -112,7 +120,10 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
   const handleDismiss = async (notificationId: string) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await dismissNotification(notificationId);
+      // Feedback reminder notifications are synthetic (not in DB), just remove locally
+      if (!notificationId.startsWith('feedback-')) {
+        await dismissNotification(notificationId);
+      }
       setNotifications(prev => prev.filter(n => n.id !== notificationId));
     } catch (error) {
       console.error('Error dismissing notification:', error);
@@ -122,6 +133,25 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
   const handleAction = async (notification: DashboardNotification) => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Handle feedback reminder notifications (synthetic, not in DB)
+      if (notification.notification_type === 'feedback_reminder') {
+        if (onFeedbackRequest && notification.data) {
+          onFeedbackRequest({
+            eventId: notification.data.eventId,
+            activityId: notification.data.activityId,
+            activityName: notification.data.activityName,
+            activityCategory: notification.data.activityCategory,
+            completedAt: notification.data.completedAt,
+            place: notification.data.place,
+          });
+          // Remove from local list immediately
+          setNotifications(prev => prev.filter(n => n.id !== notification.id));
+          onClose();
+        }
+        return;
+      }
+
       await markNotificationActioned(notification.id);
 
       // Handle deep link if present
@@ -177,8 +207,9 @@ export function NotificationsTrayModal({ visible, onClose }: NotificationsTrayMo
 
     try {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Dismiss all notifications
-      await Promise.all(notifications.map(n => dismissNotification(n.id)));
+      // Dismiss all notifications (skip DB call for synthetic feedback reminders)
+      const dbNotifications = notifications.filter(n => !n.id.startsWith('feedback-'));
+      await Promise.all(dbNotifications.map(n => dismissNotification(n.id)));
       setNotifications([]);
     } catch (error) {
       console.error('Error clearing notifications:', error);
@@ -512,6 +543,8 @@ function getNotificationIcon(type: string): any {
       return 'paper-plane-outline';
     case 'activity_invite':
       return 'gift-outline';
+    case 'feedback_reminder':
+      return 'chatbubble-ellipses-outline';
     default:
       return 'notifications-outline';
   }

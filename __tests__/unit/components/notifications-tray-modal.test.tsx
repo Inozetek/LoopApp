@@ -186,6 +186,12 @@ describe('Notifications Tray Modal - Helper Functions', () => {
           return 'restaurant-outline';
         case 'event_reminder':
           return 'alarm-outline';
+        case 'activity_share':
+          return 'paper-plane-outline';
+        case 'activity_invite':
+          return 'gift-outline';
+        case 'feedback_reminder':
+          return 'chatbubble-ellipses-outline';
         default:
           return 'notifications-outline';
       }
@@ -225,6 +231,18 @@ describe('Notifications Tray Modal - Helper Functions', () => {
 
     it('should return alarm icon for event_reminder', () => {
       expect(getNotificationIcon('event_reminder')).toBe('alarm-outline');
+    });
+
+    it('should return chatbubble icon for feedback_reminder', () => {
+      expect(getNotificationIcon('feedback_reminder')).toBe('chatbubble-ellipses-outline');
+    });
+
+    it('should return paper-plane icon for activity_share', () => {
+      expect(getNotificationIcon('activity_share')).toBe('paper-plane-outline');
+    });
+
+    it('should return gift icon for activity_invite', () => {
+      expect(getNotificationIcon('activity_invite')).toBe('gift-outline');
     });
 
     it('should return default icon for unknown types', () => {
@@ -292,6 +310,235 @@ describe('Notifications Tray Modal - Helper Functions', () => {
       const result = formatNotificationTime(twoWeeksAgo.toISOString());
       // Should match "Jan 15" or similar format
       expect(result).toMatch(/^\w{3} \d{1,2}$/);
+    });
+  });
+
+  describe('Notification Filter Logic', () => {
+    type NotificationFilter = 'all' | 'recommendations' | 'social' | 'reminders';
+
+    /**
+     * Mirrors filter logic from notifications-tray-modal.tsx filteredNotifications useMemo
+     */
+    function filterNotifications(notifications: MockNotification[], activeFilter: NotificationFilter): MockNotification[] {
+      if (activeFilter === 'all') return notifications;
+
+      return notifications.filter(n => {
+        switch (activeFilter) {
+          case 'recommendations':
+            return ['new_recommendations', 'featured_venue', 'featured_movie', 'lunch_suggestion'].includes(n.notification_type);
+          case 'social':
+            return ['friend_activity', 'pending_invite', 'family_in_town', 'activity_share', 'activity_invite'].includes(n.notification_type);
+          case 'reminders':
+            return ['loops_planned', 'event_reminder', 'feedback_reminder'].includes(n.notification_type);
+          default:
+            return true;
+        }
+      });
+    }
+
+    it('should return all notifications for "all" filter', () => {
+      const notifications = [
+        createMockNotification({ notification_type: 'new_recommendations' }),
+        createMockNotification({ notification_type: 'friend_activity' }),
+        createMockNotification({ notification_type: 'feedback_reminder' }),
+      ];
+      const result = filterNotifications(notifications, 'all');
+      expect(result).toHaveLength(3);
+    });
+
+    it('should filter feedback_reminder into reminders category', () => {
+      const notifications = [
+        createMockNotification({ notification_type: 'new_recommendations' }),
+        createMockNotification({ notification_type: 'feedback_reminder' }),
+        createMockNotification({ notification_type: 'loops_planned' }),
+        createMockNotification({ notification_type: 'event_reminder' }),
+      ];
+      const result = filterNotifications(notifications, 'reminders');
+      expect(result).toHaveLength(3);
+      expect(result.every(n => ['feedback_reminder', 'loops_planned', 'event_reminder'].includes(n.notification_type))).toBe(true);
+    });
+
+    it('should not include feedback_reminder in recommendations filter', () => {
+      const notifications = [
+        createMockNotification({ notification_type: 'feedback_reminder' }),
+        createMockNotification({ notification_type: 'new_recommendations' }),
+      ];
+      const result = filterNotifications(notifications, 'recommendations');
+      expect(result).toHaveLength(1);
+      expect(result[0].notification_type).toBe('new_recommendations');
+    });
+
+    it('should not include feedback_reminder in social filter', () => {
+      const notifications = [
+        createMockNotification({ notification_type: 'feedback_reminder' }),
+        createMockNotification({ notification_type: 'friend_activity' }),
+      ];
+      const result = filterNotifications(notifications, 'social');
+      expect(result).toHaveLength(1);
+      expect(result[0].notification_type).toBe('friend_activity');
+    });
+  });
+
+  describe('Feedback Reminder Notification Shape', () => {
+    /**
+     * Mirrors the synthetic notification creation from dashboard-aggregator.ts
+     * fetchPendingFeedbackNotifications
+     */
+    function createFeedbackReminderNotification(activity: {
+      eventId: string;
+      activityId: string | null;
+      activityName: string;
+      activityCategory: string;
+      completedAt: string;
+      place?: { id: string; name: string; address?: string };
+    }, userId: string) {
+      return {
+        id: `feedback-${activity.eventId}`,
+        user_id: userId,
+        notification_type: 'feedback_reminder' as const,
+        priority: 'attention' as const,
+        title: `How was ${activity.activityName}?`,
+        message: 'Tap to rate your experience and help Loop learn your preferences.',
+        data: {
+          eventId: activity.eventId,
+          activityId: activity.activityId,
+          activityName: activity.activityName,
+          activityCategory: activity.activityCategory,
+          completedAt: activity.completedAt,
+          place: activity.place,
+        },
+        action_button_text: 'Rate',
+        action_deep_link: undefined,
+        related_event_id: activity.eventId,
+        is_read: false,
+        is_dismissed: false,
+        is_actioned: false,
+        created_at: activity.completedAt,
+      };
+    }
+
+    it('should create notification with feedback- prefix in ID', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: 'activity-456',
+        activityName: 'Katy Trail Run',
+        activityCategory: 'fitness',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      expect(notification.id).toBe('feedback-event-123');
+    });
+
+    it('should set notification_type to feedback_reminder', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: null,
+        activityName: 'Coffee Shop Visit',
+        activityCategory: 'dining',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      expect(notification.notification_type).toBe('feedback_reminder');
+    });
+
+    it('should format title as "How was [activity]?"', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: null,
+        activityName: 'Deep Ellum Brewing',
+        activityCategory: 'entertainment',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      expect(notification.title).toBe('How was Deep Ellum Brewing?');
+    });
+
+    it('should include Rate as action button text', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: null,
+        activityName: 'Test',
+        activityCategory: 'other',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      expect(notification.action_button_text).toBe('Rate');
+    });
+
+    it('should have priority set to attention', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: null,
+        activityName: 'Test',
+        activityCategory: 'other',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      expect(notification.priority).toBe('attention');
+    });
+
+    it('should include all activity data in notification data field', () => {
+      const completedAt = new Date().toISOString();
+      const place = { id: 'place-1', name: 'Some Place', address: '123 Main St' };
+
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: 'activity-456',
+        activityName: 'Yoga Class',
+        activityCategory: 'fitness',
+        completedAt,
+        place,
+      }, 'user-789');
+
+      expect(notification.data).toEqual({
+        eventId: 'event-123',
+        activityId: 'activity-456',
+        activityName: 'Yoga Class',
+        activityCategory: 'fitness',
+        completedAt,
+        place,
+      });
+    });
+
+    it('should start as unread and not dismissed', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: null,
+        activityName: 'Test',
+        activityCategory: 'other',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      expect(notification.is_read).toBe(false);
+      expect(notification.is_dismissed).toBe(false);
+      expect(notification.is_actioned).toBe(false);
+    });
+
+    it('should use completedAt as created_at timestamp', () => {
+      const completedAt = '2026-02-17T18:30:00.000Z';
+
+      const notification = createFeedbackReminderNotification({
+        eventId: 'event-123',
+        activityId: null,
+        activityName: 'Test',
+        activityCategory: 'other',
+        completedAt,
+      }, 'user-789');
+
+      expect(notification.created_at).toBe(completedAt);
+    });
+
+    it('should detect synthetic feedback notification by ID prefix', () => {
+      const notification = createFeedbackReminderNotification({
+        eventId: 'abc-def',
+        activityId: null,
+        activityName: 'Test',
+        activityCategory: 'other',
+        completedAt: new Date().toISOString(),
+      }, 'user-789');
+
+      // This is how the dismiss handler detects synthetic notifications
+      expect(notification.id.startsWith('feedback-')).toBe(true);
     });
   });
 

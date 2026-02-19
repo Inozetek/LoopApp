@@ -38,9 +38,9 @@ describe('UpgradeFeedCard (legacy)', () => {
 
   describe('Content', () => {
     it('should display correct pricing from TIER_PRICING', () => {
-      expect(TIER_PRICING.plus).toBe(3.99);
+      expect(TIER_PRICING.plus).toBe(5.99);
       const ctaText = `Upgrade to Plus — $${TIER_PRICING.plus}/mo`;
-      expect(ctaText).toBe('Upgrade to Plus — $3.99/mo');
+      expect(ctaText).toBe('Upgrade to Plus — $5.99/mo');
     });
   });
 });

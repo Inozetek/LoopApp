@@ -29,26 +29,26 @@ const FEATURES = [
 ];
 
 describe('Paywall pricing calculations', () => {
-  test('monthly price is $3.99', () => {
-    expect(TIER_PRICING.plus).toBe(3.99);
+  test('monthly price is $5.99', () => {
+    expect(TIER_PRICING.plus).toBe(5.99);
   });
 
-  test('annual price is $29.99', () => {
-    expect(TIER_PRICING.plus_annual).toBe(29.99);
+  test('annual price is $49.99', () => {
+    expect(TIER_PRICING.plus_annual).toBe(49.99);
   });
 
   test('free tier is $0', () => {
     expect(TIER_PRICING.free).toBe(0);
   });
 
-  test('annual monthly equivalent is $2.50', () => {
+  test('annual monthly equivalent is $4.17', () => {
     const annualMonthly = getAnnualMonthly(TIER_PRICING.plus_annual);
-    expect(annualMonthly).toBe('2.50');
+    expect(annualMonthly).toBe('4.17');
   });
 
-  test('annual savings is 37%', () => {
+  test('annual savings is ~30%', () => {
     const savings = getSavingsPercent(TIER_PRICING.plus, TIER_PRICING.plus_annual);
-    expect(savings).toBe(37);
+    expect(savings).toBe(30);
   });
 
   test('annual is cheaper than 12 months of monthly', () => {
@@ -154,10 +154,10 @@ describe('Billing cycle toggle logic', () => {
   }
 
   test('monthly selected returns monthly price', () => {
-    expect(getPriceForCycle('monthly')).toBe(3.99);
+    expect(getPriceForCycle('monthly')).toBe(5.99);
   });
 
   test('annual selected returns annual price', () => {
-    expect(getPriceForCycle('annual')).toBe(29.99);
+    expect(getPriceForCycle('annual')).toBe(49.99);
   });
 });

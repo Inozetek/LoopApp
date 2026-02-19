@@ -126,6 +126,7 @@ export function createMarkedDates(
     markedDates[dateKey] = {
       marked: true,
       dots,
+      ...(dayEvents.length > 3 ? { extraCount: dayEvents.length - 3 } : {}),
     };
   });
 

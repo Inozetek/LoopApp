@@ -51,6 +51,7 @@ interface MarkedDate {
   selectedColor?: string;
   selectedTextColor?: string;
   dots?: Array<{ key: string; color: string; selectedDotColor?: string }>;
+  extraCount?: number;
 }
 
 interface CalendarEvent {
@@ -133,6 +134,7 @@ function createMarkedDates(
     markedDates[dateKey] = {
       marked: true,
       dots,
+      ...(dayEvents.length > 3 ? { extraCount: dayEvents.length - 3 } : {}),
     };
   });
 
@@ -261,6 +263,52 @@ describe('createMarkedDates', () => {
 
     const result = createMarkedDates(events);
     expect(result['2025-06-15'].dots).toHaveLength(3);
+  });
+
+  it('includes extraCount when more than 3 events exist on a day', () => {
+    const events = [
+      makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
+      makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
+      makeEvent({ id: '3', start_time: '2025-06-15T12:00:00.000Z' }),
+      makeEvent({ id: '4', start_time: '2025-06-15T14:00:00.000Z' }),
+      makeEvent({ id: '5', start_time: '2025-06-15T16:00:00.000Z' }),
+    ];
+
+    const result = createMarkedDates(events);
+    expect(result['2025-06-15'].extraCount).toBe(2);
+  });
+
+  it('does not include extraCount when 3 or fewer events exist', () => {
+    const events = [
+      makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
+      makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
+      makeEvent({ id: '3', start_time: '2025-06-15T12:00:00.000Z' }),
+    ];
+
+    const result = createMarkedDates(events);
+    expect(result['2025-06-15'].extraCount).toBeUndefined();
+  });
+
+  it('does not include extraCount for a single event', () => {
+    const events = [
+      makeEvent({ id: '1', start_time: '2025-06-15T10:00:00.000Z' }),
+    ];
+
+    const result = createMarkedDates(events);
+    expect(result['2025-06-15'].extraCount).toBeUndefined();
+  });
+
+  it('calculates correct extraCount for exactly 4 events', () => {
+    const events = [
+      makeEvent({ id: '1', start_time: '2025-06-15T08:00:00.000Z' }),
+      makeEvent({ id: '2', start_time: '2025-06-15T10:00:00.000Z' }),
+      makeEvent({ id: '3', start_time: '2025-06-15T12:00:00.000Z' }),
+      makeEvent({ id: '4', start_time: '2025-06-15T14:00:00.000Z' }),
+    ];
+
+    const result = createMarkedDates(events);
+    expect(result['2025-06-15'].dots).toHaveLength(3);
+    expect(result['2025-06-15'].extraCount).toBe(1);
   });
 
   it('includes selectedDotColor on every dot', () => {

@@ -132,3 +132,70 @@ describe('getBatchCommentCounts', () => {
     expect(counts.size).toBe(50);
   });
 });
+
+/**
+ * Social proof seeding: display counts merge Loop organic counts with
+ * Google reviewsCount so new-user cards don't look empty/dead.
+ *
+ * The merge formula (implemented in activity-card-intelligent.tsx):
+ *   displayLikes    = loopLikes    + googleReviewsSeed
+ *   displayComments = loopComments + googleReviewsSeed
+ */
+describe('social proof seeding (display count merge)', () => {
+  // Pure logic extracted from activity-card-intelligent.tsx
+  function computeDisplayLikes(
+    loopLikes: number,
+    reviewsCount: number | undefined,
+  ): number {
+    const googleReviewsSeed = reviewsCount ?? 0;
+    return loopLikes + googleReviewsSeed;
+  }
+
+  function computeDisplayComments(
+    loopComments: number | undefined,
+    reviewsCount: number | undefined,
+  ): number {
+    const googleReviewsSeed = reviewsCount ?? 0;
+    return (loopComments ?? 0) + googleReviewsSeed;
+  }
+
+  it('adds Google reviewsCount to organic Loop likes', () => {
+    expect(computeDisplayLikes(3, 500)).toBe(503);
+  });
+
+  it('adds Google reviewsCount to organic Loop comments', () => {
+    expect(computeDisplayComments(2, 500)).toBe(502);
+  });
+
+  it('shows only Google reviewsCount when no organic likes exist', () => {
+    expect(computeDisplayLikes(0, 1200)).toBe(1200);
+  });
+
+  it('shows only Google reviewsCount when no organic comments exist', () => {
+    expect(computeDisplayComments(0, 1200)).toBe(1200);
+  });
+
+  it('shows only organic likes when reviewsCount is undefined', () => {
+    expect(computeDisplayLikes(5, undefined)).toBe(5);
+  });
+
+  it('shows only organic comments when reviewsCount is undefined', () => {
+    expect(computeDisplayComments(7, undefined)).toBe(7);
+  });
+
+  it('returns 0 when both organic and reviewsCount are zero/undefined', () => {
+    expect(computeDisplayLikes(0, 0)).toBe(0);
+    expect(computeDisplayLikes(0, undefined)).toBe(0);
+    expect(computeDisplayComments(undefined, undefined)).toBe(0);
+    expect(computeDisplayComments(0, 0)).toBe(0);
+  });
+
+  it('handles large reviewsCount values (e.g. popular venues)', () => {
+    expect(computeDisplayLikes(10, 15000)).toBe(15010);
+    expect(computeDisplayComments(3, 15000)).toBe(15003);
+  });
+
+  it('treats undefined loopComments as 0', () => {
+    expect(computeDisplayComments(undefined, 300)).toBe(300);
+  });
+});

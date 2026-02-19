@@ -104,9 +104,11 @@ export const BrandColors = {
   // EXTENDED PALETTE (Slightly refined for cohesion)
   // ============================================================================
   loopPurple: '#8B5CF6',    // Violet 500 - unchanged, already good
+  loopViolet: '#8B5CF6',   // Alias for loopPurple — used in card-action-menu, radar, etc.
   loopPink: '#EC4899',      // Pink 500 - unchanged, already good
   loopIndigo: '#6366F1',    // Indigo 500 - unchanged, already good
   loopTeal: '#14B8A6',      // Teal 500 - unchanged, already good
+  gray: '#8E8E93',           // iOS system gray — alias for veryLightGray
 
   // ============================================================================
   // ROUTE LINE COLORS (Google Maps navigation inspired)

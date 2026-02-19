@@ -47,3 +47,16 @@ app-example
 .env.local
 .env*.local
 *.env
+
+# Test output
+coverage/
+test-data/
+
+# Temp debug scripts
+check-cache.js
+seed-cache.js
+seed-cache-simple.js
+test-cache-read.js
+
+# Windows null device artifact
+nul

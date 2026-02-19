@@ -2,17 +2,17 @@
  * Calendar constants, category colors, and utilities
  */
 
-import { BrandColors } from './brand';
+import { BrandColors, CategoryColors } from './brand';
 
-export const CATEGORY_COLORS = {
-  work: '#0066FF',      // Loop Blue
-  personal: '#00D9A3',  // Loop Green
-  social: '#FF3B6C',    // Like/Heart red
-  dining: '#FF9500',    // Warning orange
-  fitness: '#00D9A3',   // Green
-  entertainment: '#9C27B0', // Purple
-  travel: '#2196F3',    // Sky blue
-  other: '#8E8E93',     // Gray
+export const CATEGORY_COLORS: Record<string, string> = {
+  work: CategoryColors.work,             // #6366F1 (Indigo)
+  personal: CategoryColors.personal,     // #F59E0B (Orange)
+  social: CategoryColors.social,         // #8B5CF6 (Purple)
+  dining: CategoryColors.dining,         // #EF4444 (Red)
+  fitness: CategoryColors.fitness,       // #09DB98 (Green)
+  entertainment: CategoryColors.entertainment, // #00A6D9 (Blue)
+  travel: CategoryColors.travel,         // #14B8A6 (Teal)
+  other: CategoryColors.other,           // #8E8E93 (Gray)
 };
 
 export const CATEGORY_ICONS = {
@@ -55,6 +55,8 @@ export interface MarkedDate {
     color: string;
     selectedDotColor?: string;
   }>;
+  /** Number of events beyond the 3 visible dots (shown as "+N" badge) */
+  extraCount?: number;
 }
 
 export interface EventWithColor {

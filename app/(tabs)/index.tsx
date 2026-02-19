@@ -44,7 +44,7 @@ import { supabase } from '@/lib/supabase';
 import { getCurrentLocation } from '@/services/location-service';
 import { handleError } from '@/utils/error-handler';
 import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
-import { getUnreadNotificationCount } from '@/services/dashboard-aggregator';
+import { getUnreadNotificationCount, getPendingFeedbackNotificationCount } from '@/services/dashboard-aggregator';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
 import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities, getPastEventsNeedingFeedback } from '@/services/feedback-service';
 import { getBatchCommentCounts } from '@/services/comments-service';
@@ -1627,6 +1627,32 @@ export default function RecommendationFeedScreen() {
     }).catch(() => {});
   }, [user]);
 
+  // Handle feedback request from notification tray
+  const handleNotificationFeedbackRequest = useCallback(async (data: {
+    eventId: string;
+    activityId: string | null;
+    activityName: string;
+    activityCategory: string;
+    completedAt: string;
+    place?: { id: string; name: string; address?: string };
+  }) => {
+    if (!user) return;
+
+    // Get recommendation ID if activity came from a recommendation
+    const recommendationId = data.activityId
+      ? await getRecommendationIdForActivity(user.id, data.activityId)
+      : null;
+
+    setFeedbackActivity({
+      activityId: data.activityId || '',
+      activityName: data.activityName,
+      completedAt: data.completedAt,
+      recommendationId: recommendationId || undefined,
+      place: data.place,
+    });
+    setShowFeedbackModal(true);
+  }, [user]);
+
   // Share handler — opens the share bottom sheet for a card
   const handleShare = useCallback((item: Recommendation) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -2395,11 +2421,15 @@ export default function RecommendationFeedScreen() {
       setIsFirstLoadToday(shouldShow);
       setShowDashboard(shouldShow);
 
-      // Fetch notification count
-      const count = await getUnreadNotificationCount(user.id);
-      setNotificationCount(count);
+      // Fetch notification count (stored notifications + pending feedback)
+      const [dbCount, feedbackCount] = await Promise.all([
+        getUnreadNotificationCount(user.id),
+        getPendingFeedbackNotificationCount(user.id),
+      ]);
+      setNotificationCount(dbCount + feedbackCount);
+      setPendingFeedbackCount(feedbackCount);
 
-      console.log(`📊 Dashboard status: shouldShow=${shouldShow}, notifications=${count}`);
+      console.log(`📊 Dashboard status: shouldShow=${shouldShow}, notifications=${dbCount}, feedbackReminders=${feedbackCount}`);
     } catch (error) {
       console.error('❌ Error checking dashboard status:', error);
     }
@@ -2420,10 +2450,14 @@ export default function RecommendationFeedScreen() {
       setIsFirstLoadToday(false);
     }
 
-    // Refresh notification count
+    // Refresh notification count (stored + feedback reminders)
     if (user) {
-      const count = await getUnreadNotificationCount(user.id);
-      setNotificationCount(count);
+      const [dbCount, feedbackCount] = await Promise.all([
+        getUnreadNotificationCount(user.id),
+        getPendingFeedbackNotificationCount(user.id),
+      ]);
+      setNotificationCount(dbCount + feedbackCount);
+      setPendingFeedbackCount(feedbackCount);
     }
   };
 
@@ -2770,10 +2804,14 @@ export default function RecommendationFeedScreen() {
             console.log('📱 Feedback modal closing, resetting state');
             setShowFeedbackModal(false);
             setFeedbackActivity(null);
-            // Refresh pending feedback count for the banner
+            // Refresh pending feedback count for the banner and notification badge
             if (user) {
-              getPendingFeedbackActivities(user.id).then(activities => {
-                setPendingFeedbackCount(activities.length);
+              Promise.all([
+                getPendingFeedbackNotificationCount(user.id),
+                getUnreadNotificationCount(user.id),
+              ]).then(([feedbackCount, dbCount]) => {
+                setPendingFeedbackCount(feedbackCount);
+                setNotificationCount(dbCount + feedbackCount);
               }).catch(() => {});
             }
           }}
@@ -2819,6 +2857,7 @@ export default function RecommendationFeedScreen() {
         <NotificationsTrayModal
           visible={showNotificationsTray}
           onClose={() => setShowNotificationsTray(false)}
+          onFeedbackRequest={handleNotificationFeedbackRequest}
         />
 
         {/* Profile Drawer (formerly Main Menu) */}

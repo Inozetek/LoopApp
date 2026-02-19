@@ -15,6 +15,7 @@ export type NotificationType =
   | 'event_reminder'
   | 'activity_share'
   | 'activity_invite'
+  | 'feedback_reminder'
   | 'other';
 
 export type NotificationPriority = 'info' | 'attention' | 'urgent';

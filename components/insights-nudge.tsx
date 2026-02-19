@@ -38,7 +38,7 @@ export function InsightsNudge({ trialDaysLeft, onDismiss }: InsightsNudgeProps) 
 
   const handleUpgrade = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    router.push('/(tabs)/settings');
+    router.push('/paywall' as any);
   };
 
   const handleDismiss = () => {

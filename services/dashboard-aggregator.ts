@@ -12,6 +12,7 @@ import type {
   FriendActivity,
   FeaturedItem,
 } from '@/types/dashboard';
+import { getPendingFeedbackActivities, getPastEventsNeedingFeedback, type CompletedActivity } from '@/services/feedback-service';
 
 /**
  * Fetch complete dashboard data for a user
@@ -266,30 +267,106 @@ async function fetchFeaturedItems(userId: string): Promise<FeaturedItem[]> {
 }
 
 /**
+ * Fetch pending feedback activities and convert them into DashboardNotification objects.
+ * These are client-side synthetic notifications (not stored in dashboard_notifications table).
+ */
+export async function fetchPendingFeedbackNotifications(userId: string): Promise<DashboardNotification[]> {
+  try {
+    const [completed, past] = await Promise.all([
+      getPendingFeedbackActivities(userId),
+      getPastEventsNeedingFeedback(userId),
+    ]);
+
+    // Deduplicate by eventId (completed events may overlap with past events)
+    const seenIds = new Set(completed.map(a => a.eventId));
+    const uniquePast = past.filter(a => !seenIds.has(a.eventId));
+    const allPending = [...completed, ...uniquePast];
+
+    return allPending.map((activity: CompletedActivity) => ({
+      id: `feedback-${activity.eventId}`,
+      user_id: userId,
+      notification_type: 'feedback_reminder' as const,
+      priority: 'attention' as const,
+      title: `How was ${activity.activityName}?`,
+      message: 'Tap to rate your experience and help Loop learn your preferences.',
+      data: {
+        eventId: activity.eventId,
+        activityId: activity.activityId,
+        activityName: activity.activityName,
+        activityCategory: activity.activityCategory,
+        completedAt: activity.completedAt,
+        place: activity.place,
+      },
+      action_button_text: 'Rate',
+      action_deep_link: undefined,
+      related_event_id: activity.eventId,
+      is_read: false,
+      is_dismissed: false,
+      is_actioned: false,
+      created_at: activity.completedAt,
+    }));
+  } catch (error) {
+    console.error('❌ Error fetching pending feedback notifications:', error);
+    return [];
+  }
+}
+
+/**
+ * Get count of pending feedback items (for badge).
+ * Lighter-weight than full notification fetch when you just need the count.
+ */
+export async function getPendingFeedbackNotificationCount(userId: string): Promise<number> {
+  try {
+    const [completed, past] = await Promise.all([
+      getPendingFeedbackActivities(userId),
+      getPastEventsNeedingFeedback(userId),
+    ]);
+
+    const seenIds = new Set(completed.map(a => a.eventId));
+    const uniquePast = past.filter(a => !seenIds.has(a.eventId));
+    return completed.length + uniquePast.length;
+  } catch (error) {
+    console.error('❌ Error getting pending feedback count:', error);
+    return 0;
+  }
+}
+
+/**
  * Fetch dashboard notifications
  */
 export async function fetchDashboardNotifications(userId: string): Promise<DashboardNotification[]> {
   try {
-    const { data, error } = await supabase
-      .from('dashboard_notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('is_dismissed', false)
-      .or('expires_at.is.null,expires_at.gt.' + new Date().toISOString())
-      .order('priority', { ascending: false })
-      .order('created_at', { ascending: false })
-      .limit(20);
+    // Fetch stored notifications and feedback reminders in parallel
+    const [storedResult, feedbackNotifications] = await Promise.all([
+      supabase
+        .from('dashboard_notifications')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('is_dismissed', false)
+        .or('expires_at.is.null,expires_at.gt.' + new Date().toISOString())
+        .order('priority', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(20),
+      fetchPendingFeedbackNotifications(userId),
+    ]);
 
-    if (error) {
+    let storedNotifications: DashboardNotification[] = [];
+
+    if (storedResult.error) {
       // PGRST205 = table not found (migration not run yet)
-      if (error.code === 'PGRST204' || error.code === 'PGRST205') {
+      if (storedResult.error.code === 'PGRST204' || storedResult.error.code === 'PGRST205') {
         console.warn('⚠️ Dashboard notifications table not found - migration may not be run');
-        return [];
+      } else {
+        throw storedResult.error;
       }
-      throw error;
+    } else {
+      storedNotifications = storedResult.data || [];
     }
 
-    return data || [];
+    // Merge: feedback reminders first (they're actionable), then stored notifications
+    const merged = [...feedbackNotifications, ...storedNotifications];
+
+    return merged;
   } catch (error) {
     console.error('❌ Error fetching dashboard notifications:', error);
     return [];

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,19 @@ import {
   TextInput,
   Alert,
   Platform,
-  Animated,
-  Dimensions,
   Keyboard,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
 } from 'react-native';
+import Reanimated, {
+  FadeIn,
+  FadeInDown,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withSequence,
+  Easing as ReanimatedEasing,
+} from 'react-native-reanimated';
 // Map preview is handled by components/map-preview.tsx (.web.tsx for web)
 // let MapView: any;
 // let Marker: any;
@@ -49,8 +56,10 @@ import { MapPreview } from '@/components/map-preview';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
 import { CalendarHeader } from '@/components/calendar-header';
+import { CalendarDayCell } from '@/components/calendar-day-cell';
 import { TaskDetailsModal } from '@/components/task-details-modal';
 import { createMarkedDates } from '@/utils/calendar';
+import { DELAYS } from '@/constants/animations';
 import { getCurrentLocation } from '@/services/location-service';
 import {
   getPendingFeedbackActivities,
@@ -285,8 +294,14 @@ export default function CalendarScreen() {
   const [syncPreviewEvents, setSyncPreviewEvents] = useState<CalendarEventPreview[]>([]);
   const [isLoadingPreview, setIsLoadingPreview] = useState(false);
 
-  // Animation for events list
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  // Month transition animation (reanimated shared value)
+  const calendarOpacity = useSharedValue(1);
+  const calendarAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: calendarOpacity.value,
+  }));
+
+  // Track selected date change to stagger event list entry animations
+  const [eventListKey, setEventListKey] = useState(0);
 
   useEffect(() => {
     loadEvents();
@@ -356,18 +371,8 @@ export default function CalendarScreen() {
     fetchUserLocation();
   }, [user]);
 
-  useEffect(() => {
-    // Fade in events when they load
-    if (events.length > 0 && !loading) {
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }).start();
-    } else {
-      fadeAnim.setValue(0);
-    }
-  }, [events, loading]);
+  // Event list entry animations are now handled by Reanimated FadeInDown
+  // via the eventListKey that resets on day selection changes.
 
   /**
    * Check for pending feedback activities.
@@ -573,6 +578,8 @@ export default function CalendarScreen() {
   const onDayPress = (day: DateData) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedDate(day.dateString);
+    // Bump key so event list re-enters with staggered animations
+    setEventListKey(prev => prev + 1);
   };
 
   const openCreateModal = () => {
@@ -1019,29 +1026,39 @@ export default function CalendarScreen() {
 
       {viewMode === 'list' ? (
         <>
-          {/* Calendar */}
-          <Calendar
-            key={colorScheme}
-            current={selectedDate}
-            onDayPress={onDayPress}
-            markingType={'multi-dot'}
-            markedDates={markedDates}
-            onMonthChange={(month) => loadMonthEvents(month.dateString.slice(0, 7))}
-            theme={{
-              calendarBackground: Colors[colorScheme ?? 'light'].background,
-              textSectionTitleColor: isDark ? BrandColors.veryLightGray : BrandColors.lightGray,
-              selectedDayBackgroundColor: BrandColors.loopBlue,
-              selectedDayTextColor: BrandColors.white,
-              todayTextColor: BrandColors.loopBlue,
-              dayTextColor: Colors[colorScheme ?? 'light'].text,
-              textDisabledColor: isDark ? BrandColors.lightGray : '#d9e1e8',
-              monthTextColor: Colors[colorScheme ?? 'light'].text,
-              arrowColor: Colors[colorScheme ?? 'light'].text,
-              textMonthFontSize: 18,
-              textMonthFontWeight: '600',
-            }}
-            style={[styles.calendar, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}
-          />
+          {/* Calendar with smooth month transitions */}
+          <Reanimated.View style={calendarAnimatedStyle}>
+            <Calendar
+              key={colorScheme}
+              current={selectedDate}
+              onDayPress={onDayPress}
+              markingType={'multi-dot'}
+              markedDates={markedDates}
+              dayComponent={CalendarDayCell}
+              onMonthChange={(month) => {
+                // Smooth fade transition on month change
+                calendarOpacity.value = withSequence(
+                  withTiming(0, { duration: 100, easing: ReanimatedEasing.in(ReanimatedEasing.quad) }),
+                  withTiming(1, { duration: 200, easing: ReanimatedEasing.out(ReanimatedEasing.quad) }),
+                );
+                loadMonthEvents(month.dateString.slice(0, 7));
+              }}
+              theme={{
+                calendarBackground: Colors[colorScheme ?? 'light'].background,
+                textSectionTitleColor: isDark ? BrandColors.veryLightGray : BrandColors.lightGray,
+                selectedDayBackgroundColor: BrandColors.loopBlue,
+                selectedDayTextColor: BrandColors.white,
+                todayTextColor: BrandColors.loopBlue,
+                dayTextColor: Colors[colorScheme ?? 'light'].text,
+                textDisabledColor: isDark ? BrandColors.lightGray : '#d9e1e8',
+                monthTextColor: Colors[colorScheme ?? 'light'].text,
+                arrowColor: Colors[colorScheme ?? 'light'].text,
+                textMonthFontSize: 18,
+                textMonthFontWeight: '600',
+              }}
+              style={[styles.calendar, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}
+            />
+          </Reanimated.View>
 
           {/* Events List */}
           <ScrollView
@@ -1158,27 +1175,44 @@ export default function CalendarScreen() {
             <CalendarEventSkeleton />
           </>
         ) : mergedTimeline.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="calendar-outline" size={64} color={Colors[colorScheme ?? 'light'].icon} />
-            <Text style={[Typography.bodyLarge, styles.emptyText, { color: Colors[colorScheme ?? 'light'].icon }]}>
-              No activities scheduled
+          <Reanimated.View entering={FadeIn.duration(300)} style={styles.emptyState}>
+            <View style={[styles.emptyStateIconCircle, { backgroundColor: isDark ? `${BrandColors.loopBlue}15` : `${BrandColors.loopBlue}0D` }]}>
+              <Ionicons name="sunny-outline" size={40} color={BrandColors.loopBlue} />
+            </View>
+            <Text style={[Typography.titleMedium, styles.emptyText, { color: Colors[colorScheme ?? 'light'].text }]}>
+              Nothing planned
             </Text>
             <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center', marginBottom: Spacing.lg }]}>
-              Add something to your day
+              Your day is wide open. Fill it with something great.
             </Text>
-            <TouchableOpacity
-              style={styles.createTaskButton}
-              onPress={openCreateModal}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="add-circle-outline" size={20} color={Colors[colorScheme ?? 'light'].text} />
-              <Text style={[styles.createTaskButtonText, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Add to Loop
-              </Text>
-            </TouchableOpacity>
-          </View>
+            <View style={styles.emptyStateActions}>
+              <TouchableOpacity
+                style={[styles.emptyStateButton, { backgroundColor: BrandColors.loopBlue }]}
+                onPress={openCreateModal}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" />
+                <Text style={[Typography.labelLarge, { color: '#FFFFFF', marginLeft: Spacing.xs }]}>
+                  Add event
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.emptyStateButtonOutline, { borderColor: BrandColors.loopGreen }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/(tabs)');
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="sparkles-outline" size={20} color={BrandColors.loopGreen} />
+                <Text style={[Typography.labelLarge, { color: BrandColors.loopGreen, marginLeft: Spacing.xs }]}>
+                  Get suggestions
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Reanimated.View>
         ) : (
-          <Animated.View style={{ opacity: fadeAnim }}>
+          <View key={eventListKey}>
             {mergedTimeline.map((item, idx) => {
               if (item.type === 'free') {
                 const slot = item.data as { start: Date; end: Date; durationMinutes: number };
@@ -1189,8 +1223,9 @@ export default function CalendarScreen() {
                   : `${slot.durationMinutes}m`;
 
                 return (
-                  <View
+                  <Reanimated.View
                     key={`free-${idx}`}
+                    entering={FadeInDown.delay(idx * DELAYS.stagger).duration(300).springify()}
                     style={[styles.freeTimeCard, { borderColor: BrandColors.loopGreen + '40' }]}
                   >
                     <View style={styles.freeTimeCardContent}>
@@ -1215,14 +1250,17 @@ export default function CalendarScreen() {
                         <Text style={[Typography.labelSmall, { color: BrandColors.loopGreen }]}>Get suggestions</Text>
                       </TouchableOpacity>
                     </View>
-                  </View>
+                  </Reanimated.View>
                 );
               }
 
               const event = item.data as CalendarEvent;
               return (
-              <Swipeable
+              <Reanimated.View
                 key={event.id}
+                entering={FadeInDown.delay(idx * DELAYS.stagger).duration(300).springify()}
+              >
+              <Swipeable
                 renderRightActions={() => renderRightActions(event.id)}
                 overshootRight={false}
               >
@@ -1324,9 +1362,10 @@ export default function CalendarScreen() {
               )}
             </TouchableOpacity>
           </Swipeable>
+              </Reanimated.View>
               );
             })}
-          </Animated.View>
+          </View>
         )}
 
         {/* Loop View Button - Show when there are events */}
@@ -2379,6 +2418,33 @@ const styles = StyleSheet.create({
   createTaskButtonText: {
     fontSize: 15,
     fontWeight: '600',
+  },
+  emptyStateIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Spacing.md,
+  },
+  emptyStateActions: {
+    flexDirection: 'row',
+    gap: Spacing.md,
+  },
+  emptyStateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
+  },
+  emptyStateButtonOutline: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm + 2,
+    paddingHorizontal: Spacing.lg,
+    borderRadius: BorderRadius.full,
+    borderWidth: 1.5,
   },
   eventCard: {
     borderRadius: BorderRadius.md,

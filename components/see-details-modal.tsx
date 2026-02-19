@@ -300,13 +300,13 @@ export function SeeDetailsModal({
       Animated.parallel([
         Animated.spring(slideAnim, {
           toValue: 0,
-          friction: 8,
-          tension: 65,
+          friction: 9,
+          tension: 80,
           useNativeDriver: true,
         }),
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 200,
+          duration: 180,
           useNativeDriver: true,
         }),
       ]).start();

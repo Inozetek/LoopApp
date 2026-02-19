@@ -35,6 +35,7 @@ import Animated, {
   interpolate,
   Easing,
   runOnJS,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { GROK_SPRING } from '@/constants/animations';
 
@@ -188,7 +189,7 @@ export function OnboardingLoopAnimation({
   const centerRadius = size * 0.04;
 
   // Create animated props for each node
-  const createNodeProps = (nodeValue: Animated.SharedValue<number>, index: number) => {
+  const createNodeProps = (nodeValue: SharedValue<number>, index: number) => {
     return useAnimatedProps(() => {
       const scale = index === 0 ? centerPulse.value : 1;
       return {
@@ -199,7 +200,7 @@ export function OnboardingLoopAnimation({
   };
 
   // Create animated props for each edge
-  const createEdgeProps = (edgeValue: Animated.SharedValue<number>, edgeIndex: number) => {
+  const createEdgeProps = (edgeValue: SharedValue<number>, edgeIndex: number) => {
     const [fromIdx, toIdx] = EDGES[edgeIndex];
     const from = NODES[fromIdx];
     const to = NODES[toIdx];

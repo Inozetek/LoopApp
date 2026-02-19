@@ -24,6 +24,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { TIER_PRICING, TIER_NAMES } from '@/types/subscription';
 import { useAuth } from '@/contexts/auth-context';
+import { LoopLogoVariant } from '@/components/loop-logo-variant';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -93,7 +94,7 @@ export default function PaywallScreen() {
           end={{ x: 1, y: 1 }}
           style={styles.heroBanner}
         >
-          <Ionicons name="star" size={36} color="#FFFFFF" />
+          <LoopLogoVariant size={36} flat />
           <Text style={styles.heroTitle}>{TIER_NAMES.plus}</Text>
           <Text style={styles.heroSubtitle}>
             Unlock the full Loop experience
@@ -228,7 +229,11 @@ export default function PaywallScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.ctaGradient}
           >
-            <Ionicons name={isAlreadyPlus ? 'checkmark-circle' : 'star'} size={20} color="#FFFFFF" />
+            {isAlreadyPlus ? (
+              <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+            ) : (
+              <LoopLogoVariant size={20} flat />
+            )}
             <Text style={styles.ctaText}>
               {isAlreadyPlus ? 'Already Subscribed' : 'Start 7-Day Free Trial'}
             </Text>

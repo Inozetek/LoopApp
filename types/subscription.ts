@@ -1,7 +1,7 @@
 /**
  * Subscription Tiers & Limits
  *
- * 2-tier model: Free ($0) + Loop Plus ($3.99/mo, $29.99/yr)
+ * 2-tier model: Free ($0) + Loop Plus ($5.99/mo, $49.99/yr)
  * Premium tier eliminated — features like itinerary planning and AI concierge
  * will ship when ready, and Plus limits will expand to include them.
  *
@@ -101,8 +101,8 @@ export const TIER_LIMITS: Record<SubscriptionTier, TierLimits> = {
  */
 export const TIER_PRICING = {
   free: 0,
-  plus: 3.99,
-  plus_annual: 29.99, // 37% annual discount
+  plus: 5.99,
+  plus_annual: 49.99, // ~30% annual discount ($4.17/mo)
 } as const;
 
 /**
