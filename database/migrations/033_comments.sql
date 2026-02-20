@@ -3,7 +3,7 @@
 
 CREATE TABLE IF NOT EXISTS comments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
   place_id VARCHAR(255) NOT NULL,
   text TEXT NOT NULL CHECK (length(text) BETWEEN 1 AND 500),
   rating INTEGER CHECK (rating BETWEEN 1 AND 5),

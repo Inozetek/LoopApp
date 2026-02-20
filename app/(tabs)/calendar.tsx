@@ -61,6 +61,7 @@ import { TaskDetailsModal } from '@/components/task-details-modal';
 import { createMarkedDates } from '@/utils/calendar';
 import { DELAYS } from '@/constants/animations';
 import { getCurrentLocation } from '@/services/location-service';
+import { parseLocation } from '@/utils/location-parser';
 import {
   getPendingFeedbackActivities,
   getPastEventsNeedingFeedback,
@@ -78,79 +79,6 @@ import {
   CalendarEventPreview,
   SyncProgressInfo,
 } from '@/services/calendar-service';
-
-// Parse IEEE 754 double from hex string
-function hexToFloat64(hex: string, littleEndian: boolean): number {
-  const bytes = hex.match(/../g)!.map(b => parseInt(b, 16));
-  const buffer = new ArrayBuffer(8);
-  const uint8 = new Uint8Array(buffer);
-  bytes.forEach((b, i) => (uint8[i] = b));
-  const view = new DataView(buffer);
-  return view.getFloat64(0, littleEndian);
-}
-
-// Parse PostGIS EWKB/WKB hex-encoded POINT to lat/lng
-function parseWKBHexPoint(hex: string): { latitude: number; longitude: number } | null {
-  if (typeof hex !== 'string' || !/^[0-9a-fA-F]+$/.test(hex) || hex.length < 42) return null;
-
-  const isLittleEndian = hex.substring(0, 2) === '01';
-
-  // Read geometry type (4 bytes at offset 1 byte)
-  const typeHex = hex.substring(2, 10);
-  const typeBytes = typeHex.match(/../g)!.map(b => parseInt(b, 16));
-  const typeNum = isLittleEndian
-    ? typeBytes[0] | (typeBytes[1] << 8) | (typeBytes[2] << 16) | (typeBytes[3] << 24)
-    : (typeBytes[0] << 24) | (typeBytes[1] << 16) | (typeBytes[2] << 8) | typeBytes[3];
-
-  const hasSRID = (typeNum & 0x20000000) !== 0;
-  const geomType = typeNum & 0xff;
-
-  if (geomType !== 1) return null; // Not a POINT
-
-  let offset = 10; // After byte order (2) + type (8)
-  if (hasSRID) offset += 8; // Skip SRID (4 bytes = 8 hex chars)
-
-  if (hex.length < offset + 32) return null; // Need 32 more hex chars for two doubles
-
-  const lng = hexToFloat64(hex.substring(offset, offset + 16), isLittleEndian);
-  const lat = hexToFloat64(hex.substring(offset + 16, offset + 32), isLittleEndian);
-
-  if (isNaN(lng) || isNaN(lat)) return null;
-  return { latitude: lat, longitude: lng };
-}
-
-// Parse a PostGIS location value (any of 4 formats) into { latitude, longitude }.
-// Reused by loopMapTasks, recentLocations, and quickPickLocations.
-function parseLocationFromRow(loc: any): { latitude: number; longitude: number } | null {
-  if (!loc) return null;
-
-  // Format 1: Object with latitude/longitude
-  if (typeof loc === 'object' && 'latitude' in loc && 'longitude' in loc) {
-    const lat = loc.latitude;
-    const lng = loc.longitude;
-    if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
-      return { latitude: lat, longitude: lng };
-    }
-  }
-  // Format 2: PostGIS GeoJSON { coordinates: [lng, lat] }
-  if (typeof loc === 'object' && 'coordinates' in loc) {
-    const coords = loc.coordinates;
-    if (Array.isArray(coords) && coords.length === 2) {
-      return { latitude: coords[1], longitude: coords[0] };
-    }
-  }
-  // Format 3: WKT string "POINT(lng lat)"
-  if (typeof loc === 'string') {
-    const match = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-    if (match) {
-      return { latitude: parseFloat(match[2]), longitude: parseFloat(match[1]) };
-    }
-    // Format 4: Hex-encoded WKB/EWKB from PostGIS
-    const parsed = parseWKBHexPoint(loc);
-    if (parsed) return parsed;
-  }
-  return null;
-}
 
 interface CalendarEvent {
   id: string;
@@ -428,7 +356,7 @@ export default function CalendarScreen() {
         for (const row of data) {
           const key = (row.address as string).trim().toLowerCase();
           if (seen.has(key)) continue;
-          const parsed = parseLocationFromRow(row.location);
+          const parsed = parseLocation(row.location);
           if (!parsed) continue;
           seen.set(key, {
             address: row.address as string,
@@ -929,7 +857,7 @@ export default function CalendarScreen() {
   const loopMapTasks = useMemo(() => {
     return events
       .map(event => {
-        const parsed = parseLocationFromRow(event.location);
+        const parsed = parseLocation(event.location);
         if (!parsed) {
           console.warn(`⚠️ Could not parse location for event: ${event.title}`);
           return null;
@@ -955,29 +883,7 @@ export default function CalendarScreen() {
   // Memoize home location parsing for LoopMapView
   const parsedHomeLocation = useMemo(() => {
     if (!user?.home_location) return undefined;
-
-    const loc = user.home_location as any;
-    // Handle PostGIS object format: { coordinates: [lng, lat] }
-    if (loc && typeof loc === 'object' && 'coordinates' in loc) {
-      return {
-        latitude: loc.coordinates[1],
-        longitude: loc.coordinates[0],
-      };
-    }
-    // Handle PostGIS string format: "POINT(lng lat)" or hex WKB
-    if (typeof loc === 'string') {
-      const match = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-      if (match) {
-        return {
-          latitude: parseFloat(match[2]),
-          longitude: parseFloat(match[1]),
-        };
-      }
-      // Try hex-encoded WKB/EWKB
-      const parsed = parseWKBHexPoint(loc);
-      if (parsed) return parsed;
-    }
-    return undefined;
+    return parseLocation(user.home_location) ?? undefined;
   }, [user?.home_location]);
 
   // Quick-pick locations (Home / Work) for location autocomplete
@@ -994,7 +900,7 @@ export default function CalendarScreen() {
     }
     // Parse work location the same way
     if (user?.work_location) {
-      const workParsed = parseLocationFromRow(user.work_location);
+      const workParsed = parseLocation(user.work_location);
       if (workParsed && user.work_address) {
         picks.push({
           label: 'Work',

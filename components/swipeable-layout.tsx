@@ -24,9 +24,11 @@ const TRANSLATION_RATIO = 0.8; // How much screen moves with drag (0.8 = 80% fol
 
 interface SwipeableLayoutProps {
   children: React.ReactNode;
+  /** When true, left-edge swipe (swipe right to go to previous screen) is disabled */
+  disableLeftEdgeSwipe?: boolean;
 }
 
-function SwipeableLayout({ children }: SwipeableLayoutProps) {
+function SwipeableLayout({ children, disableLeftEdgeSwipe = false }: SwipeableLayoutProps) {
   const router = useRouter();
   const segments = useSegments();
   const startXRef = useRef(0);
@@ -76,7 +78,8 @@ function SwipeableLayout({ children }: SwipeableLayoutProps) {
       const fromLeftEdge = event.absoluteX < EDGE_ZONE;
       const fromRightEdge = event.absoluteX > SCREEN_WIDTH - EDGE_ZONE;
 
-      isEdgeSwipeRef.current = fromLeftEdge || fromRightEdge;
+      // When disableLeftEdgeSwipe is true, ignore left-edge swipes (menu owns that gesture)
+      isEdgeSwipeRef.current = (fromLeftEdge && !disableLeftEdgeSwipe) || fromRightEdge;
     })
     .onUpdate((event) => {
       // Only animate if started from edge

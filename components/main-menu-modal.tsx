@@ -176,13 +176,16 @@ export function MainMenuModal({
       >
         {/* Header */}
         <View style={styles.header}>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Profile</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Loop</Text>
           <TouchableOpacity
             onPress={onClose}
             style={styles.closeButton}
             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
           >
-            <Ionicons name="close" size={28} color={colors.text} />
+            <View style={styles.drawerLines}>
+              <View style={[styles.drawerLine, { backgroundColor: colors.text }]} />
+              <View style={[styles.drawerLine, { backgroundColor: colors.text }]} />
+            </View>
           </TouchableOpacity>
         </View>
 
@@ -318,6 +321,16 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: Spacing.xs,
+  },
+  drawerLines: {
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerLine: {
+    width: 20,
+    height: 2.5,
+    borderRadius: 2,
   },
   scrollView: {
     flex: 1,

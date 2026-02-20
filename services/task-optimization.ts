@@ -12,6 +12,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { parseLocation } from '@/utils/location-parser';
 
 export interface CalendarTask {
   id: string;
@@ -149,7 +150,7 @@ async function fetchTasksForDay(
     title: event.title,
     description: event.description,
     category: event.category,
-    location: parseLocationFromPostGIS(event.location),
+    location: parseLocation(event.location) ?? { latitude: 32.7767, longitude: -96.797 },
     address: event.address,
     start_time: event.start_time,
     end_time: event.end_time,
@@ -553,30 +554,6 @@ function generateReorderReason(
   }
 
   return 'Optimized for better time management';
-}
-
-/**
- * Parse PostGIS POINT format to coordinates
- */
-function parseLocationFromPostGIS(postgisString: string): {
-  latitude: number;
-  longitude: number;
-} {
-  // PostGIS format: "POINT(longitude latitude)"
-  const match = postgisString.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-
-  if (match) {
-    return {
-      longitude: parseFloat(match[1]),
-      latitude: parseFloat(match[2]),
-    };
-  }
-
-  // Fallback default location
-  return {
-    latitude: 32.7767,
-    longitude: -96.797,
-  };
 }
 
 /**

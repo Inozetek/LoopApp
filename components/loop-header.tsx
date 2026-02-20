@@ -16,10 +16,16 @@ import Animated, {
   useSharedValue,
   useAnimatedStyle,
   withTiming,
+  withSpring,
   withSequence,
   withRepeat,
+  interpolate,
+  interpolateColor,
+  Extrapolate,
   Easing,
+  SharedValue,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { BrandColors, Spacing, Shadows } from '@/constants/brand';
@@ -29,6 +35,36 @@ import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
+
+/**
+ * Custom hamburger icon — 3 horizontal bars with slight asymmetry for character.
+ * Top & bottom bars are 20px wide, middle bar is 16px. Grok-style.
+ */
+function HamburgerIcon({ color }: { color: string }) {
+  return (
+    <View style={hamburgerStyles.container}>
+      <View style={[hamburgerStyles.bar, hamburgerStyles.barTop, { backgroundColor: color }]} />
+      <View style={[hamburgerStyles.bar, hamburgerStyles.barMid, { backgroundColor: color }]} />
+      <View style={[hamburgerStyles.bar, hamburgerStyles.barBot, { backgroundColor: color }]} />
+    </View>
+  );
+}
+
+const hamburgerStyles = StyleSheet.create({
+  container: {
+    width: 20,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    gap: 4.5,
+  },
+  bar: {
+    height: 2,
+    borderRadius: 1,
+  },
+  barTop: { width: 20 },
+  barMid: { width: 16 },
+  barBot: { width: 20 },
+});
 
 function FilterIcon({ color }: { color: string }) {
   return (
@@ -89,6 +125,11 @@ interface LoopHeaderProps {
   showChatButton?: boolean;
   onChatPress?: () => void;
   chatBadgeCount?: number;
+  // Swipe-to-open gesture callbacks on hamburger button
+  onMenuDrag?: (translationX: number) => void;
+  onMenuDragEnd?: (translationX: number, velocityX: number) => void;
+  // Menu animation progress (0→1) — keeps button enlarged while menu is open/dragging
+  menuProgress?: SharedValue<number>;
 }
 
 export function LoopHeader({
@@ -120,6 +161,9 @@ export function LoopHeader({
   showChatButton = false,
   onChatPress,
   chatBadgeCount = 0,
+  onMenuDrag,
+  onMenuDragEnd,
+  menuProgress,
 }: LoopHeaderProps) {
   const router = useRouter();
   const colorScheme = useColorScheme();
@@ -175,6 +219,47 @@ export function LoopHeader({
     return parts[0][0].toUpperCase();
   };
 
+  // Press micro-interactions — grow + lighten bg + brighten border
+  const menuPress = useSharedValue(0);
+  const searchPress = useSharedValue(0);
+
+  // Menu button: scale up, lighten bg, brighten border
+  // Combines touch press state AND menu-open state via Math.max —
+  // button stays enlarged while menu is dragging/open, without fighting touch animations
+  const menuButtonStyle = useAnimatedStyle(() => {
+    // menuOpen ramps to 1 quickly (by menuProgress=0.1) and back smoothly
+    const menuOpen = menuProgress
+      ? interpolate(menuProgress.value, [0, 0.1], [0, 1], Extrapolate.CLAMP)
+      : 0;
+    const p = Math.max(menuPress.value, menuOpen);
+    return {
+      transform: [{ scale: interpolate(p, [0, 1], [1, 1.1], Extrapolate.CLAMP) }],
+      backgroundColor: interpolateColor(p, [0, 1], ['#131315', '#2C2C30']),
+      borderColor: interpolateColor(p, [0, 1], ['rgba(255,255,255,0.10)', 'rgba(255,255,255,0.25)']),
+    };
+  });
+
+  // Search button: same grow + lighten treatment
+  const searchButtonStyle = useAnimatedStyle(() => {
+    const p = searchPress.value;
+    const baseBg = colorScheme === 'dark' ? '#222224' : '#E5E5EA';
+    const pressedBg = colorScheme === 'dark' ? '#38383C' : '#CDCDD2';
+    const baseBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+    const pressedBorder = colorScheme === 'dark' ? 'rgba(255,255,255,0.22)' : 'rgba(0,0,0,0.16)';
+    return {
+      transform: [{ scale: interpolate(p, [0, 1], [1, 1.1], Extrapolate.CLAMP) }],
+      backgroundColor: interpolateColor(p, [0, 1], [baseBg, pressedBg]),
+      borderColor: interpolateColor(p, [0, 1], [baseBorder, pressedBorder]),
+    };
+  });
+
+  const handlePressIn = (sv: Animated.SharedValue<number>) => {
+    sv.value = withTiming(1, { duration: 100 });
+  };
+  const handlePressOut = (sv: Animated.SharedValue<number>) => {
+    sv.value = withSpring(0, { duration: 400, dampingRatio: 0.55 });
+  };
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
       {/* Left Side */}
@@ -194,30 +279,45 @@ export function LoopHeader({
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
         ) : showProfileAvatar ? (
-          <TouchableOpacity
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              onProfilePress?.();
-            }}
-            style={styles.avatarButton}
-            activeOpacity={0.7}
-          >
-            <View style={[styles.avatarContainer, { backgroundColor: BrandColors.loopBlue + '20' }]}>
-              {user?.profile_picture_url ? (
-                <Image source={{ uri: user.profile_picture_url }} style={styles.avatar} />
-              ) : (
-                <Text style={styles.avatarInitials}>{getInitials()}</Text>
-              )}
-            </View>
-            {/* Notification badge on avatar */}
-            {notificationCount > 0 && (
-              <View style={styles.avatarBadge}>
-                <Text style={styles.avatarBadgeText}>
-                  {notificationCount > 9 ? '9+' : notificationCount}
-                </Text>
-              </View>
-            )}
-          </TouchableOpacity>
+          (() => {
+            // Pan gesture on menu button: swipe right to open menu
+            const menuPan = Gesture.Pan()
+              .activeOffsetX([10, 999])
+              .failOffsetY([-15, 15])
+              .onUpdate((event) => {
+                if (event.translationX > 0 && onMenuDrag) {
+                  onMenuDrag(event.translationX);
+                }
+              })
+              .onEnd((event) => {
+                if (onMenuDragEnd) {
+                  onMenuDragEnd(event.translationX, event.velocityX);
+                }
+              })
+              .runOnJS(true);
+
+            return (
+              <GestureDetector gesture={menuPan}>
+                <TouchableOpacity
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    onProfilePress?.();
+                  }}
+                  onPressIn={() => handlePressIn(menuPress)}
+                  onPressOut={() => handlePressOut(menuPress)}
+                  style={styles.filterButton}
+                  activeOpacity={1}
+                >
+                  <Animated.View style={[styles.menuCircle, menuButtonStyle]}>
+                    <View style={styles.menuLines}>
+                      <View style={[styles.menuLine, { backgroundColor: '#FFFFFF' }]} />
+                      <View style={[styles.menuLine, { backgroundColor: '#FFFFFF' }]} />
+                    </View>
+                  </Animated.View>
+                </TouchableOpacity>
+              </GestureDetector>
+            );
+          })()
         ) : showMenuButton ? (
           <TouchableOpacity
             onPress={() => {
@@ -283,19 +383,14 @@ export function LoopHeader({
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 onSearchPress?.();
               }}
-              activeOpacity={0.6}
+              onPressIn={() => handlePressIn(searchPress)}
+              onPressOut={() => handlePressOut(searchPress)}
+              activeOpacity={1}
               style={styles.filterButton}
             >
-              <View style={[styles.filterCircle, {
-                backgroundColor: colorScheme === 'dark'
-                  ? 'rgba(34,34,36,0.85)'
-                  : 'rgba(229,229,234,0.65)',
-                borderColor: colorScheme === 'dark'
-                  ? 'rgba(255,255,255,0.06)'
-                  : 'rgba(0,0,0,0.08)',
-              }]}>
-                <FilterIcon color={colors.text} />
-              </View>
+              <Animated.View style={[styles.filterCircle, searchButtonStyle]}>
+                <Ionicons name="search-outline" size={17} color={colors.text} />
+              </Animated.View>
               {/* Active filter dot indicator */}
               {hasActiveFilters && (
                 <View style={styles.filterDot} />
@@ -338,7 +433,7 @@ export function LoopHeader({
                 ? 'rgba(255,255,255,0.06)'
                 : 'rgba(0,0,0,0.08)',
             }]}>
-              <FilterIcon color={colors.text} />
+              <Ionicons name="search-outline" size={17} color={colors.text} />
             </View>
           </TouchableOpacity>
         ) : showAddButton ? (
@@ -465,8 +560,8 @@ const styles = StyleSheet.create({
   },
   avatarBadge: {
     position: 'absolute',
-    top: 0,
-    right: -2,
+    top: -1,
+    right: -3,
     backgroundColor: BrandColors.error,
     borderRadius: 8,
     minWidth: 16,
@@ -474,8 +569,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
   avatarBadgeText: {
     color: '#FFFFFF',
@@ -501,6 +594,26 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: '700',
     includeFontPadding: false,
+  },
+  // Menu button (dark circle with two horizontal bars)
+  menuCircle: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    // backgroundColor + borderColor driven by animated style
+  },
+  menuLines: {
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuLine: {
+    width: 14,
+    height: 2,
+    borderRadius: 1,
   },
   // Circular filter button
   filterButton: {

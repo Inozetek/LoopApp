@@ -45,7 +45,7 @@ export default function TabLayout() {
               size={size}
               color={color}
               focused={focused}
-              badge={notifications.calendar}
+              badge={notifications.calendar.count}
               customIcon={({ size: iconSize, color: iconColor }) => (
                 <AppBadgingIcon size={iconSize} color={iconColor} filled={focused} />
               )}
@@ -63,7 +63,7 @@ export default function TabLayout() {
               size={size}
               color={color}
               focused={focused}
-              badge={notifications.explore}
+              badge={notifications.explore.count}
               customIcon={({ size: iconSize, color: iconColor }) => (
                 <SearchIcon size={iconSize} color={iconColor} filled={focused} />
               )}
@@ -81,8 +81,8 @@ export default function TabLayout() {
               name="sparkles"
               size={Platform.OS === 'android' ? (size || 24) : (size ? size + 3 : 33)}
               focused={focused}
-              showBadge={hasNewRecommendations}
-              badgeCount={notifications.recommendations}
+              showBadge={hasNewRecommendations || notifications.recommendations.dot}
+              badgeCount={notifications.recommendations.count}
             />
           ),
         }}
@@ -98,7 +98,7 @@ export default function TabLayout() {
                 size={size ? size - 4 : 26}
                 color={color}
                 focused={focused}
-                badge={notifications.friends}
+                badge={notifications.friends.count}
                 customIcon={({ size: iconSize, color: iconColor }) => (
                   <ModeCommentIcon size={iconSize} color={iconColor} filled={focused} />
                 )}
@@ -117,7 +117,7 @@ export default function TabLayout() {
               size={size}
               color={color}
               focused={focused}
-              badge={notifications.profile}
+              badge={notifications.profile.count}
               customIcon={({ size: iconSize, color: iconColor }) => (
                 <AccountCircleIcon size={iconSize} color={iconColor} filled={focused} />
               )}

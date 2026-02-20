@@ -49,7 +49,8 @@ import { supabase } from '@/lib/supabase';
 import { getCurrentLocation } from '@/services/location-service';
 import { handleError } from '@/utils/error-handler';
 import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
-import { getUnreadNotificationCount, getPendingFeedbackNotificationCount } from '@/services/dashboard-aggregator';
+import { getPendingFeedbackNotificationCount, fetchDashboardNotifications } from '@/services/dashboard-aggregator';
+import { computeTabBadges } from '@/utils/notification-routing';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
 import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities, getPastEventsNeedingFeedback } from '@/services/feedback-service';
 import { getBatchCommentCounts } from '@/services/comments-service';
@@ -354,7 +355,7 @@ FeedList.displayName = 'FeedList';
 
 export default function RecommendationFeedScreen() {
   const { user } = useAuth();
-  const { setHasNewRecommendations } = useTabNotifications();
+  const { setHasNewRecommendations, applyBadges } = useTabNotifications();
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
@@ -441,7 +442,6 @@ export default function RecommendationFeedScreen() {
   // Dashboard state
   const [showDashboard, setShowDashboard] = useState(false);
   const [isFirstLoadToday, setIsFirstLoadToday] = useState(false);
-  const [notificationCount, setNotificationCount] = useState(0);
 
   // Notifications tray state
   const [showNotificationsTray, setShowNotificationsTray] = useState(false);
@@ -2521,6 +2521,31 @@ export default function RecommendationFeedScreen() {
       gestureTranslationY.value = 0;
     });
 
+  // Refresh tab bar badges from notification data
+  const refreshTabBadges = async () => {
+    if (!user) return;
+    try {
+      const [notifications, feedbackCount] = await Promise.all([
+        fetchDashboardNotifications(user.id),
+        getPendingFeedbackNotificationCount(user.id),
+      ]);
+      setPendingFeedbackCount(feedbackCount);
+
+      // Check if any current recommendation has a high match score (90%+)
+      const hasHighMatch = recommendations.some(r => (r as any).matchScore >= 90);
+
+      const badges = computeTabBadges({
+        notifications,
+        pendingFeedbackCount: feedbackCount,
+        hasHighMatchRec: hasHighMatch,
+        hasNewRecommendations: false, // managed separately via setHasNewRecommendations
+      });
+      applyBadges(badges);
+    } catch (error) {
+      console.error('❌ Error refreshing tab badges:', error);
+    }
+  };
+
   // Check if dashboard should show on first load
   const checkDashboardStatus = async () => {
     if (!user) return;
@@ -2531,15 +2556,10 @@ export default function RecommendationFeedScreen() {
       setIsFirstLoadToday(shouldShow);
       setShowDashboard(shouldShow);
 
-      // Fetch notification count (stored notifications + pending feedback)
-      const [dbCount, feedbackCount] = await Promise.all([
-        getUnreadNotificationCount(user.id),
-        getPendingFeedbackNotificationCount(user.id),
-      ]);
-      setNotificationCount(dbCount + feedbackCount);
-      setPendingFeedbackCount(feedbackCount);
+      // Refresh tab badges from notification data
+      await refreshTabBadges();
 
-      console.log(`📊 Dashboard status: shouldShow=${shouldShow}, notifications=${dbCount}, feedbackReminders=${feedbackCount}`);
+      console.log(`📊 Dashboard status: shouldShow=${shouldShow}`);
     } catch (error) {
       console.error('❌ Error checking dashboard status:', error);
     }
@@ -2560,15 +2580,8 @@ export default function RecommendationFeedScreen() {
       setIsFirstLoadToday(false);
     }
 
-    // Refresh notification count (stored + feedback reminders)
-    if (user) {
-      const [dbCount, feedbackCount] = await Promise.all([
-        getUnreadNotificationCount(user.id),
-        getPendingFeedbackNotificationCount(user.id),
-      ]);
-      setNotificationCount(dbCount + feedbackCount);
-      setPendingFeedbackCount(feedbackCount);
-    }
+    // Refresh tab badges after dashboard interaction
+    await refreshTabBadges();
   };
 
   // Handle category selection change
@@ -2695,9 +2708,10 @@ export default function RecommendationFeedScreen() {
             showSearchButton={true}
             onSearchPress={() => setShowAdvancedSearch(true)}
             hasActiveFilters={isFilterSheetActive}
-            notificationCount={notificationCount}
+
             onMenuDrag={handleHeaderMenuDrag}
             onMenuDragEnd={handleHeaderMenuDragEnd}
+            menuProgress={menuProgress}
           />
           {seedingCity ? (
             <View style={[styles.seedingContainer, { backgroundColor: colors.background }]}>
@@ -2746,9 +2760,10 @@ export default function RecommendationFeedScreen() {
             showSearchButton={true}
             onSearchPress={() => setShowAdvancedSearch(true)}
             hasActiveFilters={isFilterSheetActive}
-            notificationCount={notificationCount}
+
             onMenuDrag={handleHeaderMenuDrag}
             onMenuDragEnd={handleHeaderMenuDragEnd}
+            menuProgress={menuProgress}
           />
           <EmptyState
             icon="sparkles"
@@ -2782,9 +2797,10 @@ export default function RecommendationFeedScreen() {
           showSearchButton={true}
           onSearchPress={() => setShowAdvancedSearch(true)}
           hasActiveFilters={isFilterSheetActive}
-          notificationCount={notificationCount}
+
           onMenuDrag={handleHeaderMenuDrag}
           onMenuDragEnd={handleHeaderMenuDragEnd}
+          menuProgress={menuProgress}
           onLogoPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -2944,16 +2960,8 @@ export default function RecommendationFeedScreen() {
             console.log('📱 Feedback modal closing, resetting state');
             setShowFeedbackModal(false);
             setFeedbackActivity(null);
-            // Refresh pending feedback count for the banner and notification badge
-            if (user) {
-              Promise.all([
-                getPendingFeedbackNotificationCount(user.id),
-                getUnreadNotificationCount(user.id),
-              ]).then(([feedbackCount, dbCount]) => {
-                setPendingFeedbackCount(feedbackCount);
-                setNotificationCount(dbCount + feedbackCount);
-              }).catch(() => {});
-            }
+            // Refresh tab badges after feedback submission
+            refreshTabBadges();
           }}
           onSubmit={handleFeedbackSubmit}
         />
@@ -3004,7 +3012,7 @@ export default function RecommendationFeedScreen() {
         <MainMenuModal
           visible={showMainMenu}
           onClose={handleCloseMenu}
-          notificationCount={notificationCount}
+
           onOpenDashboard={() => setShowDashboard(true)}
           onOpenHistory={() => setShowHistory(true)}
           gestureControlled={menuGestureControlled}

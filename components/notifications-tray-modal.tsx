@@ -79,11 +79,11 @@ export function NotificationsTrayModal({ visible, onClose, onFeedbackRequest }: 
     return notifications.filter(n => {
       switch (activeFilter) {
         case 'recommendations':
-          return ['new_recommendations', 'featured_venue', 'featured_movie', 'lunch_suggestion'].includes(n.notification_type);
+          return ['new_recommendations', 'featured_venue', 'featured_movie', 'lunch_suggestion', 'high_match', 'radar_alert'].includes(n.notification_type);
         case 'social':
-          return ['friend_activity', 'pending_invite', 'family_in_town', 'activity_share', 'activity_invite'].includes(n.notification_type);
+          return ['friend_activity', 'pending_invite', 'family_in_town', 'activity_share', 'activity_invite', 'friend_request', 'comment_reply'].includes(n.notification_type);
         case 'reminders':
-          return ['loops_planned', 'event_reminder', 'feedback_reminder'].includes(n.notification_type);
+          return ['loops_planned', 'event_reminder', 'feedback_reminder', 'loop_score_milestone'].includes(n.notification_type);
         default:
           return true;
       }
@@ -545,6 +545,16 @@ function getNotificationIcon(type: string): any {
       return 'gift-outline';
     case 'feedback_reminder':
       return 'chatbubble-ellipses-outline';
+    case 'friend_request':
+      return 'person-add-outline';
+    case 'radar_alert':
+      return 'radio-outline';
+    case 'high_match':
+      return 'flame-outline';
+    case 'loop_score_milestone':
+      return 'trophy-outline';
+    case 'comment_reply':
+      return 'chatbubbles-outline';
     default:
       return 'notifications-outline';
   }

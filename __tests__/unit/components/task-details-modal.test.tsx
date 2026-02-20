@@ -178,6 +178,16 @@ describe('TaskDetailsModal Logic', () => {
   });
 
   describe('Relative Time Formatting', () => {
+    // Pin clock to 8 AM so "tomorrow at 2 PM" is always > 24 hours away,
+    // preventing the flaky "in X hours" result that occurs late at night.
+    beforeAll(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date(2026, 1, 19, 8, 0, 0)); // Feb 19, 2026 8:00 AM local
+    });
+    afterAll(() => {
+      jest.useRealTimers();
+    });
+
     it('returns "in X min" for events less than 1 hour away', () => {
       const futureDate = new Date(Date.now() + 30 * 60 * 1000); // 30 min
       const result = getRelativeTime(futureDate);

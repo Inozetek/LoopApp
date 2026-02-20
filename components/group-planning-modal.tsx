@@ -36,6 +36,7 @@ import { getPlacePhotoUrl } from '@/services/google-places';
 import { FriendGroup, getFriendGroups, getFriendsEligibleForGroupRecs } from '@/services/friend-groups-service';
 import { GroupSuggestionsMap } from '@/components/group-suggestions-map';
 import { DragHandle } from '@/components/drag-handle';
+import { parseLocation } from '@/utils/location-parser';
 import { SeeDetailsModal } from '@/components/see-details-modal';
 import type { Recommendation } from '@/types/activity';
 
@@ -233,43 +234,6 @@ export function GroupPlanningModal({
       // Fallback to Dallas downtown
       return { latitude: 32.7767, longitude: -96.7970 };
     }
-  };
-
-  /**
-   * Parse location from various PostGIS formats
-   */
-  const parseLocation = (location: any): { latitude: number; longitude: number } | null => {
-    if (!location) return null;
-
-    // Handle string format: "POINT(-96.7970 32.7767)"
-    if (typeof location === 'string') {
-      const match = location.match(/POINT\(([-\d.]+)\s+([-\d.]+)\)/);
-      if (match) {
-        return {
-          longitude: parseFloat(match[1]),
-          latitude: parseFloat(match[2]),
-        };
-      }
-    }
-
-    // Handle object format: { longitude: -96.7970, latitude: 32.7767 }
-    if (typeof location === 'object') {
-      if (location.latitude && location.longitude) {
-        return {
-          latitude: parseFloat(location.latitude),
-          longitude: parseFloat(location.longitude),
-        };
-      }
-      // Handle GeoJSON format
-      if (location.coordinates && Array.isArray(location.coordinates)) {
-        return {
-          longitude: location.coordinates[0],
-          latitude: location.coordinates[1],
-        };
-      }
-    }
-
-    return null;
   };
 
   const toggleFriend = (friendId: string) => {

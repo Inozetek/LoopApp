@@ -16,6 +16,11 @@ export type NotificationType =
   | 'activity_share'
   | 'activity_invite'
   | 'feedback_reminder'
+  | 'friend_request'
+  | 'radar_alert'
+  | 'high_match'
+  | 'loop_score_milestone'
+  | 'comment_reply'
   | 'other';
 
 export type NotificationPriority = 'info' | 'attention' | 'urgent';

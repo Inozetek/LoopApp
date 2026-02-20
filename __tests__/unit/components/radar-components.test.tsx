@@ -84,24 +84,36 @@ describe('RadarAlertCard - Formatting Helpers', () => {
     }
   }
 
+  /**
+   * Format a Date as a local YYYY-MM-DD string (avoids toISOString() UTC
+   * roll-over bug that caused flaky "Today"/"Tomorrow" assertions late at
+   * night when the UTC date is already the next day).
+   */
+  function toLocalDateStr(d: Date): string {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
   describe('formatEventDate', () => {
     it('should return "Today" for today\'s date', () => {
       const today = new Date();
-      const dateStr = today.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(today);
       expect(formatEventDate(dateStr)).toBe('Today');
     });
 
     it('should return "Tomorrow" for tomorrow\'s date', () => {
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
-      const dateStr = tomorrow.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(tomorrow);
       expect(formatEventDate(dateStr)).toBe('Tomorrow');
     });
 
     it('should return weekday name for dates within 7 days', () => {
       const inFive = new Date();
       inFive.setDate(inFive.getDate() + 5);
-      const dateStr = inFive.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(inFive);
       const result = formatEventDate(dateStr);
       const validDays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
       expect(validDays).toContain(result);
@@ -110,7 +122,7 @@ describe('RadarAlertCard - Formatting Helpers', () => {
     it('should return "Mon DD" format for dates beyond 7 days', () => {
       const farFuture = new Date();
       farFuture.setDate(farFuture.getDate() + 30);
-      const dateStr = farFuture.toISOString().split('T')[0];
+      const dateStr = toLocalDateStr(farFuture);
       const result = formatEventDate(dateStr);
       // Should match pattern like "Mar 19" or "Apr 1"
       expect(result).toMatch(/^[A-Z][a-z]{2} \d{1,2}$/);
