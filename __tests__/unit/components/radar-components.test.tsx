@@ -62,6 +62,15 @@ jest.mock('@/lib/supabase', () => ({
 // ============================================================================
 
 describe('RadarAlertCard - Formatting Helpers', () => {
+  // Pin clock to noon to avoid midnight-boundary flakiness in Today/Tomorrow tests
+  beforeAll(() => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date(2026, 1, 20, 12, 0, 0)); // Feb 20, 2026 noon
+  });
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
   /**
    * Mirrors formatEventDate from radar-alert-card.tsx line 221
    * Converts ISO date string to human-readable relative/absolute date.
