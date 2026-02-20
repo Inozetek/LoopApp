@@ -350,12 +350,12 @@ export default function CalendarScreen() {
     // the user actually went to the location.
   }, [selectedDate]);
 
-  // Load month events for calendar dots on mount + after any event mutations
+  // Load month events for calendar dots on mount
   useEffect(() => {
     if (selectedDate && user) {
       loadMonthEvents(selectedDate.slice(0, 7));
     }
-  }, [user, events]);
+  }, [user]);
 
   // Load free time slots on mount so they're available before a sync
   useEffect(() => {
@@ -548,14 +548,14 @@ export default function CalendarScreen() {
       if (result.success) {
         console.log(`✅ Synced ${result.eventsSynced} events`);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        await loadEvents();
+        reloadAfterMutation();
         await loadFreeTime();
         setSyncResult({ count: result.eventsSynced, errors: 0 });
         // Auto-dismiss success card after 4 seconds
         setTimeout(() => setSyncResult(null), 4000);
       } else if (result.errors.length > 0) {
         console.error('❌ Sync errors:', result.errors);
-        await loadEvents();
+        reloadAfterMutation();
         await loadFreeTime();
         setSyncResult({ count: result.eventsSynced, errors: result.errors.length });
         setTimeout(() => setSyncResult(null), 5000);
@@ -600,12 +600,6 @@ export default function CalendarScreen() {
       const startOfDay = new Date(`${selectedDate}T00:00:00`);
       const endOfDay = new Date(`${selectedDate}T23:59:59`);
 
-      console.log(`📅 Loading events for ${selectedDate}:`);
-      console.log(`   Start (local): ${startOfDay.toLocaleString()}`);
-      console.log(`   Start (UTC): ${startOfDay.toISOString()}`);
-      console.log(`   End (local): ${endOfDay.toLocaleString()}`);
-      console.log(`   End (UTC): ${endOfDay.toISOString()}`);
-
       const { data, error } = await supabase
         .from('calendar_events')
         .select('*')
@@ -615,8 +609,6 @@ export default function CalendarScreen() {
         .order('start_time', { ascending: true });
 
       if (error) throw error;
-
-      console.log(`✅ Found ${data?.length || 0} events for ${selectedDate}`);
       setEvents(data || []);
 
       // Load which past events need feedback (for "How was it?" chip)
@@ -650,6 +642,12 @@ export default function CalendarScreen() {
     } catch (error) {
       console.error('Error loading month events:', error);
     }
+  };
+
+  // Reload day events + month dots after a mutation (create/edit/delete)
+  const reloadAfterMutation = () => {
+    loadEvents();
+    loadMonthEvents(selectedDate.slice(0, 7));
   };
 
   const onDayPress = (day: DateData) => {
@@ -737,7 +735,7 @@ export default function CalendarScreen() {
 
       Alert.alert('Success', 'Added to your Loop!');
       closeCreateModal();
-      loadEvents();
+      reloadAfterMutation();
     } catch (error: any) {
       const msg = error?.message || error?.details || JSON.stringify(error);
       console.error('Error creating event:', msg, error);
@@ -774,7 +772,7 @@ export default function CalendarScreen() {
       setShowFeedbackModal(true);
 
       // Reload events to show updated status
-      loadEvents();
+      reloadAfterMutation();
     } else {
       Alert.alert('Error', 'Failed to mark activity as complete');
     }
@@ -785,7 +783,7 @@ export default function CalendarScreen() {
     setFeedbackActivity(null);
 
     // Reload events list to reflect the completed status
-    loadEvents();
+    reloadAfterMutation();
 
     // NOTE: We no longer auto-check for more pending feedback.
     // Each task should be rated individually when the user taps "Rate Activity".
@@ -822,7 +820,7 @@ export default function CalendarScreen() {
       Alert.alert('Success', 'Updated successfully!');
       setShowEditModal(false);
       setEditingEvent(null);
-      loadEvents();
+      reloadAfterMutation();
     } catch (error) {
       console.error('Error updating event:', error);
       Alert.alert('Error', 'Failed to update');
@@ -857,7 +855,7 @@ export default function CalendarScreen() {
               Alert.alert('Success', 'Removed from your Loop');
               setShowEditModal(false);
               setEditingEvent(null);
-              loadEvents();
+              reloadAfterMutation();
             } catch (error) {
               console.error('Error deleting event:', error);
               Alert.alert('Error', 'Failed to remove');
@@ -893,7 +891,7 @@ export default function CalendarScreen() {
 
               if (error) throw error;
 
-              loadEvents();
+              reloadAfterMutation();
             } catch (error) {
               console.error('Error deleting event:', error);
               Alert.alert('Error', 'Failed to remove');

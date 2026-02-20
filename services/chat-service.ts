@@ -429,7 +429,7 @@ export async function getUnreadCount(userId: string): Promise<number> {
 
     return total;
   } catch (error: any) {
-    if (error?.code === 'PGRST204' || error?.code === '42P01') return 0;
+    if (error?.code === 'PGRST204' || error?.code === 'PGRST205' || error?.code === '42P01') return 0;
     console.error('❌ getUnreadCount error:', error);
     return 0;
   }
