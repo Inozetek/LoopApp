@@ -193,10 +193,14 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
               <LinearGradient
                 colors={gradientColors.map(c => {
                   if (!isDark) return c + '07';
-                  // 2 colors → '04', 3 → '08', 4 → '0a', 5+ → '0e'
-                  const opacities: Record<number, string> = { 2: '04', 3: '08', 4: '0a' };
-                  const hex = opacities[gradientColors.length] || '0e';
-                  return c + hex;
+                  // Convert hex color to rgba with task-count-scaled opacity
+                  // 1 task → 0.033, 2 → 0.022, 3 → 0.011, 4 → 0.040, 5+ → 0.052
+                  const opacities: Record<number, number> = { 1: 0.033, 2: 0.022, 3: 0.011, 4: 0.040 };
+                  const a = opacities[dots.length] ?? 0.052;
+                  const r = parseInt(c.slice(1, 3), 16);
+                  const g = parseInt(c.slice(3, 5), 16);
+                  const b = parseInt(c.slice(5, 7), 16);
+                  return `rgba(${r},${g},${b},${a})`;
                 }) as [string, string, ...string[]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
