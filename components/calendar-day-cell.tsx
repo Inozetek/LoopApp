@@ -184,12 +184,20 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
             <View
               style={[
                 styles.ringInner,
-                { backgroundColor: theme?.calendarBackground || '#FFFFFF' },
+                { backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : (theme?.calendarBackground || '#FFFFFF') },
               ]}
             >
-              {/* Barely-there tint matching ring colors — lens effect */}
+              {/* Barely-there tint matching ring colors — lens effect
+                 Scale opacity by color count: fewer colors = more concentrated
+                 tint, so dial down; more colors = more diffused, so dial up. */}
               <LinearGradient
-                colors={gradientColors.map(c => c + (isDark ? '05' : '07')) as [string, string, ...string[]]}
+                colors={gradientColors.map(c => {
+                  if (!isDark) return c + '07';
+                  // 2 colors → '04', 3 → '08', 4 → '0a', 5+ → '0e'
+                  const opacities: Record<number, string> = { 2: '04', 3: '08', 4: '0a' };
+                  const hex = opacities[gradientColors.length] || '0e';
+                  return c + hex;
+                }) as [string, string, ...string[]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={StyleSheet.absoluteFill}
