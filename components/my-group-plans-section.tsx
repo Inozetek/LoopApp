@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { GroupPlanChat } from '@/components/group-plan-chat';
 
 interface Participant {
   id: string;
@@ -51,6 +52,35 @@ const RSVP_CONFIG: Record<string, { color: string; icon: string; label: string }
   no_response: { color: BrandColors.lightGray, icon: 'ellipse-outline', label: 'No reply' },
 };
 
+/**
+ * Check whether a plan has enough RSVPs to be confirmed.
+ * Requires at least one accepted participant; no pending invitations.
+ */
+export function canConfirmPlan(participants: Participant[]): boolean {
+  if (participants.length === 0) return false;
+  const hasAccepted = participants.some((p) => p.rsvp_status === 'accepted');
+  const hasPending = participants.some((p) => p.rsvp_status === 'invited');
+  return hasAccepted && !hasPending;
+}
+
+/**
+ * Summarize RSVPs into a human-readable string.
+ */
+export function summarizeRsvps(participants: Participant[]): string {
+  const accepted = participants.filter((p) => p.rsvp_status === 'accepted').length;
+  const maybe = participants.filter((p) => p.rsvp_status === 'maybe').length;
+  const declined = participants.filter((p) => p.rsvp_status === 'declined').length;
+  const pending = participants.filter((p) => p.rsvp_status === 'invited').length;
+
+  const parts: string[] = [];
+  if (accepted > 0) parts.push(`${accepted} going`);
+  if (maybe > 0) parts.push(`${maybe} maybe`);
+  if (declined > 0) parts.push(`${declined} declined`);
+  if (pending > 0) parts.push(`${pending} pending`);
+
+  return parts.join(', ') || 'No participants';
+}
+
 export function MyGroupPlansSection({ userId, onRefresh }: MyGroupPlansSectionProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -59,6 +89,7 @@ export function MyGroupPlansSection({ userId, onRefresh }: MyGroupPlansSectionPr
   const [plans, setPlans] = useState<MyGroupPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [updating, setUpdating] = useState<string | null>(null);
+  const [expandedChat, setExpandedChat] = useState<string | null>(null);
 
   const loadPlans = useCallback(async () => {
     try {
@@ -251,98 +282,149 @@ export function MyGroupPlansSection({ userId, onRefresh }: MyGroupPlansSectionPr
         </View>
       </View>
 
-      {plans.map((plan) => (
-        <View
-          key={plan.id}
-          style={[styles.card, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}
-        >
-          <View style={styles.cardContent}>
-            <View style={styles.cardTitleRow}>
-              <Text style={[Typography.titleMedium, { color: colors.text, flex: 1 }]} numberOfLines={1}>
-                {plan.title}
-              </Text>
-              <View style={[styles.statusChip, { backgroundColor: plan.status === 'confirmed' ? BrandColors.loopGreen + '20' : BrandColors.loopOrange + '20' }]}>
-                <Text style={[Typography.labelSmall, { color: plan.status === 'confirmed' ? BrandColors.loopGreen : BrandColors.loopOrange }]}>
-                  {plan.status === 'confirmed' ? 'Confirmed' : 'Proposed'}
+      {plans.map((plan) => {
+        const confirmable = canConfirmPlan(plan.participants);
+        const rsvpSummary = summarizeRsvps(plan.participants);
+        const isChatExpanded = expandedChat === plan.id;
+
+        // Build participant name map for chat
+        const participantNames: Record<string, string> = {};
+        plan.participants.forEach((p) => {
+          if (p.name) participantNames[p.user_id] = p.name;
+        });
+
+        return (
+          <View
+            key={plan.id}
+            style={[styles.card, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}
+          >
+            <View style={styles.cardContent}>
+              <View style={styles.cardTitleRow}>
+                <Text style={[Typography.titleMedium, { color: colors.text, flex: 1 }]} numberOfLines={1}>
+                  {plan.title}
                 </Text>
+                <View style={[styles.statusChip, { backgroundColor: plan.status === 'confirmed' ? BrandColors.loopGreen + '20' : BrandColors.loopOrange + '20' }]}>
+                  <Text style={[Typography.labelSmall, { color: plan.status === 'confirmed' ? BrandColors.loopGreen : BrandColors.loopOrange }]}>
+                    {plan.status === 'confirmed' ? 'Confirmed' : 'Proposed'}
+                  </Text>
+                </View>
               </View>
-            </View>
 
-            <View style={styles.detailsRow}>
-              <Ionicons name="time-outline" size={14} color={colors.icon} />
-              <Text style={[Typography.bodySmall, { color: colors.icon, marginLeft: 4 }]}>
-                {formatDate(plan.suggested_time)}
-              </Text>
-            </View>
-
-            {plan.meeting_address && (
               <View style={styles.detailsRow}>
-                <Ionicons name="location-outline" size={14} color={colors.icon} />
-                <Text style={[Typography.bodySmall, { color: colors.icon, marginLeft: 4 }]} numberOfLines={1}>
-                  {plan.meeting_address}
+                <Ionicons name="time-outline" size={14} color={colors.icon} />
+                <Text style={[Typography.bodySmall, { color: colors.icon, marginLeft: 4 }]}>
+                  {formatDate(plan.suggested_time)}
                 </Text>
               </View>
-            )}
 
-            {/* Participant avatars with RSVP badges */}
-            {plan.participants.length > 0 && (
-              <View style={styles.participantsRow}>
-                {plan.participants.map((participant) => {
-                  const config = RSVP_CONFIG[participant.rsvp_status] || RSVP_CONFIG.invited;
-                  return (
-                    <View key={participant.id} style={styles.participantChip}>
-                      <View style={[styles.participantAvatar, { borderColor: config.color, borderWidth: 2 }]}>
-                        <Text style={[styles.participantInitials, { color: colors.text }]}>
-                          {getInitials(participant.name)}
+              {plan.meeting_address && (
+                <View style={styles.detailsRow}>
+                  <Ionicons name="location-outline" size={14} color={colors.icon} />
+                  <Text style={[Typography.bodySmall, { color: colors.icon, marginLeft: 4 }]} numberOfLines={1}>
+                    {plan.meeting_address}
+                  </Text>
+                </View>
+              )}
+
+              {/* Participant avatars with RSVP badges */}
+              {plan.participants.length > 0 && (
+                <View style={styles.participantsRow}>
+                  {plan.participants.map((participant) => {
+                    const config = RSVP_CONFIG[participant.rsvp_status] || RSVP_CONFIG.invited;
+                    return (
+                      <View key={participant.id} style={styles.participantChip}>
+                        <View style={[styles.participantAvatar, { borderColor: config.color, borderWidth: 2 }]}>
+                          <Text style={[styles.participantInitials, { color: colors.text }]}>
+                            {getInitials(participant.name)}
+                          </Text>
+                        </View>
+                        <Text style={[Typography.labelSmall, { color: colors.icon }]} numberOfLines={1}>
+                          {participant.name?.split(' ')[0] || 'Friend'}
                         </Text>
                       </View>
-                      <Text style={[Typography.labelSmall, { color: colors.icon }]} numberOfLines={1}>
-                        {participant.name?.split(' ')[0] || 'Friend'}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-
-          {/* Actions */}
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.actionButton, { backgroundColor: BrandColors.loopGreen }]}
-              onPress={() => handleUpdateStatus(plan.id, 'confirmed')}
-              disabled={updating === plan.id || plan.status === 'confirmed'}
-            >
-              {updating === plan.id ? (
-                <ActivityIndicator size="small" color="#ffffff" />
-              ) : (
-                <>
-                  <Ionicons name="checkmark" size={18} color="#ffffff" />
-                  <Text style={[Typography.labelMedium, { color: '#ffffff', marginLeft: 4 }]}>Confirm</Text>
-                </>
+                    );
+                  })}
+                </View>
               )}
-            </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.actionButton, styles.cancelButton, { borderColor: BrandColors.error }]}
-              onPress={() => {
-                Alert.alert(
-                  'Cancel Plan?',
-                  'This will notify all participants.',
-                  [
-                    { text: 'Keep', style: 'cancel' },
-                    { text: 'Cancel Plan', style: 'destructive', onPress: () => handleUpdateStatus(plan.id, 'cancelled') },
-                  ]
-                );
-              }}
-              disabled={updating === plan.id}
-            >
-              <Ionicons name="close" size={18} color={BrandColors.error} />
-              <Text style={[Typography.labelMedium, { color: BrandColors.error, marginLeft: 4 }]}>Cancel</Text>
-            </TouchableOpacity>
+              {/* RSVP summary line */}
+              <Text style={[Typography.bodySmall, { color: colors.icon, marginTop: Spacing.xs }]}>
+                {rsvpSummary}
+              </Text>
+
+              {/* Chat toggle */}
+              <TouchableOpacity
+                style={styles.chatToggle}
+                onPress={() => setExpandedChat(isChatExpanded ? null : plan.id)}
+              >
+                <Ionicons
+                  name={isChatExpanded ? 'chatbubbles' : 'chatbubbles-outline'}
+                  size={16}
+                  color={BrandColors.loopBlue}
+                />
+                <Text style={[Typography.labelSmall, { color: BrandColors.loopBlue, marginLeft: 4 }]}>
+                  {isChatExpanded ? 'Hide Chat' : 'Group Chat'}
+                </Text>
+              </TouchableOpacity>
+
+              {/* Embedded group chat */}
+              {isChatExpanded && (
+                <GroupPlanChat
+                  planId={plan.id}
+                  planTitle={plan.title}
+                  creatorId={userId}
+                  participantUserIds={plan.participants.map((p) => p.user_id)}
+                  currentUserId={userId}
+                  participantNames={participantNames}
+                  maxMessages={5}
+                />
+              )}
+            </View>
+
+            {/* Actions */}
+            <View style={styles.actions}>
+              <TouchableOpacity
+                style={[
+                  styles.actionButton,
+                  {
+                    backgroundColor: confirmable ? BrandColors.loopGreen : BrandColors.loopGreen,
+                    opacity: (updating === plan.id || plan.status === 'confirmed' || !confirmable) ? 0.5 : 1,
+                  },
+                ]}
+                onPress={() => handleUpdateStatus(plan.id, 'confirmed')}
+                disabled={updating === plan.id || plan.status === 'confirmed' || !confirmable}
+              >
+                {updating === plan.id ? (
+                  <ActivityIndicator size="small" color="#ffffff" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark" size={18} color="#ffffff" />
+                    <Text style={[Typography.labelMedium, { color: '#ffffff', marginLeft: 4 }]}>Confirm</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.actionButton, styles.cancelButton, { borderColor: BrandColors.error }]}
+                onPress={() => {
+                  Alert.alert(
+                    'Cancel Plan?',
+                    'This will notify all participants.',
+                    [
+                      { text: 'Keep', style: 'cancel' },
+                      { text: 'Cancel Plan', style: 'destructive', onPress: () => handleUpdateStatus(plan.id, 'cancelled') },
+                    ]
+                  );
+                }}
+                disabled={updating === plan.id}
+              >
+                <Ionicons name="close" size={18} color={BrandColors.error} />
+                <Text style={[Typography.labelMedium, { color: BrandColors.error, marginLeft: 4 }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      ))}
+        );
+      })}
     </View>
   );
 }
@@ -429,5 +511,11 @@ const styles = StyleSheet.create({
   cancelButton: {
     borderWidth: 1,
     backgroundColor: 'transparent',
+  },
+  chatToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.xs,
   },
 });

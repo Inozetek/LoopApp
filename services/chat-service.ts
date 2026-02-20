@@ -468,6 +468,86 @@ export async function updateInviteStatus(
 }
 
 /**
+ * Find or create a group conversation linked to a group plan.
+ * Uses the plan's title as the conversation title.
+ * All plan participants + the creator become conversation participants.
+ */
+export async function getOrCreateGroupConversation(
+  planId: string,
+  creatorId: string,
+  participantUserIds: string[],
+  title?: string
+): Promise<Conversation | null> {
+  if (isDemoUser(creatorId)) return null;
+
+  try {
+    // Check if a group conversation already exists for this plan
+    // We store planId in the conversation title with a prefix for lookup
+    const planTag = `plan:${planId}`;
+
+    const { data: existingConvos, error: lookupErr } = await supabase
+      .from('conversations')
+      .select('*')
+      .eq('type', 'group')
+      .like('title', `%${planTag}%`);
+
+    if (!lookupErr && existingConvos && existingConvos.length > 0) {
+      return existingConvos[0] as Conversation;
+    }
+
+    // Create new group conversation
+    const convTitle = title ? `${title} [${planTag}]` : planTag;
+    const { data: newConv, error: createErr } = await supabase
+      .from('conversations')
+      .insert({ type: 'group', title: convTitle })
+      .select()
+      .single();
+
+    if (createErr) throw createErr;
+
+    // Add all participants (creator + invited friends)
+    const allUserIds = [creatorId, ...participantUserIds.filter((id) => id !== creatorId)];
+    const participantRows = allUserIds.map((uid) => ({
+      conversation_id: newConv.id,
+      user_id: uid,
+    }));
+
+    const { error: partErr } = await supabase
+      .from('conversation_participants')
+      .insert(participantRows);
+
+    if (partErr) throw partErr;
+
+    return newConv as Conversation;
+  } catch (error: any) {
+    if (error?.code === 'PGRST204' || error?.code === '42P01') {
+      console.warn('Chat tables not found -- migration 034 may not be run');
+      return null;
+    }
+    console.error('getOrCreateGroupConversation error:', error);
+    return null;
+  }
+}
+
+/**
+ * Get messages for a group plan conversation.
+ * Convenience wrapper around getMessages.
+ */
+export async function getGroupPlanMessages(
+  planId: string,
+  creatorId: string,
+  participantUserIds: string[],
+  title?: string,
+  limit = 50
+): Promise<{ conversationId: string | null; messages: ChatMessage[] }> {
+  const conv = await getOrCreateGroupConversation(planId, creatorId, participantUserIds, title);
+  if (!conv) return { conversationId: null, messages: [] };
+
+  const messages = await getMessages(conv.id, limit);
+  return { conversationId: conv.id, messages };
+}
+
+/**
  * Subscribe to real-time messages in a conversation.
  * Returns an unsubscribe function.
  */

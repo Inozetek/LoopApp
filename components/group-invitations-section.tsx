@@ -176,9 +176,21 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setResponding(invitationId);
 
+    // Capture snapshot for rollback
+    const prevInvitations = invitations;
+
+    // Optimistic update: immediately update local RSVP status so the UI feels instant
+    setInvitations((prev) =>
+      prev.map((inv) =>
+        inv.id === invitationId ? { ...inv, rsvp_status: response } : inv
+      )
+    );
+
     try {
-      // For demo user, just update local state
+      // For demo user, just finalize local state
       if (userId === 'demo-user-123') {
+        // Short delay so user sees the status change animation
+        await new Promise((resolve) => setTimeout(resolve, 300));
         setInvitations((prev) => prev.filter((inv) => inv.id !== invitationId));
 
         const responseText = response === 'accepted' ? 'See you there!' :
@@ -204,7 +216,7 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
 
       // If accepted, create a calendar event for this group plan
       if (response === 'accepted') {
-        const invitation = invitations.find((inv) => inv.id === invitationId);
+        const invitation = prevInvitations.find((inv) => inv.id === invitationId);
         if (invitation) {
           const plan = invitation.plan;
           const startTime = new Date(plan.suggested_time);
@@ -237,7 +249,7 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
         }
       }
 
-      // Remove from local list
+      // Remove from local list after DB success
       setInvitations((prev) => prev.filter((inv) => inv.id !== invitationId));
 
       const responseText = response === 'accepted' ? 'See you there! Added to your calendar.' :
@@ -249,6 +261,8 @@ export function GroupInvitationsSection({ userId, onRefresh }: GroupInvitationsS
       onRefresh?.();
     } catch (error) {
       console.error('[Invitations] Error updating RSVP:', error);
+      // Rollback optimistic update
+      setInvitations(prevInvitations);
       Alert.alert('Error', 'Failed to update RSVP. Please try again.');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
