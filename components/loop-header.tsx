@@ -307,6 +307,7 @@ export function LoopHeader({
                   onPressOut={() => handlePressOut(menuPress)}
                   style={styles.filterButton}
                   activeOpacity={1}
+                  hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                 >
                   <Animated.View style={[styles.menuCircle, menuButtonStyle]}>
                     <View style={styles.menuLines}>

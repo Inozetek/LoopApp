@@ -124,8 +124,17 @@ export const BrandColors = {
 // Category colors for calendar events and activity cards
 export const CategoryColors: Record<string, string> = {
   dining: '#EF4444',         // Red 500 - warmer, more appetizing
+  coffee: '#D4A574',         // Warm brown - café vibes
+  sports: '#4ECDC4',         // Teal - active/energetic
   entertainment: BrandColors.loopBlue,
   fitness: BrandColors.loopGreen,
+  music: '#9B59B6',          // Purple - creative/expressive
+  nightlife: '#E74C3C',      // Deep red - vibrant nightlife
+  shopping: '#F39C12',       // Amber - retail warmth
+  arts: '#1ABC9C',           // Mint - culture/creativity
+  outdoors: '#27AE60',       // Forest green - nature
+  family: '#E91E63',         // Pink - playful
+  wellness: '#FF69B4',       // Hot pink - self-care
   social: BrandColors.loopPurple,
   work: BrandColors.loopIndigo,
   personal: BrandColors.loopOrange,

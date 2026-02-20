@@ -1215,7 +1215,7 @@ const styles = StyleSheet.create({
   openNowBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(76, 175, 80, 0.95)',
+    backgroundColor: BrandColors.loopGreen,
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,

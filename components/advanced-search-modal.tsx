@@ -28,25 +28,25 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { BrandColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
+import { BrandColors, CategoryColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
 
-// Category options for filtering
+// Category options for filtering — colors from brand.ts CategoryColors
 const CATEGORIES = [
-  { id: 'dining', label: 'Dining', icon: 'restaurant', color: '#FF6B6B' },
-  { id: 'coffee', label: 'Coffee & Cafes', icon: 'cafe', color: '#D4A574' },
-  { id: 'sports', label: 'Sports', icon: 'basketball', color: '#4ECDC4' },
-  { id: 'fitness', label: 'Fitness', icon: 'fitness', color: '#95E1D3' },
-  { id: 'music', label: 'Music', icon: 'musical-notes', color: '#9B59B6' },
-  { id: 'entertainment', label: 'Entertainment', icon: 'film', color: '#3498DB' },
-  { id: 'nightlife', label: 'Nightlife', icon: 'wine', color: '#E74C3C' },
-  { id: 'shopping', label: 'Shopping', icon: 'cart', color: '#F39C12' },
-  { id: 'arts', label: 'Arts & Culture', icon: 'color-palette', color: '#1ABC9C' },
-  { id: 'outdoors', label: 'Outdoors', icon: 'leaf', color: '#27AE60' },
-  { id: 'family', label: 'Family & Kids', icon: 'people', color: '#E91E63' },
-  { id: 'wellness', label: 'Wellness', icon: 'heart', color: '#FF69B4' },
+  { id: 'dining', label: 'Dining', icon: 'restaurant', color: CategoryColors.dining },
+  { id: 'coffee', label: 'Coffee & Cafes', icon: 'cafe', color: CategoryColors.coffee },
+  { id: 'sports', label: 'Sports', icon: 'basketball', color: CategoryColors.sports },
+  { id: 'fitness', label: 'Fitness', icon: 'fitness', color: CategoryColors.fitness },
+  { id: 'music', label: 'Music', icon: 'musical-notes', color: CategoryColors.music },
+  { id: 'entertainment', label: 'Entertainment', icon: 'film', color: CategoryColors.entertainment },
+  { id: 'nightlife', label: 'Nightlife', icon: 'wine', color: CategoryColors.nightlife },
+  { id: 'shopping', label: 'Shopping', icon: 'cart', color: CategoryColors.shopping },
+  { id: 'arts', label: 'Arts & Culture', icon: 'color-palette', color: CategoryColors.arts },
+  { id: 'outdoors', label: 'Outdoors', icon: 'leaf', color: CategoryColors.outdoors },
+  { id: 'family', label: 'Family & Kids', icon: 'people', color: CategoryColors.family },
+  { id: 'wellness', label: 'Wellness', icon: 'heart', color: CategoryColors.wellness },
 ];
 
 export interface SearchFilters {
@@ -324,7 +324,7 @@ export function AdvancedSearchModal({
                 </TouchableOpacity>
                 {/* Show what type of search is active */}
                 {searchType && (
-                  <View style={{ marginTop: Spacing.sm, padding: Spacing.sm, backgroundColor: isDark ? '#2a2a2a' : '#f0f0f0', borderRadius: BorderRadius.sm }}>
+                  <View style={{ marginTop: Spacing.sm, padding: Spacing.sm, backgroundColor: colors.card, borderRadius: BorderRadius.sm }}>
                     <Text style={[Typography.bodySmall, { color: colors.icon }]}>
                       {searchType === 'place'
                         ? `🎯 Filtering to: ${placeName}`
@@ -343,7 +343,7 @@ export function AdvancedSearchModal({
               Recommendation Date
             </Text>
             <TouchableOpacity
-              style={[styles.dateButton, { backgroundColor: isDark ? '#2f3133' : '#f5f5f5' }]}
+              style={[styles.dateButton, { backgroundColor: colors.card }]}
               onPress={() => setShowDatePicker(true)}
             >
               <Ionicons name="calendar-outline" size={20} color={BrandColors.loopBlue} />
@@ -383,7 +383,7 @@ export function AdvancedSearchModal({
                     style={[
                       styles.categoryChip,
                       {
-                        backgroundColor: isSelected ? category.color : (isDark ? '#2f3133' : '#f5f5f5'),
+                        backgroundColor: isSelected ? category.color : (colors.card),
                         borderColor: isSelected ? category.color : colors.border,
                       },
                     ]}
