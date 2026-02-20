@@ -73,6 +73,8 @@ import { FEATURE_FLAGS } from '@/constants/feature-flags';
 import { AddRadarSheet, type RadarPrefillData } from '@/components/add-radar-sheet';
 import { HotDropCard } from '@/components/hot-drop-card';
 import { getHotDropsForFeed, claimHotDrop, HOT_DROP_FEED_POSITION } from '@/services/hot-drop-service';
+import { UpgradePromptModal } from '@/components/upgrade-prompt-modal';
+import type { GatedFeature } from '@/utils/tier-gate';
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
@@ -611,6 +613,10 @@ export default function RecommendationFeedScreen() {
 
   // Upgrade card dismissal (per-session)
   const [upgradeDismissed, setUpgradeDismissed] = useState(false);
+
+  // Upgrade prompt modal state (for tier gating)
+  const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
+  const [upgradeModalFeature, setUpgradeModalFeature] = useState<GatedFeature>('daily_recommendations');
 
   // Radar alerts state
   const [radarAlerts, setRadarAlerts] = useState<HookNotification[]>([]);
@@ -3048,6 +3054,21 @@ export default function RecommendationFeedScreen() {
           }}
           tier={(user?.subscription_tier as 'free' | 'plus') || 'free'}
           prefillData={radarPrefill}
+          onUpgrade={() => {
+            setShowRadarSheet(false);
+            router.push('/paywall');
+          }}
+        />
+
+        {/* Upgrade Prompt Modal (tier gating) */}
+        <UpgradePromptModal
+          visible={upgradeModalVisible}
+          onClose={() => setUpgradeModalVisible(false)}
+          feature={upgradeModalFeature}
+          onUpgrade={() => {
+            setUpgradeModalVisible(false);
+            router.push('/paywall');
+          }}
         />
 
         {/* Blur overlay for menu transition */}
