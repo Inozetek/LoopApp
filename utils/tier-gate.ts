@@ -18,7 +18,7 @@ import { TIER_PRICING } from '@/types/subscription';
 
 /** Daily recommendation limits per tier */
 const DAILY_RECOMMENDATION_LIMITS: Record<SubscriptionTier, number> = {
-  free: 8,
+  free: 5,
   plus: 999, // Effectively unlimited
 };
 

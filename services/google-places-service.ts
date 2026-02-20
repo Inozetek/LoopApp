@@ -12,7 +12,7 @@ import type {
   GooglePlaceResult,
   YelpDeal,
 } from '@/types/activity';
-import { searchNearbyPlaces } from './recommendations';
+import type { PlaceResult } from './places-common';
 import { getPlaceDetails } from './google-places';
 
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
@@ -133,7 +133,8 @@ class GooglePlacesService implements IActivitySource {
     try {
       console.log('[GooglePlaces] Searching places...');
 
-      // Map SearchParams to the format expected by searchNearbyPlaces
+      // Lazy import to break require cycle: recommendations.ts ↔ google-places-service.ts
+      const { searchNearbyPlaces } = require('./recommendations');
       const results = await searchNearbyPlaces({
         location: {
           lat: params.latitude,

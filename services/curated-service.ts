@@ -5,7 +5,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import type { PlaceResult } from './recommendations';
+import type { PlaceResult } from './places-common';
 
 export interface CuratedRecommendation {
   id: string;

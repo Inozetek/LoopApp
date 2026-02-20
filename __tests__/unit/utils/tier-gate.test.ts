@@ -38,7 +38,7 @@ type GatedFeature =
 // ============================================================================
 
 const DAILY_RECOMMENDATION_LIMITS: Record<SubscriptionTier, number> = {
-  free: 8,
+  free: 5,
   plus: 999,
 };
 
@@ -136,8 +136,8 @@ describe('tier-gate', () => {
   // =========================================================================
 
   describe('getDailyRecommendationLimit', () => {
-    it('returns 8 for free tier', () => {
-      expect(getDailyRecommendationLimit('free')).toBe(8);
+    it('returns 5 for free tier', () => {
+      expect(getDailyRecommendationLimit('free')).toBe(5);
     });
 
     it('returns 999 (effectively unlimited) for plus tier', () => {
@@ -146,7 +146,7 @@ describe('tier-gate', () => {
 
     it('returns free tier limit for unknown tier values', () => {
       // Edge case: an unknown string that doesn't match any tier
-      expect(getDailyRecommendationLimit('unknown' as SubscriptionTier)).toBe(8);
+      expect(getDailyRecommendationLimit('unknown' as SubscriptionTier)).toBe(5);
     });
 
     it('plus limit is significantly higher than free limit', () => {
@@ -507,9 +507,9 @@ describe('tier-gate', () => {
     });
 
     it('free daily limit aligns with INSIGHTS_LIMIT pattern', () => {
-      // Both systems use 8 for free tier
+      // Free tier gets 5 daily recommendations per CLAUDE.md spec
       const dailyLimit = getDailyRecommendationLimit('free');
-      expect(dailyLimit).toBe(8);
+      expect(dailyLimit).toBe(5);
     });
   });
 });

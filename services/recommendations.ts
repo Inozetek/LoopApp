@@ -88,35 +88,9 @@ export const DISCOVERY_STYLE_CONFIG = {
   creature_of_habit: { nonMatchingBase: 6,  visitMultiplier: 1.5, recencyMultiplier: 0.6, maxPerCategory: 4, categoryGroups: 3 },
 } as const;
 
-// Type definitions (copied from legacy for compatibility)
-export type PlaceLocation = { lat: number; lng: number };
-
-export interface PlaceResult {
-  place_id: string;
-  name: string;
-  vicinity?: string;
-  formatted_address?: string;
-  description?: string; // Editorial summary from Google Places
-  formatted_phone_number?: string;
-  website?: string;
-  geometry: {
-    location: {
-      lat: number;
-      lng: number;
-    };
-  };
-  types: string[];
-  rating?: number;
-  user_ratings_total?: number;
-  price_level?: number;
-  photos?: Array<{ photo_reference: string }>;
-  opening_hours?: {
-    open_now?: boolean;
-  };
-  source?: 'google_places' | 'ticketmaster' | 'yelp'; // Activity source
-  event_metadata?: any; // Event details (for Ticketmaster events)
-  yelp_metadata?: any; // Yelp details (for Yelp places)
-}
+// Shared types — re-exported so existing consumers don't break
+export type { PlaceLocation, PlaceResult } from './places-common';
+import type { PlaceLocation, PlaceResult } from './places-common';
 
 // Helper function: Check if place name matches generic patterns
 function isGenericPlace(placeName: string): boolean {
