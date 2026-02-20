@@ -36,13 +36,16 @@ function SwipeableLayout({ children, disableLeftEdgeSwipe = false }: SwipeableLa
   const translateX = useSharedValue(0);
   const opacity = useSharedValue(1);
 
+  const MAX_SCREEN_INDEX = 5; // 6 tabs: 0-5
+
   const getCurrentScreen = (): number => {
     const lastSegment = segments[segments.length - 1];
     if (lastSegment === 'calendar') return 0;
     if (lastSegment === 'explore') return 1;
     if (lastSegment === '(tabs)' || !lastSegment) return 2; // Default to daily feed (center)
     if (lastSegment === 'friends') return 3;
-    if (lastSegment === 'profile') return 4;
+    if (lastSegment === 'messages') return 4;
+    if (lastSegment === 'profile') return 5;
     return 2; // Default to daily feed
   };
 
@@ -58,6 +61,8 @@ function SwipeableLayout({ children, disableLeftEdgeSwipe = false }: SwipeableLa
     } else if (screenIndex === 3) {
       router.push('/(tabs)/friends');
     } else if (screenIndex === 4) {
+      router.push('/(tabs)/messages');
+    } else if (screenIndex === 5) {
       router.push('/(tabs)/profile');
     }
   };
@@ -94,7 +99,7 @@ function SwipeableLayout({ children, disableLeftEdgeSwipe = false }: SwipeableLa
         opacity.value = Math.max(0.85, 1 - (tx / SCREEN_WIDTH) * 0.15); // More subtle fade
       }
       // Swipe from right edge - reveal next screen
-      else if (startXRef.current > SCREEN_WIDTH - EDGE_ZONE && currentScreen < 4 && tx < 0) {
+      else if (startXRef.current > SCREEN_WIDTH - EDGE_ZONE && currentScreen < MAX_SCREEN_INDEX && tx < 0) {
         translateX.value = Math.max(tx * TRANSLATION_RATIO, -SCREEN_WIDTH * TRANSLATION_RATIO);
         opacity.value = Math.max(0.85, 1 - (Math.abs(tx) / SCREEN_WIDTH) * 0.15); // More subtle fade
       }

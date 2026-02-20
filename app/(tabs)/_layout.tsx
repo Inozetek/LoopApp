@@ -7,16 +7,19 @@ import { GradientIcon } from '@/components/gradient-icon';
 import { AnimatedTabIcon } from '@/components/animated-tab-icon';
 import { AppBadgingIcon } from '@/components/icons/app-badging-icon';
 import { ModeCommentIcon } from '@/components/icons/mode-comment-icon';
+import { ChatBubbleIcon, ChatBubbleFilledIcon } from '@/components/icons/chat-bubble-icon';
 import { AccountCircleIcon } from '@/components/icons/account-circle-icon';
 import { SearchIcon } from '@/components/icons/search-icon';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTabNotifications } from '@/contexts/tab-notifications-context';
+import { useMessagesUnread } from '@/hooks/use-messages-unread';
 import { useAuth } from '@/contexts/auth-context';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { hasNewRecommendations, notifications } = useTabNotifications();
   const { user } = useAuth();
+  const messagesUnread = useMessagesUnread();
 
   // Get user's first name for Profile tab
   const firstName = user?.name?.split(' ')[0] || 'Profile';
@@ -107,7 +110,27 @@ export default function TabLayout() {
           ),
         }}
       />
-      {/* Tab 5: Profile - Settings, preferences, subscription */}
+      {/* Tab 5: Messages - Direct message conversations */}
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Messages',
+          tabBarIcon: ({ color, focused, size }) => (
+            <AnimatedTabIcon
+              size={size}
+              color={color}
+              focused={focused}
+              badge={messagesUnread}
+              customIcon={({ size: iconSize, color: iconColor }) =>
+                focused
+                  ? <ChatBubbleFilledIcon size={iconSize} color={iconColor} />
+                  : <ChatBubbleIcon size={iconSize} color={iconColor} />
+              }
+            />
+          ),
+        }}
+      />
+      {/* Tab 6: Profile - Settings, preferences, subscription */}
       <Tabs.Screen
         name="profile"
         options={{
