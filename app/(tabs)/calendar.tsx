@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   View,
   Text,
@@ -54,7 +54,7 @@ import { CalendarEventSkeleton } from '@/components/skeleton-loader';
 import { LoopMapView } from '@/components/loop-map-view';
 import { MapPreview } from '@/components/map-preview';
 import SwipeableLayout from '@/components/swipeable-layout';
-import { LocationAutocomplete } from '@/components/location-autocomplete';
+import { LocationAutocomplete, RecentLocation, QuickPickLocation } from '@/components/location-autocomplete';
 import { CalendarHeader } from '@/components/calendar-header';
 import { CalendarDayCell } from '@/components/calendar-day-cell';
 import { TaskDetailsModal } from '@/components/task-details-modal';
@@ -117,6 +117,39 @@ function parseWKBHexPoint(hex: string): { latitude: number; longitude: number } 
 
   if (isNaN(lng) || isNaN(lat)) return null;
   return { latitude: lat, longitude: lng };
+}
+
+// Parse a PostGIS location value (any of 4 formats) into { latitude, longitude }.
+// Reused by loopMapTasks, recentLocations, and quickPickLocations.
+function parseLocationFromRow(loc: any): { latitude: number; longitude: number } | null {
+  if (!loc) return null;
+
+  // Format 1: Object with latitude/longitude
+  if (typeof loc === 'object' && 'latitude' in loc && 'longitude' in loc) {
+    const lat = loc.latitude;
+    const lng = loc.longitude;
+    if (typeof lat === 'number' && typeof lng === 'number' && !isNaN(lat) && !isNaN(lng)) {
+      return { latitude: lat, longitude: lng };
+    }
+  }
+  // Format 2: PostGIS GeoJSON { coordinates: [lng, lat] }
+  if (typeof loc === 'object' && 'coordinates' in loc) {
+    const coords = loc.coordinates;
+    if (Array.isArray(coords) && coords.length === 2) {
+      return { latitude: coords[1], longitude: coords[0] };
+    }
+  }
+  // Format 3: WKT string "POINT(lng lat)"
+  if (typeof loc === 'string') {
+    const match = loc.match(/POINT\(([^ ]+) ([^ ]+)\)/);
+    if (match) {
+      return { latitude: parseFloat(match[2]), longitude: parseFloat(match[1]) };
+    }
+    // Format 4: Hex-encoded WKB/EWKB from PostGIS
+    const parsed = parseWKBHexPoint(loc);
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 interface CalendarEvent {
@@ -278,6 +311,9 @@ export default function CalendarScreen() {
   // User's current location for autocomplete biasing
   const [currentUserLocation, setCurrentUserLocation] = useState<{ latitude: number; longitude: number } | null>(null);
 
+  // Recent locations from past calendar events (for location memory)
+  const [recentLocations, setRecentLocations] = useState<RecentLocation[]>([]);
+
   // Calendar sync state
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgressInfo | null>(null);
@@ -369,6 +405,47 @@ export default function CalendarScreen() {
     };
 
     fetchUserLocation();
+  }, [user]);
+
+  // Load recent locations from past calendar events (location memory)
+  useEffect(() => {
+    const loadRecentLocations = async () => {
+      if (!user || user.id === 'demo-user-123') return;
+      try {
+        const { data, error } = await supabase
+          .from('calendar_events')
+          .select('address, location, title, category, start_time')
+          .eq('user_id', user.id)
+          .not('address', 'is', null)
+          .neq('address', '')
+          .order('start_time', { ascending: false })
+          .limit(50);
+
+        if (error || !data) return;
+
+        // Build RecentLocation entries, dedupe by address
+        const seen = new Map<string, RecentLocation>();
+        for (const row of data) {
+          const key = (row.address as string).trim().toLowerCase();
+          if (seen.has(key)) continue;
+          const parsed = parseLocationFromRow(row.location);
+          if (!parsed) continue;
+          seen.set(key, {
+            address: row.address as string,
+            placeName: (row.title as string) || (row.address as string).split(',')[0],
+            latitude: parsed.latitude,
+            longitude: parsed.longitude,
+            category: row.category as string | undefined,
+            lastUsed: row.start_time as string,
+          });
+          if (seen.size >= 10) break; // Cap at 10 unique locations
+        }
+        setRecentLocations(Array.from(seen.values()));
+      } catch (err) {
+        console.warn('Failed to load recent locations:', err);
+      }
+    };
+    loadRecentLocations();
   }, [user]);
 
   // Event list entry animations are now handled by Reanimated FadeInDown
@@ -854,55 +931,16 @@ export default function CalendarScreen() {
   const loopMapTasks = useMemo(() => {
     return events
       .map(event => {
-        // Parse location from various PostGIS formats
-        let lat: number | undefined;
-        let lng: number | undefined;
-
-        const loc = event.location;
-
-        if (!loc) {
-          console.warn(`⚠️ No location data for event: ${event.title}`);
+        const parsed = parseLocationFromRow(event.location);
+        if (!parsed) {
+          console.warn(`⚠️ Could not parse location for event: ${event.title}`);
           return null;
         }
-
-        // Format 1: Object with latitude/longitude
-        if (typeof loc === 'object' && loc !== null && 'latitude' in loc && 'longitude' in loc) {
-          lat = (loc as any).latitude;
-          lng = (loc as any).longitude;
-        }
-        // Format 2: PostGIS GeoJSON { coordinates: [lng, lat] }
-        else if (typeof loc === 'object' && loc !== null && 'coordinates' in loc) {
-          const coords = (loc as any).coordinates;
-          if (Array.isArray(coords) && coords.length === 2) {
-            lng = coords[0];
-            lat = coords[1];
-          }
-        }
-        // Format 3: WKT string "POINT(lng lat)"
-        else if (typeof loc === 'string') {
-          const locStr = loc as string;
-          const match = locStr.match(/POINT\(([^ ]+) ([^ ]+)\)/);
-          if (match) {
-            lng = parseFloat(match[1]);
-            lat = parseFloat(match[2]);
-          } else {
-            // Format 4: Hex-encoded WKB/EWKB from PostGIS
-            const parsed = parseWKBHexPoint(locStr);
-            if (parsed) {
-              lat = parsed.latitude;
-              lng = parsed.longitude;
-            }
-          }
-        }
-
-        // Validate parsed coordinates
-        if (typeof lat !== 'number' || typeof lng !== 'number' ||
-            isNaN(lat) || isNaN(lng) ||
-            lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+        const { latitude: lat, longitude: lng } = parsed;
+        if (lat < -90 || lat > 90 || lng < -180 || lng > 180) {
           console.warn(`⚠️ Invalid coordinates for event: ${event.title}`, { lat, lng });
           return null;
         }
-
         return {
           id: event.id,
           title: event.title,
@@ -943,6 +981,51 @@ export default function CalendarScreen() {
     }
     return undefined;
   }, [user?.home_location]);
+
+  // Quick-pick locations (Home / Work) for location autocomplete
+  const quickPickLocations = useMemo(() => {
+    const picks: QuickPickLocation[] = [];
+    if (parsedHomeLocation && user?.home_address) {
+      picks.push({
+        label: 'Home',
+        icon: 'home',
+        address: user.home_address as string,
+        latitude: parsedHomeLocation.latitude,
+        longitude: parsedHomeLocation.longitude,
+      });
+    }
+    // Parse work location the same way
+    if (user?.work_location) {
+      const workParsed = parseLocationFromRow(user.work_location);
+      if (workParsed && user.work_address) {
+        picks.push({
+          label: 'Work',
+          icon: 'briefcase',
+          address: user.work_address as string,
+          latitude: workParsed.latitude,
+          longitude: workParsed.longitude,
+        });
+      }
+    }
+    return picks;
+  }, [parsedHomeLocation, user?.home_address, user?.work_location, user?.work_address]);
+
+  // Handler for "Current Location" quick-pick
+  const handleCurrentLocationPick = useCallback(async () => {
+    try {
+      const location = await getCurrentLocation();
+      // Reverse geocode for address
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${location.latitude},${location.longitude}&key=${process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY}`,
+      );
+      const data = await response.json();
+      const address = data.results?.[0]?.formatted_address || `${location.latitude.toFixed(4)}, ${location.longitude.toFixed(4)}`;
+      return { address, latitude: location.latitude, longitude: location.longitude };
+    } catch (err) {
+      console.warn('Could not get current location:', err);
+      return null;
+    }
+  }, []);
 
   // Free time slots for the currently selected day
   const selectedDayFreeSlots = useMemo(() => {
@@ -1620,6 +1703,16 @@ export default function CalendarScreen() {
                   placeholder="Search for a location"
                   isDark={isDark}
                   userLocation={currentUserLocation || undefined}
+                  recentLocations={recentLocations}
+                  quickPickLocations={quickPickLocations}
+                  onRequestCurrentLocation={async () => {
+                    const result = await handleCurrentLocationPick();
+                    if (result) {
+                      setNewTaskAddress(result.address);
+                      setNewTaskPlaceName('Current Location');
+                      setNewTaskLocation({ latitude: result.latitude, longitude: result.longitude });
+                    }
+                  }}
                 />
               )}
 
@@ -1907,6 +2000,18 @@ export default function CalendarScreen() {
                       placeholder="Search for a location"
                       isDark={isDark}
                       userLocation={currentUserLocation || undefined}
+                      recentLocations={recentLocations}
+                      quickPickLocations={quickPickLocations}
+                      onRequestCurrentLocation={async () => {
+                        const result = await handleCurrentLocationPick();
+                        if (result) {
+                          setEditingEvent(prev => prev ? {
+                            ...prev,
+                            address: result.address,
+                            location: { latitude: result.latitude, longitude: result.longitude },
+                          } : prev);
+                        }
+                      }}
                     />
 
                     {/* View on Map Button */}

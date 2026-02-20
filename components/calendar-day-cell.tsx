@@ -2,16 +2,17 @@
  * CalendarDayCell - Custom day component for react-native-calendars
  *
  * Visual states:
- *   Unselected day:        plain number, no decoration
- *   Unselected today:      loop-blue number, no circle
- *   Unselected w/ events:  plain number + gradient color pill
- *   Selected day:          blue circle (border + 12% fill) + white bold text
- *   Selected w/ events:    gradient ring (event colors) + white bold text + green pill
- *   Selected today:        blue circle + white text (+ green pill if events)
+ *   Regular day:           plain number, no decoration
+ *   Regular day + events:  plain number + color gradient pill
+ *   Today idle:            thin silver ring + white text (+ silver pill if events)
+ *   Selected empty:        neutral ring (silver dark / gray light) + no fill + bold text
+ *   Selected + events:     gradient color ring + no fill + white bold glow text + pill
+ *   Today selected empty:  loopBlue ring + blue fill + white bold text
+ *   Today selected+events: gradient color ring + glow text + pill
  */
 
 import React, { useEffect, useMemo, useCallback } from 'react';
-import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
+import { Text, Pressable, View, StyleSheet } from 'react-native';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -150,26 +151,30 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
     }
   }, [isDisabled, date, onPress]);
 
+  // Detect light/dark from calendar background
+  const bg = theme?.calendarBackground || '#FFFFFF';
+  const isDark = bg === '#0D0D0D' || bg === '#000000' || bg === '#151718';
+  const selectedTextColor = isDark ? '#FFFFFF' : '#000000';
+
   // Text color logic
   let dayTextColor = theme?.dayTextColor || '#2d4150';
   if (isSelected) {
-    dayTextColor = '#FFFFFF';
+    dayTextColor = selectedTextColor;
   } else if (isDisabled) {
     dayTextColor = theme?.textDisabledColor || '#d9e1e8';
   } else if (isToday) {
-    dayTextColor = BrandColors.loopBlue;
+    dayTextColor = isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.30)';
   }
 
   return (
-    <TouchableOpacity
-      onPress={handlePress}
+    <Pressable
+      onPressIn={handlePress}
       disabled={isDisabled || marking?.disableTouchEvent}
-      activeOpacity={0.6}
       style={styles.wrapper}
     >
       <Animated.View style={[styles.container, animatedStyle]}>
         {showGradientRing ? (
-          /* Selected day with events — gradient ring from event colors */
+          /* Selected + events — gradient ring from event colors */
           <LinearGradient
             colors={gradientColors as [string, string, ...string[]]}
             start={{ x: 0, y: 0 }}
@@ -182,32 +187,59 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
                 { backgroundColor: theme?.calendarBackground || '#FFFFFF' },
               ]}
             >
-              {/* Semi-transparent gradient fill reflecting the ring colors */}
+              {/* Barely-there tint matching ring colors — lens effect */}
               <LinearGradient
-                colors={gradientColors.map(c => c + '1A') as [string, string, ...string[]]}
+                colors={gradientColors.map(c => c + (isDark ? '05' : '07')) as [string, string, ...string[]]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
-                style={styles.ringFill}
+                style={StyleSheet.absoluteFill}
               />
-              <Text style={[styles.dayText, styles.dayTextSelected, { color: '#FFFFFF' }, styles.dayTextGlow]}>
+              <Text style={[styles.dayText, styles.dayTextGlow, { color: selectedTextColor }]}>
+                {date?.day}
+              </Text>
+            </View>
+          </LinearGradient>
+        ) : isSelected && isToday ? (
+          /* Today selected empty — loopBlue ring + blue fill */
+          <View style={[styles.dayCircle, styles.dayCircleTodaySelected]}>
+            <Text style={[styles.dayText, styles.dayTextBold, { color: selectedTextColor }]}>
+              {date?.day}
+            </Text>
+          </View>
+        ) : isSelected ? (
+          /* Selected empty — shiny metallic gradient ring */
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(255,255,255,0.50)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.40)']
+                : ['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.06)']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.gradientRing}
+          >
+            <View
+              style={[
+                styles.ringInner,
+                { backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.75)' },
+              ]}
+            >
+              <Text style={[styles.dayText, styles.dayTextBold, { color: selectedTextColor }]}>
                 {date?.day}
               </Text>
             </View>
           </LinearGradient>
         ) : (
-          /* All other states — plain circle (decorated only when selected) */
-          <View
-            style={[
-              styles.dayCircle,
-              isSelected && styles.dayCircleSelected,
-            ]}
-          >
+          /* Default — plain text, optional today ring */
+          <View style={[styles.dayCircle, isToday && {
+            borderWidth: 1.5,
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.35)' : 'rgba(0, 0, 0, 0.20)',
+            borderRadius: DAY_SIZE / 2,
+          }]}>
             <Text
               style={[
                 styles.dayText,
                 { color: dayTextColor },
-                (isToday || isSelected) && styles.dayTextBold,
-                isSelected && styles.dayTextGlow,
               ]}
             >
               {date?.day}
@@ -215,17 +247,23 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
           </View>
         )}
 
-        {/* Gradient color pill — hidden for unselected today (just blue number) */}
-        {pillColors.length > 0 && !(isToday && !isSelected) && (
+        {/* Gradient color pill — loopBlue for today idle, event colors otherwise */}
+        {pillColors.length > 0 && (
           <LinearGradient
-            colors={pillColors as [string, string, ...string[]]}
+            colors={
+              isToday && !isSelected
+                ? isDark
+                  ? ['rgba(255, 255, 255, 0.35)', 'rgba(255, 255, 255, 0.35)']
+                  : ['rgba(0, 0, 0, 0.20)', 'rgba(0, 0, 0, 0.20)']
+                : pillColors as [string, string, ...string[]]
+            }
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.pillGradient}
           />
         )}
       </Animated.View>
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 
@@ -259,10 +297,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     overflow: 'hidden',
   },
-  ringFill: {
-    ...StyleSheet.absoluteFillObject,
-    borderRadius: RING_INNER / 2,
-  },
   dayCircle: {
     width: DAY_SIZE,
     height: DAY_SIZE,
@@ -270,12 +304,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  dayCircleSelected: {
+  dayCircleTodaySelected: {
     borderWidth: 1.5,
     borderColor: BrandColors.loopBlue,
-    backgroundColor: 'rgba(0, 166, 217, 0.12)',
+    backgroundColor: 'rgba(0, 166, 217, 0.02)',
     borderRadius: DAY_SIZE / 2,
-    overflow: 'hidden',
   },
   dayText: {
     fontSize: 16,

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   View,
   TextInput,
@@ -8,12 +8,30 @@ import {
   StyleSheet,
   ActivityIndicator,
   Keyboard,
-  TouchableWithoutFeedback,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandColors, Spacing, BorderRadius, Typography } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+
+// ── Public interfaces ──────────────────────────────────────────────
+
+export interface RecentLocation {
+  address: string;
+  placeName: string;
+  latitude: number;
+  longitude: number;
+  category?: string;
+  lastUsed: string; // ISO timestamp
+}
+
+export interface QuickPickLocation {
+  label: string;       // "Home" | "Work"
+  icon: string;        // Ionicon name: "home" | "briefcase"
+  address: string;
+  latitude: number;
+  longitude: number;
+}
 
 interface PlaceAutocomplete {
   place_id: string;
@@ -38,7 +56,42 @@ interface LocationAutocompleteProps {
   placeholder?: string;
   isDark?: boolean;
   userLocation?: { latitude: number; longitude: number }; // For location biasing
+  recentLocations?: RecentLocation[];
+  quickPickLocations?: QuickPickLocation[];
+  onRequestCurrentLocation?: () => void; // Callback to get current location
 }
+
+// ── Pure helpers (exported for testing) ────────────────────────────
+
+/** Filter recents by query string (case-insensitive, matches address or placeName) */
+export function filterRecentLocations(
+  recents: RecentLocation[],
+  query: string,
+): RecentLocation[] {
+  if (!recents.length) return [];
+  if (query.length === 0) return recents;
+  const q = query.toLowerCase();
+  return recents.filter(
+    r => r.address.toLowerCase().includes(q) || r.placeName.toLowerCase().includes(q),
+  );
+}
+
+/** Dedupe locations by normalized address, keeping the most recent */
+export function dedupeByAddress(
+  rows: Array<{ address: string; lastUsed: string; [key: string]: any }>,
+): typeof rows {
+  const seen = new Map<string, (typeof rows)[number]>();
+  for (const row of rows) {
+    const key = row.address.trim().toLowerCase();
+    const existing = seen.get(key);
+    if (!existing || row.lastUsed > existing.lastUsed) {
+      seen.set(key, row);
+    }
+  }
+  return Array.from(seen.values());
+}
+
+// ── Component ──────────────────────────────────────────────────────
 
 export function LocationAutocomplete({
   value,
@@ -47,6 +100,9 @@ export function LocationAutocomplete({
   placeholder = 'Search for a location',
   isDark = false,
   userLocation,
+  recentLocations,
+  quickPickLocations,
+  onRequestCurrentLocation,
 }: LocationAutocompleteProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -54,15 +110,26 @@ export function LocationAutocomplete({
   const [predictions, setPredictions] = useState<PlaceAutocomplete[]>([]);
   const [loading, setLoading] = useState(false);
   const [showPredictions, setShowPredictions] = useState(false);
-  const [justSelected, setJustSelected] = useState(false); // Track if we just selected a prediction
-  const inputRef = React.useRef<TextInput>(null);
+  const [justSelected, setJustSelected] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const inputRef = useRef<TextInput>(null);
+  const blurTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Filtered recents (client-side, instant)
+  const filteredRecents = useMemo(
+    () => filterRecentLocations(recentLocations ?? [], value),
+    [recentLocations, value],
+  );
+
+  // Should the unified dropdown be visible?
+  const hasQuickPicks = (quickPickLocations?.length ?? 0) > 0;
+  const hasRecents = filteredRecents.length > 0;
+  const hasGoogleResults = showPredictions && predictions.length > 0;
+  const showDropdown = isFocused && !justSelected && (hasQuickPicks || hasRecents || hasGoogleResults);
 
   // Debounce autocomplete requests
   useEffect(() => {
-    // Don't fetch if we just selected a prediction
-    if (justSelected) {
-      return;
-    }
+    if (justSelected) return;
 
     if (value.length < 3) {
       setPredictions([]);
@@ -72,10 +139,32 @@ export function LocationAutocomplete({
 
     const timeoutId = setTimeout(() => {
       fetchPredictions(value);
-    }, 300); // Wait 300ms after user stops typing
+    }, 300);
 
     return () => clearTimeout(timeoutId);
   }, [value, justSelected]);
+
+  // Cleanup blur timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (blurTimeout.current) clearTimeout(blurTimeout.current);
+    };
+  }, []);
+
+  const handleFocus = useCallback(() => {
+    if (blurTimeout.current) {
+      clearTimeout(blurTimeout.current);
+      blurTimeout.current = null;
+    }
+    setIsFocused(true);
+  }, []);
+
+  const handleBlur = useCallback(() => {
+    // Delay so taps on dropdown items register before we hide
+    blurTimeout.current = setTimeout(() => {
+      setIsFocused(false);
+    }, 200);
+  }, []);
 
   const fetchPredictions = async (input: string) => {
     if (!process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY) {
@@ -85,9 +174,6 @@ export function LocationAutocomplete({
 
     setLoading(true);
     try {
-      // Use Autocomplete API (like Google Maps does)
-      // It's better at understanding place names and providing relevant suggestions
-      // Already sorted by distance via the origin parameter
       await fetchAutocompleteResults(input);
     } catch (error) {
       console.error('Search error:', error);
@@ -99,13 +185,11 @@ export function LocationAutocomplete({
 
   // Fetch results using Autocomplete API (fast, curated suggestions)
   const fetchAutocompleteResults = async (input: string) => {
-    // Build request body with location biasing
     const requestBody: any = {
       input: input,
       languageCode: 'en',
     };
 
-    // Add location origin if user location is available (for distance calculation)
     if (userLocation) {
       requestBody.origin = {
         latitude: userLocation.latitude,
@@ -117,13 +201,12 @@ export function LocationAutocomplete({
             latitude: userLocation.latitude,
             longitude: userLocation.longitude,
           },
-          radius: 50000.0, // 50km radius for biasing (includes nearby suburbs like Addison)
+          radius: 50000.0,
         },
       };
-      // Request more results to increase chances of finding the closest match
-      requestBody.inputOffset = input.length; // Help Google understand where query ends
-      requestBody.sessionToken = 'search-session'; // Group requests for billing
-      requestBody.includedRegionCodes = ['us']; // Limit to US for better relevance (lowercase)
+      requestBody.inputOffset = input.length;
+      requestBody.sessionToken = 'search-session';
+      requestBody.includedRegionCodes = ['us'];
     }
 
     const response = await fetch(
@@ -144,11 +227,8 @@ export function LocationAutocomplete({
 
     const data = await response.json();
 
-    console.log('📍 Autocomplete API response:', JSON.stringify(data, null, 2));
-
-    // Map Google Places API (New) response to our interface
     const mappedPredictions: PlaceAutocomplete[] = (data.suggestions || [])
-      .filter((s: any) => s.placePrediction) // Only include place predictions (not query suggestions)
+      .filter((s: any) => s.placePrediction)
       .map((suggestion: any) => ({
         place_id: suggestion.placePrediction.placeId,
         description: suggestion.placePrediction.text?.text || '',
@@ -156,141 +236,31 @@ export function LocationAutocomplete({
           main_text: suggestion.placePrediction.structuredFormat?.mainText?.text || '',
           secondary_text: suggestion.placePrediction.structuredFormat?.secondaryText?.text || '',
         },
-        distance_meters: suggestion.placePrediction.distanceMeters, // Distance from user location
+        distance_meters: suggestion.placePrediction.distanceMeters,
       }));
 
-    console.log('📏 Mapped predictions with distances:', mappedPredictions.map(p => ({
-      name: p.structured_formatting.main_text,
-      distance_meters: p.distance_meters,
-      distance_miles: p.distance_meters ? (p.distance_meters / 1609.34).toFixed(1) : 'N/A'
-    })));
-
-    // Sort by distance if available (closest first)
     const sortedPredictions = mappedPredictions.sort((a, b) => {
       if (a.distance_meters !== undefined && b.distance_meters !== undefined) {
         return a.distance_meters - b.distance_meters;
       }
-      // If distance not available, keep original order
       return 0;
     });
 
-    console.log('✅ Sorted predictions:', sortedPredictions.map(p => ({
-      name: p.structured_formatting.main_text,
-      distance_miles: p.distance_meters ? (p.distance_meters / 1609.34).toFixed(1) : 'N/A'
-    })));
-
-    // Filter results by distance (50km max - prioritize nearby results)
-    const MAX_DISTANCE_METERS = 50000; // 50km = ~31 miles
+    const MAX_DISTANCE_METERS = 50000;
     const nearbyPredictions = sortedPredictions.filter(p => {
       if (p.distance_meters !== undefined) {
         return p.distance_meters <= MAX_DISTANCE_METERS;
       }
-      return true; // Keep if distance unknown
+      return true;
     });
-
-    if (nearbyPredictions.length < sortedPredictions.length) {
-      console.log(`📍 Filtered to ${nearbyPredictions.length} nearby results (removed ${sortedPredictions.length - nearbyPredictions.length} results >50km away)`);
-    }
 
     setPredictions(nearbyPredictions);
     setShowPredictions(true);
   };
 
-  // Fetch results using Text Search API (comprehensive, all nearby results)
-  const fetchTextSearchResults = async (input: string) => {
-    if (!userLocation) return;
-
-    // Track API usage BEFORE making request
-    const { trackPlacesAPIRequest } = await import('@/utils/api-cost-tracker');
-    const allowRequest = await trackPlacesAPIRequest('text_search');
-
-    if (!allowRequest) {
-      console.error('🚨 API request blocked - free tier limit reached!');
-      setPredictions([]);
-      return;
-    }
-
-    console.log(`🔍 Text Search query: "${input}"`);
-
-    // Build request body - simple and straightforward
-    const requestBody: any = {
-      textQuery: input,
-      locationBias: {
-        circle: {
-          center: {
-            latitude: userLocation.latitude,
-            longitude: userLocation.longitude,
-          },
-          radius: 10000.0, // 10km (~6 miles)
-        },
-      },
-      maxResultCount: 20,
-    };
-
-    const response = await fetch(
-      'https://places.googleapis.com/v1/places:searchText',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY!,
-          'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.types',
-        },
-        body: JSON.stringify(requestBody),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-
-    console.log('🔍 Text Search API response:', JSON.stringify(data, null, 2));
-
-    // Map Text Search results to autocomplete format
-    const places = data.places || [];
-    const mappedPredictions: PlaceAutocomplete[] = places.map((place: any) => {
-      // Calculate distance from user location
-      const placeLat = place.location?.latitude || 0;
-      const placeLng = place.location?.longitude || 0;
-      const distance_meters = calculateDistance(
-        userLocation.latitude,
-        userLocation.longitude,
-        placeLat,
-        placeLng
-      );
-
-      return {
-        place_id: place.id,
-        description: place.formattedAddress || place.displayName?.text || '',
-        structured_formatting: {
-          main_text: place.displayName?.text || place.displayName || 'Unknown Place',
-          secondary_text: place.formattedAddress || '',
-        },
-        distance_meters,
-      };
-    });
-
-    // Sort by distance (closest first) - THIS IS CRITICAL
-    const sortedPredictions = mappedPredictions.sort((a, b) => {
-      const distA = a.distance_meters || Infinity;
-      const distB = b.distance_meters || Infinity;
-      return distA - distB; // Ascending order (smallest = closest = first)
-    });
-
-    console.log('✅ FINAL SORTED RESULTS (closest → furthest):');
-    sortedPredictions.forEach((p, index) => {
-      console.log(`  ${index + 1}. ${p.structured_formatting.main_text} - ${(p.distance_meters! / 1609.34).toFixed(2)} mi`);
-    });
-
-    setPredictions(sortedPredictions);
-    setShowPredictions(true);
-  };
-
   // Calculate distance between two lat/lng points in meters (Haversine formula)
   const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
-    const R = 6371000; // Earth's radius in meters
+    const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a =
@@ -302,18 +272,13 @@ export function LocationAutocomplete({
   };
 
   const handleSelectPrediction = async (prediction: PlaceAutocomplete) => {
-    // Mark that we just selected (prevents refetching)
     setJustSelected(true);
-
-    // Dismiss keyboard
     Keyboard.dismiss();
     inputRef.current?.blur();
-
-    // Close predictions immediately and clear them
     setShowPredictions(false);
     setPredictions([]);
+    setIsFocused(false);
 
-    // Fetch place details to get coordinates and types
     try {
       const response = await fetch(
         `https://places.googleapis.com/v1/places/${prediction.place_id}`,
@@ -332,8 +297,6 @@ export function LocationAutocomplete({
       }
 
       const data = await response.json();
-
-      // Extract coordinates, formatted address, and place types
       const latitude = data.location?.latitude;
       const longitude = data.location?.longitude;
       const formattedAddress = data.formattedAddress || prediction.description;
@@ -341,18 +304,54 @@ export function LocationAutocomplete({
       const types = data.types || [];
 
       if (latitude && longitude) {
-        onSelectLocation({
-          placeName,
-          address: formattedAddress,
-          latitude,
-          longitude,
-          types,
-        });
+        onSelectLocation({ placeName, address: formattedAddress, latitude, longitude, types });
       }
     } catch (error) {
       console.error('Place details error:', error);
     }
   };
+
+  const handleSelectRecent = useCallback((loc: RecentLocation) => {
+    setJustSelected(true);
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+    setShowPredictions(false);
+    setPredictions([]);
+    setIsFocused(false);
+    onSelectLocation({
+      placeName: loc.placeName,
+      address: loc.address,
+      latitude: loc.latitude,
+      longitude: loc.longitude,
+    });
+  }, [onSelectLocation]);
+
+  const handleSelectQuickPick = useCallback((pick: QuickPickLocation) => {
+    setJustSelected(true);
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+    setShowPredictions(false);
+    setPredictions([]);
+    setIsFocused(false);
+    onSelectLocation({
+      placeName: pick.label,
+      address: pick.address,
+      latitude: pick.latitude,
+      longitude: pick.longitude,
+    });
+  }, [onSelectLocation]);
+
+  const handleCurrentLocation = useCallback(() => {
+    setJustSelected(true);
+    Keyboard.dismiss();
+    inputRef.current?.blur();
+    setIsFocused(false);
+    onRequestCurrentLocation?.();
+  }, [onRequestCurrentLocation]);
+
+  // ── Render ─────────────────────────────────────────────────────
+
+  const dividerColor = isDark ? '#404040' : '#e0e0e0';
 
   return (
     <View style={styles.container}>
@@ -370,15 +369,15 @@ export function LocationAutocomplete({
           value={value}
           onChangeText={(text) => {
             onChangeText(text);
-            // Reset justSelected flag when user starts typing again
             if (justSelected) {
               setJustSelected(false);
             }
-            // Show predictions when typing
             if (text.length >= 3) {
               setShowPredictions(true);
             }
           }}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
           placeholder={placeholder}
           placeholderTextColor={colors.icon}
           autoCapitalize="none"
@@ -393,56 +392,140 @@ export function LocationAutocomplete({
         )}
       </View>
 
-      {/* Predictions dropdown */}
-      {showPredictions && predictions.length > 0 && (
+      {/* Unified dropdown: quick-picks → recents → Google results */}
+      {showDropdown && (
         <View
           style={[
-            styles.predictionsContainer,
+            styles.dropdownContainer,
             {
               backgroundColor: isDark ? '#2f3133' : '#ffffff',
-              borderColor: isDark ? '#404040' : '#e0e0e0',
+              borderColor: dividerColor,
             },
           ]}
         >
           <ScrollView
-            style={styles.predictionsList}
+            style={styles.dropdownScroll}
             nestedScrollEnabled={true}
             keyboardShouldPersistTaps="handled"
           >
-            {predictions.map((item) => (
-              <TouchableOpacity
-                key={item.place_id}
-                style={[
-                  styles.predictionItem,
-                  {
-                    borderBottomColor: isDark ? '#404040' : '#e0e0e0',
-                  },
-                ]}
-                onPress={() => handleSelectPrediction(item)}
-              >
-                <Ionicons
-                  name="location-outline"
-                  size={20}
-                  color={colors.icon}
-                  style={styles.predictionIcon}
-                />
-                <View style={styles.predictionText}>
-                  <View style={styles.mainTextRow}>
-                    <Text style={[styles.mainText, { color: colors.text }]}>
-                      {item.structured_formatting.main_text}
-                    </Text>
-                    {item.distance_meters !== undefined && (
-                      <Text style={[styles.distanceText, { color: BrandColors.loopBlue }]}>
-                        {(item.distance_meters / 1609.34).toFixed(1)} mi
+            {/* Quick-pick pills: Home / Work / Current */}
+            {(hasQuickPicks || onRequestCurrentLocation) && (
+              <View style={styles.quickPickSection}>
+                <View style={styles.quickPickRow}>
+                  {quickPickLocations?.map((pick) => (
+                    <TouchableOpacity
+                      key={pick.label}
+                      style={[
+                        styles.quickPickPill,
+                        { backgroundColor: isDark ? '#1a1a1c' : '#f0f0f0' },
+                      ]}
+                      onPress={() => handleSelectQuickPick(pick)}
+                    >
+                      <Ionicons
+                        name={pick.icon as any}
+                        size={14}
+                        color={BrandColors.loopBlue}
+                      />
+                      <Text style={[styles.quickPickLabel, { color: colors.text }]}>
+                        {pick.label}
                       </Text>
-                    )}
-                  </View>
-                  <Text style={[styles.secondaryText, { color: colors.icon }]}>
-                    {item.structured_formatting.secondary_text}
-                  </Text>
+                    </TouchableOpacity>
+                  ))}
+                  {onRequestCurrentLocation && (
+                    <TouchableOpacity
+                      style={[
+                        styles.quickPickPill,
+                        { backgroundColor: isDark ? '#1a1a1c' : '#f0f0f0' },
+                      ]}
+                      onPress={handleCurrentLocation}
+                    >
+                      <Ionicons name="navigate" size={14} color={BrandColors.loopBlue} />
+                      <Text style={[styles.quickPickLabel, { color: colors.text }]}>
+                        Current
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
-              </TouchableOpacity>
-            ))}
+              </View>
+            )}
+
+            {/* Recents section */}
+            {hasRecents && (
+              <>
+                {/* Divider after quick-picks */}
+                {(hasQuickPicks || onRequestCurrentLocation) && (
+                  <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
+                )}
+                <Text style={[styles.sectionHeader, { color: colors.icon }]}>RECENT</Text>
+                {filteredRecents.map((loc, idx) => (
+                  <TouchableOpacity
+                    key={`recent-${idx}`}
+                    style={[
+                      styles.predictionItem,
+                      { borderBottomColor: dividerColor },
+                      idx === filteredRecents.length - 1 && !hasGoogleResults && styles.lastItem,
+                    ]}
+                    onPress={() => handleSelectRecent(loc)}
+                  >
+                    <Ionicons
+                      name="time-outline"
+                      size={20}
+                      color={colors.icon}
+                      style={styles.predictionIcon}
+                    />
+                    <View style={styles.predictionText}>
+                      <Text style={[styles.mainText, { color: colors.text }]} numberOfLines={1}>
+                        {loc.placeName}
+                      </Text>
+                      <Text style={[styles.secondaryText, { color: colors.icon }]} numberOfLines={1}>
+                        {loc.address}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+
+            {/* Google Places results */}
+            {hasGoogleResults && (
+              <>
+                {(hasRecents || hasQuickPicks || onRequestCurrentLocation) && (
+                  <View style={[styles.sectionDivider, { backgroundColor: dividerColor }]} />
+                )}
+                {predictions.map((item) => (
+                  <TouchableOpacity
+                    key={item.place_id}
+                    style={[
+                      styles.predictionItem,
+                      { borderBottomColor: dividerColor },
+                    ]}
+                    onPress={() => handleSelectPrediction(item)}
+                  >
+                    <Ionicons
+                      name="location-outline"
+                      size={20}
+                      color={colors.icon}
+                      style={styles.predictionIcon}
+                    />
+                    <View style={styles.predictionText}>
+                      <View style={styles.mainTextRow}>
+                        <Text style={[styles.mainText, { color: colors.text }]}>
+                          {item.structured_formatting.main_text}
+                        </Text>
+                        {item.distance_meters !== undefined && (
+                          <Text style={[styles.distanceText, { color: BrandColors.loopBlue }]}>
+                            {(item.distance_meters / 1609.34).toFixed(1)} mi
+                          </Text>
+                        )}
+                      </View>
+                      <Text style={[styles.secondaryText, { color: colors.icon }]}>
+                        {item.structured_formatting.secondary_text}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
           </ScrollView>
         </View>
       )}
@@ -468,14 +551,14 @@ const styles = StyleSheet.create({
     right: Spacing.md,
     top: 14,
   },
-  predictionsContainer: {
+  dropdownContainer: {
     position: 'absolute',
-    top: 56, // Just below the input
+    top: 56,
     left: 0,
     right: 0,
     borderWidth: 1,
     borderRadius: BorderRadius.md,
-    maxHeight: 250,
+    maxHeight: 320,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -483,14 +566,54 @@ const styles = StyleSheet.create({
     elevation: 5,
     zIndex: 1001,
   },
-  predictionsList: {
-    maxHeight: 250,
+  dropdownScroll: {
+    maxHeight: 320,
   },
+  // Quick-pick pills
+  quickPickSection: {
+    paddingHorizontal: Spacing.sm,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xs,
+  },
+  quickPickRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickPickPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+    gap: 6,
+  },
+  quickPickLabel: {
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  // Section layout
+  sectionHeader: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: 4,
+  },
+  sectionDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: Spacing.sm,
+  },
+  // Reused from old predictions dropdown
   predictionItem: {
     flexDirection: 'row',
     alignItems: 'center',
     padding: Spacing.md,
     borderBottomWidth: 1,
+  },
+  lastItem: {
+    borderBottomWidth: 0,
   },
   predictionIcon: {
     marginRight: Spacing.sm,
