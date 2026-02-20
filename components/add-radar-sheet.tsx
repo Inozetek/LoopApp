@@ -38,6 +38,8 @@ import {
 import type { HookType, CreateRadarParams } from '@/types/radar';
 import type { SubscriptionTier } from '@/types/subscription';
 import type { InterestCategory } from '@/types/activity';
+import { UpgradePromptModal } from '@/components/upgrade-prompt-modal';
+import type { GatedFeature } from '@/utils/tier-gate';
 
 // ============================================================================
 // CONSTANTS
@@ -110,6 +112,8 @@ export function AddRadarSheet({
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [upgradeModalVisible, setUpgradeModalVisible] = useState(false);
+  const [upgradeFeature, setUpgradeFeature] = useState<GatedFeature>('radar_limit');
 
   const userId = user?.id || 'demo-user-123';
   const limits = RADAR_LIMITS[tier];
@@ -136,36 +140,39 @@ export function AddRadarSheet({
     onClose();
   };
 
+  const showUpgradeModal = (feature: GatedFeature) => {
+    setUpgradeFeature(feature);
+    setUpgradeModalVisible(true);
+  };
+
+  const handleUpgradeFromModal = () => {
+    setUpgradeModalVisible(false);
+    onUpgrade?.();
+  };
+
   const handleSelectType = async (hookType: HookType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Check if Plus only
+    // Check if Plus only — show upgrade prompt modal
     const typeConfig = RADAR_TYPES.find(t => t.type === hookType);
     if (typeConfig?.plusOnly && tier === 'free') {
-      Alert.alert(
-        'Loop Plus Feature',
-        `${HOOK_TYPE_META[hookType].label} radars are available with Loop Plus.`,
-        [
-          { text: 'Not Now', style: 'cancel' },
-          { text: 'Upgrade', onPress: onUpgrade },
-        ]
-      );
+      const feature: GatedFeature = hookType === 'venue' ? 'radar_venue' : 'radar_proximity';
+      showUpgradeModal(feature);
       return;
     }
 
     // Check limit
     const limitCheck = await checkRadarLimit(userId, hookType, tier);
     if (!limitCheck.canCreate) {
-      Alert.alert(
-        'Radar Limit Reached',
-        limitCheck.reason || 'You have reached the maximum number of radars.',
-        limitCheck.upgradeRequired
-          ? [
-              { text: 'Not Now', style: 'cancel' },
-              { text: 'Upgrade', onPress: onUpgrade },
-            ]
-          : [{ text: 'OK' }]
-      );
+      if (limitCheck.upgradeRequired) {
+        showUpgradeModal('radar_limit');
+      } else {
+        Alert.alert(
+          'Radar Limit Reached',
+          limitCheck.reason || 'You have reached the maximum number of radars.',
+          [{ text: 'OK' }]
+        );
+      }
       return;
     }
 
@@ -266,6 +273,14 @@ export function AddRadarSheet({
           />
         )}
       </KeyboardAvoidingView>
+
+      {/* Upgrade Prompt Modal */}
+      <UpgradePromptModal
+        visible={upgradeModalVisible}
+        onClose={() => setUpgradeModalVisible(false)}
+        feature={upgradeFeature}
+        onUpgrade={handleUpgradeFromModal}
+      />
     </Modal>
   );
 }

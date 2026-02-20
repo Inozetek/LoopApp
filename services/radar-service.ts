@@ -205,6 +205,30 @@ export async function createRadar(
 }
 
 /**
+ * Toggle a radar's active state.
+ */
+export async function toggleRadar(userId: string, radarId: string, isActive: boolean): Promise<boolean> {
+  if (userId === DEMO_USER_ID) return true;
+
+  try {
+    const { error } = await supabase
+      .from('user_hooks')
+      .update({ is_active: isActive, updated_at: new Date().toISOString() })
+      .eq('id', radarId)
+      .eq('user_id', userId);
+
+    if (error) {
+      console.error('[RadarService] Error toggling radar:', error);
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.error('[RadarService] Exception toggling radar:', err);
+    return false;
+  }
+}
+
+/**
  * Delete (deactivate) a radar.
  */
 export async function deleteRadar(userId: string, radarId: string): Promise<boolean> {
@@ -278,6 +302,35 @@ export async function listRadars(userId: string): Promise<UserHook[]> {
     return (data || []).map(mapDbRowToHook);
   } catch (err) {
     console.error('[RadarService] Exception listing radars:', err);
+    return [];
+  }
+}
+
+/**
+ * List all radars for a user (including inactive/toggled-off).
+ * Used by the radar management screen.
+ */
+export async function listAllRadars(userId: string): Promise<UserHook[]> {
+  if (userId === DEMO_USER_ID) {
+    return getMockRadars();
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('user_hooks')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      if (error.code === '42P01') return [];
+      console.error('[RadarService] Error listing all radars:', error);
+      return [];
+    }
+
+    return (data || []).map(mapDbRowToHook);
+  } catch (err) {
+    console.error('[RadarService] Exception listing all radars:', err);
     return [];
   }
 }
