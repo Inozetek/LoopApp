@@ -15,7 +15,7 @@
  * - Check cache → seed if missing → query cache → return results
  */
 
-import { supabase, supabaseAdmin } from '@/lib/supabase';
+import { supabase } from '@/lib/supabase';
 import { searchNearbyActivities, getPlaceDetails } from './google-places';
 import type { Activity } from '@/types/activity';
 
@@ -191,16 +191,9 @@ export async function seedCityData(
           refresh_cadence_days: refreshCadenceDays,
         }));
 
-        // Use admin client for INSERT if available (bypasses RLS)
-        // For MVP: Fall back to regular client (requires RLS policy allowing authenticated users)
-        const client = supabaseAdmin || supabase;
-
-        if (!supabaseAdmin) {
-          console.warn('⚠️ Using regular supabase client for cache seeding (requires RLS policy for authenticated users)');
-        }
-
-        // Use upsert to avoid duplicate key errors
-        const { data, error } = await client
+        // Use regular client (RLS policies must allow authenticated users to insert)
+        // NOTE: For production, move cache seeding to a Supabase Edge Function with service role key
+        const { data, error } = await supabase
           .from('places_cache')
           .upsert(cacheRecords, {
             onConflict: 'city,place_id',
@@ -305,12 +298,8 @@ export async function getCachedPlaces(
     console.log(`✅ Loaded ${places.length} cached places`);
 
     // Update last_used timestamp for these places (fire and forget, don't await)
-    // Use admin client for UPDATE if available (bypasses RLS)
-    const client = supabaseAdmin || supabase;
-
-    // Note: Can't increment use_count with Supabase client, would need RPC function
-    // For now, just update last_used timestamp
-    client
+    // NOTE: For production, move to Supabase Edge Function with service role key
+    supabase
       .from('places_cache')
       .update({
         last_used: new Date().toISOString(),
@@ -344,14 +333,8 @@ export async function markStalePlaces(): Promise<number> {
   console.log('🔄 Marking stale places for refresh...');
 
   try {
-    // Use admin client for RPC that performs UPDATE if available (bypasses RLS)
-    const client = supabaseAdmin || supabase;
-
-    if (!supabaseAdmin) {
-      console.warn('⚠️ Using regular supabase client for marking stale places (requires RLS policy for authenticated users)');
-    }
-
-    const { data, error } = await client.rpc('mark_stale_places', {
+    // NOTE: For production, move to Supabase Edge Function with service role key
+    const { data, error } = await supabase.rpc('mark_stale_places', {
       p_refresh_days: 60, // Default: mark places older than 60 days as stale
     });
 
@@ -383,17 +366,11 @@ export async function cleanupOldStalePlaces(): Promise<number> {
   console.log('🧹 Cleaning up old stale places...');
 
   try {
-    // Use admin client for DELETE if available (bypasses RLS)
-    const client = supabaseAdmin || supabase;
-
-    if (!supabaseAdmin) {
-      console.warn('⚠️ Using regular supabase client for cleanup (requires RLS policy for authenticated users)');
-    }
-
+    // NOTE: For production, move to Supabase Edge Function with service role key
     const ninetyDaysAgo = new Date();
     ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-    const { data, error } = await client
+    const { data, error } = await supabase
       .from('places_cache')
       .delete()
       .eq('is_stale', true)

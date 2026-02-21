@@ -14,6 +14,7 @@ import { Spacing, BorderRadius } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { CATEGORIES } from '@/components/category-selector';
+import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
 
 /** Short labels for category chips */
 const SHORT_LABELS: Record<string, string> = {
@@ -70,7 +71,8 @@ export function ExploreHeader({
   };
 
   return (
-    <View style={[styles.outerContainer, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
+    <BlurHeaderWrapper style={{ paddingTop: insets.top + Spacing.sm }}>
+    <View style={styles.outerContainer}>
       {/* Search Row */}
       <View style={styles.searchRow}>
         <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
@@ -87,6 +89,7 @@ export function ExploreHeader({
             returnKeyType="search"
             autoCapitalize="none"
             autoCorrect={false}
+            maxLength={200}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity
@@ -149,6 +152,7 @@ export function ExploreHeader({
         })}
       </ScrollView>
     </View>
+    </BlurHeaderWrapper>
   );
 }
 

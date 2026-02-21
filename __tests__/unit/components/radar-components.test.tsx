@@ -507,6 +507,7 @@ describe('AddRadarSheet - Pure Logic', () => {
         venue: 'Search for a venue...',
         category: '',
         proximity: '',
+        keyword: 'e.g., tallow fries, gluten free, rooftop...',
       };
       return map[hookType];
     }

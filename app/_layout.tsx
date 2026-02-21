@@ -14,7 +14,9 @@ import { ThemeContextProvider } from '@/contexts/theme-context';
 import { AuthProvider, useAuth } from '@/contexts/auth-context';
 import { TabNotificationsProvider } from '@/contexts/tab-notifications-context';
 import { MenuAnimationProvider } from '@/contexts/menu-animation-context';
+import { NetworkProvider } from '@/contexts/network-context';
 import { ErrorBoundary } from '@/components/error-boundary';
+import { OfflineBanner } from '@/components/offline-banner';
 import { Colors } from '@/constants/theme';
 import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
 import { initializeErrorLogging } from '@/utils/error-logger';
@@ -151,20 +153,23 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-      <ThemeContextProvider>
-        <AuthProvider>
-          <TabNotificationsProvider>
-            <MenuAnimationProvider>
-              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                <ErrorBoundary fallbackMessage="The app encountered an unexpected error. Tap below to reload.">
-                  <RootLayoutNav />
-                </ErrorBoundary>
-                <StatusBar style="auto" />
-              </ThemeProvider>
-            </MenuAnimationProvider>
-          </TabNotificationsProvider>
-        </AuthProvider>
-      </ThemeContextProvider>
+      <NetworkProvider>
+        <ThemeContextProvider>
+          <AuthProvider>
+            <TabNotificationsProvider>
+              <MenuAnimationProvider>
+                <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                  <ErrorBoundary fallbackMessage="The app encountered an unexpected error. Tap below to reload.">
+                    <RootLayoutNav />
+                  </ErrorBoundary>
+                  <OfflineBanner />
+                  <StatusBar style="auto" />
+                </ThemeProvider>
+              </MenuAnimationProvider>
+            </TabNotificationsProvider>
+          </AuthProvider>
+        </ThemeContextProvider>
+      </NetworkProvider>
     </GestureHandlerRootView>
   );
 }

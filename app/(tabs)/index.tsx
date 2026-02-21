@@ -428,6 +428,14 @@ export default function RecommendationFeedScreen() {
   const [removingCardId, setRemovingCardId] = useState<string | null>(null); // Track card being removed with animation
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
   const [feedbackBannerDismissed, setFeedbackBannerDismissed] = useState(false);
+  // Inline feedback card: first pending activity (one at a time)
+  const [nextFeedbackActivity, setNextFeedbackActivity] = useState<{
+    eventId: string;
+    activityId: string | null;
+    activityName: string;
+    activityCategory: string;
+    completedAt: string;
+  } | null>(null);
 
   // Conflict warning modal state
   const [showConflictModal, setShowConflictModal] = useState(false);
@@ -1058,12 +1066,36 @@ export default function RecommendationFeedScreen() {
         const scored = await generateRecommendations(params);
         console.log(`✅ Generated ${scored.length} fresh recommendations`);
 
+        // Parse neighborhood from address (e.g. "123 Main St, Deep Ellum, Dallas, TX" → "Deep Ellum")
+        const parseNeighborhood = (vicinity?: string, fullAddress?: string): string | undefined => {
+          // Vicinity is typically "123 Main St, Neighborhood" (short form)
+          const addr = fullAddress || '';
+          const parts = addr.split(',').map(p => p.trim());
+          // For US addresses: [street, neighborhood/city, state zip, country]
+          // The second part is often neighborhood or city — skip if it matches city from 3rd part
+          if (parts.length >= 3) {
+            const candidate = parts[1];
+            // Skip if it looks like a state abbreviation or zip or country
+            if (candidate && !/^\d/.test(candidate) && candidate.length > 2 && candidate !== 'USA' && candidate !== 'US') {
+              // If we have 4+ parts, parts[1] is often neighborhood (parts[2] is "City" or "State Zip")
+              if (parts.length >= 4) return candidate;
+            }
+          }
+          // Fallback: try vicinity (often "Street, Area")
+          if (vicinity) {
+            const vicParts = vicinity.split(',').map(p => p.trim());
+            if (vicParts.length >= 2) return vicParts[vicParts.length - 1];
+          }
+          return undefined;
+        };
+
         // Convert to Recommendation format
         const freshRecommendations: Recommendation[] = scored.map((s, index) => ({
           id: s.place.place_id || `rec-${index}`,
           title: s.place.name,
           category: s.category,
           location: s.place.vicinity || s.place.formatted_address || 'Unknown location',
+          neighborhood: parseNeighborhood(s.place.vicinity, s.place.formatted_address),
           distance: `${s.distance.toFixed(1)} mi`,
           priceRange: s.place.price_level || 2,
           rating: s.place.rating || 0,
@@ -1728,18 +1760,31 @@ export default function RecommendationFeedScreen() {
     }
   };
 
-  // Check for pending feedback count on mount (for banner)
+  // Check for pending feedback on mount — load first activity for inline card
   useEffect(() => {
     if (!user) return;
     Promise.all([
       getPendingFeedbackActivities(user.id),
       getPastEventsNeedingFeedback(user.id),
     ]).then(([completed, past]) => {
-      // Deduplicate by eventId (completed events may overlap with past events)
       const seenIds = new Set(completed.map(a => a.eventId));
       const uniquePast = past.filter(a => !seenIds.has(a.eventId));
-      setPendingFeedbackCount(completed.length + uniquePast.length);
+      const allPending = [...completed, ...uniquePast];
+      setPendingFeedbackCount(allPending.length);
       setFeedbackBannerDismissed(false);
+      // Set first activity for inline card (one at a time)
+      if (allPending.length > 0) {
+        const first = allPending[0];
+        setNextFeedbackActivity({
+          eventId: first.eventId,
+          activityId: first.activityId,
+          activityName: first.activityName,
+          activityCategory: first.activityCategory,
+          completedAt: first.completedAt,
+        });
+      } else {
+        setNextFeedbackActivity(null);
+      }
     }).catch(() => {});
   }, [user]);
 
@@ -2845,27 +2890,67 @@ export default function RecommendationFeedScreen() {
           </Text>
         </Animated.View>
 
-        {/* Feedback nudge banner */}
-        {pendingFeedbackCount > 0 && !feedbackBannerDismissed && (
-          <View style={[styles.feedbackBanner, { backgroundColor: colorScheme === 'dark' ? 'rgba(16,163,127,0.15)' : 'rgba(16,163,127,0.1)' }]}>
-            <TouchableOpacity
-              style={styles.feedbackBannerContent}
-              onPress={() => checkForPendingFeedback()}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="chatbubble-ellipses-outline" size={18} color={BrandColors.loopGreen} />
-              <Text style={[Typography.labelMedium, { color: colors.text, marginLeft: Spacing.sm, flex: 1 }]}>
-                {pendingFeedbackCount === 1 ? 'You have 1 activity to rate' : `You have ${pendingFeedbackCount} activities to rate`}
+        {/* Inline feedback card — one activity at a time (replaces old batch banner) */}
+        {nextFeedbackActivity && !feedbackBannerDismissed && (
+          <View style={[styles.feedbackCard, { backgroundColor: colors.card }]}>
+            <View style={styles.feedbackCardHeader}>
+              <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+                How was your visit?
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => setFeedbackBannerDismissed(true)}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              style={styles.feedbackBannerClose}
-            >
-              <Ionicons name="close" size={16} color={colors.textSecondary} />
-            </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  setNextFeedbackActivity(null);
+                  setFeedbackBannerDismissed(true);
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>Skip</Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={[Typography.titleMedium, { color: colors.text, marginBottom: 4 }]} numberOfLines={1}>
+              {nextFeedbackActivity.activityName}
+            </Text>
+            <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
+              {nextFeedbackActivity.activityCategory}
+              {nextFeedbackActivity.completedAt ? ` \u00B7 ${new Date(nextFeedbackActivity.completedAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}` : ''}
+            </Text>
+            <View style={styles.feedbackCardActions}>
+              <TouchableOpacity
+                style={[styles.feedbackThumbBtn, { backgroundColor: BrandColors.loopGreen + '15' }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  // Set the activity and open feedback modal for full feedback flow
+                  setFeedbackActivity({
+                    activityId: nextFeedbackActivity.activityId || '',
+                    activityName: nextFeedbackActivity.activityName,
+                    completedAt: nextFeedbackActivity.completedAt,
+                  });
+                  setShowFeedbackModal(true);
+                  setNextFeedbackActivity(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="thumbs-up" size={22} color={BrandColors.loopGreen} />
+                <Text style={[Typography.labelMedium, { color: BrandColors.loopGreen, marginLeft: 6 }]}>Loved it</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.feedbackThumbBtn, { backgroundColor: '#FF6B6B15' }]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  setFeedbackActivity({
+                    activityId: nextFeedbackActivity.activityId || '',
+                    activityName: nextFeedbackActivity.activityName,
+                    completedAt: nextFeedbackActivity.completedAt,
+                  });
+                  setShowFeedbackModal(true);
+                  setNextFeedbackActivity(null);
+                }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="thumbs-down" size={22} color="#FF6B6B" />
+                <Text style={[Typography.labelMedium, { color: '#FF6B6B', marginLeft: 6 }]}>Not great</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -3121,7 +3206,31 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontFamily: 'Urbanist-SemiBold',
   },
-  feedbackBanner: {
+  feedbackCard: {
+    marginHorizontal: Spacing.lg,
+    marginBottom: Spacing.md,
+    padding: Spacing.md,
+    borderRadius: 14,
+  },
+  feedbackCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  feedbackCardActions: {
+    flexDirection: 'row',
+    gap: Spacing.sm,
+  },
+  feedbackThumbBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: Spacing.sm,
+    borderRadius: 10,
+  },
+  feedbackBannerLegacy: {
     flexDirection: 'row',
     alignItems: 'center',
     marginHorizontal: Spacing.lg,

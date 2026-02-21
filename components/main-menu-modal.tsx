@@ -1,16 +1,19 @@
 /**
  * Profile Drawer (formerly MainMenuModal)
  *
- * Slim 6-item profile drawer that replaces the 15+ item main menu.
  * Grok-style left slide with glass blur backdrop.
  *
  * Items:
  * 1. Profile card (avatar, name, email)
  * 2. My Dashboard (stats + map)
  * 3. History (recommendation history)
- * 4. Settings
- * 5. Help
- * 6. Sign Out
+ * 4. Saved Places (bookmarked/liked activities)
+ * 5. My Radars (manage radar alerts)
+ * 6. Location Memory (home, work, saved locations)
+ * 7. Settings
+ * 8. Business (conditional)
+ * 9. Help & Support
+ * 10. Sign Out
  */
 
 import React, { useEffect } from 'react';
@@ -244,6 +247,27 @@ export function MainMenuModal({
                 setTimeout(() => onOpenHistory?.(), 200);
               }}
               color={BrandColors.loopPurple}
+            />
+            <DrawerItem
+              icon="bookmark-outline"
+              label="Saved Places"
+              description="Bookmarked & liked activities"
+              onPress={() => navigateAndClose('/(tabs)/profile')}
+              color={BrandColors.loopGreen}
+            />
+            <DrawerItem
+              icon="radio-outline"
+              label="My Radars"
+              description="Manage radar alerts"
+              onPress={() => navigateAndClose('/(tabs)/profile')}
+              color={BrandColors.loopOrange}
+            />
+            <DrawerItem
+              icon="location-outline"
+              label="Location Memory"
+              description="Home, work & saved locations"
+              onPress={() => navigateAndClose('/settings/ai-preferences')}
+              color="#6366F1"
             />
             <DrawerItem
               icon="settings-outline"

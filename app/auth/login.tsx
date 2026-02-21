@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -17,6 +18,8 @@ import { Link } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
+
+const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 // Always-dark theme
 const theme = {
@@ -48,6 +51,10 @@ export default function LoginScreen() {
   async function handleSignIn() {
     if (!email || !password) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
     setIsLoading(true);
@@ -221,6 +228,7 @@ export default function LoginScreen() {
                     onChangeText={setEmail}
                     autoCapitalize="none"
                     keyboardType="email-address"
+                    maxLength={254}
                     editable={!isLoading}
                   />
                   <TextInput
@@ -230,6 +238,7 @@ export default function LoginScreen() {
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
+                    maxLength={128}
                     editable={!isLoading}
                   />
                   <TouchableOpacity
@@ -281,7 +290,10 @@ export default function LoginScreen() {
 
             {/* Terms - Bottom */}
             <Text style={[styles.terms, { color: theme.textSubtle }]}>
-              by continuing, you agree to our terms and privacy policy
+              by continuing, you agree to our{' '}
+              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/terms')}>terms</Text>
+              {' '}and{' '}
+              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/privacy')}>privacy policy</Text>
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>

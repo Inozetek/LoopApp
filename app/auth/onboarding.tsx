@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Switch,
+  Dimensions,
 } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -31,6 +32,7 @@ import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
 import { requestCalendarPermissions } from '@/services/calendar-service';
 import { requestNotificationPermissions } from '@/services/notification-service';
+import { LinearGradient } from 'expo-linear-gradient';
 import { INTEREST_GROUPS } from '@/constants/activity-categories';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
 import { OnboardingLoopAnimation } from '@/components/onboarding-loop-animation';
@@ -43,6 +45,27 @@ const QUICK_INTERESTS = [
   'Entertainment', 'Fitness', 'Outdoor Activities', 'Arts & Culture',
   'Shopping', 'Sports', 'Movies', 'Wellness',
 ];
+
+// Spotify-style tile gradients per category (muted tones for cohesive grid)
+const TILE_GRADIENTS: Record<string, [string, string]> = {
+  'Dining': ['#C62828', '#6D1B1B'],
+  'Coffee & Cafes': ['#795548', '#3E2723'],
+  'Bars & Nightlife': ['#6A1B9A', '#311B92'],
+  'Live Music': ['#E65100', '#BF360C'],
+  'Entertainment': ['#AD1457', '#880E4F'],
+  'Fitness': ['#2E7D32', '#1B5E20'],
+  'Outdoor Activities': ['#00796B', '#004D40'],
+  'Arts & Culture': ['#4527A0', '#283593'],
+  'Shopping': ['#C2185B', '#880E4F'],
+  'Sports': ['#1565C0', '#0D47A1'],
+  'Movies': ['#37474F', '#263238'],
+  'Wellness': ['#00838F', '#006064'],
+};
+
+const SCREEN_W = Dimensions.get('window').width;
+const TILE_GAP = 4;
+const TILE_PADDING = 16; // chipsGrid left+right padding
+const TILE_SIZE = Math.floor((SCREEN_W - (TILE_PADDING * 2) - (TILE_GAP * 2)) / 3);
 
 export default function OnboardingScreen() {
   const { session, updateUserProfile, updateBusinessProfile } = useAuth();
@@ -555,6 +578,7 @@ export default function OnboardingScreen() {
               value={firstName}
               onChangeText={setFirstName}
               autoCapitalize="words"
+              maxLength={100}
               editable={!isLoading}
             />
             {isGoogleUser && firstName ? (
@@ -569,6 +593,7 @@ export default function OnboardingScreen() {
               value={lastName}
               onChangeText={setLastName}
               autoCapitalize="words"
+              maxLength={100}
               editable={!isLoading}
             />
             {isGoogleUser && lastName ? (
@@ -618,10 +643,13 @@ export default function OnboardingScreen() {
           {interestError ? 'pick at least one to continue' : "pick a few \u2014 we'll refine as you use loop"}
         </Text>
 
-        <View style={styles.chipsGrid}>
+        {/* Spotify-style image tiles — 3-column grid */}
+        <View style={styles.tileGrid}>
           {QUICK_INTERESTS.map((interest, index) => {
             const isSelected = selectedInterests.includes(interest);
             const group = INTEREST_GROUPS[interest];
+            const gradientColors = TILE_GRADIENTS[interest] || ['#333', '#111'];
+
             return (
               <Animated.View
                 key={interest}
@@ -629,19 +657,42 @@ export default function OnboardingScreen() {
               >
                 <TouchableOpacity
                   style={[
-                    styles.chip,
+                    styles.tile,
                     {
-                      backgroundColor: isSelected ? theme.accent : 'transparent',
-                      borderColor: isSelected ? theme.accent : theme.border,
+                      opacity: isSelected ? 1 : 0.85,
+                      borderWidth: isSelected ? 2 : 1,
+                      borderColor: isSelected ? theme.accent : 'rgba(255,255,255,0.12)',
                     },
                   ]}
                   onPress={() => toggleInterest(interest)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.chipIcon}>{group?.icon}</Text>
-                  <Text style={[styles.chipLabel, { color: isSelected ? '#fff' : theme.text }]}>
-                    {interest}
-                  </Text>
+                  <LinearGradient
+                    colors={gradientColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.tileGradient}
+                  >
+                    {/* Category icon */}
+                    <Text style={styles.tileIcon}>{group?.icon}</Text>
+
+                    {/* Dark bottom gradient for text legibility */}
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.6)']}
+                      style={styles.tileTextOverlay}
+                    >
+                      <Text style={styles.tileName} numberOfLines={2}>
+                        {interest}
+                      </Text>
+                    </LinearGradient>
+
+                    {/* Selected checkmark badge */}
+                    {isSelected && (
+                      <View style={[styles.tileCheckmark, { backgroundColor: theme.accent }]}>
+                        <Ionicons name="checkmark" size={14} color="#fff" />
+                      </View>
+                    )}
+                  </LinearGradient>
                 </TouchableOpacity>
               </Animated.View>
             );
@@ -761,6 +812,7 @@ export default function OnboardingScreen() {
               placeholderTextColor={theme.textSubtle}
               value={homeAddress}
               onChangeText={setHomeAddress}
+              maxLength={500}
               editable={!isLoading}
             />
             <TextInput
@@ -769,6 +821,7 @@ export default function OnboardingScreen() {
               placeholderTextColor={theme.textSubtle}
               value={workAddress}
               onChangeText={setWorkAddress}
+              maxLength={500}
               editable={!isLoading}
             />
             <Text style={[styles.helperText, { color: theme.textSubtle }]}>
@@ -884,6 +937,7 @@ export default function OnboardingScreen() {
             value={businessName}
             onChangeText={setBusinessName}
             autoCapitalize="words"
+            maxLength={200}
             editable={!isLoading}
           />
           <TextInput
@@ -893,6 +947,7 @@ export default function OnboardingScreen() {
             value={firstName}
             onChangeText={setFirstName}
             autoCapitalize="words"
+            maxLength={100}
             editable={!isLoading}
           />
         </View>
@@ -948,6 +1003,7 @@ export default function OnboardingScreen() {
           value={businessDescription}
           onChangeText={setBusinessDescription}
           multiline
+          maxLength={500}
           editable={!isLoading}
         />
       </View>
@@ -1003,6 +1059,7 @@ export default function OnboardingScreen() {
           placeholderTextColor={theme.textSubtle}
           value={homeAddress}
           onChangeText={setHomeAddress}
+          maxLength={500}
           editable={!isLoading && !isFetchingLocation}
         />
       </View>
@@ -1027,6 +1084,7 @@ export default function OnboardingScreen() {
             value={businessPhone}
             onChangeText={setBusinessPhone}
             keyboardType="phone-pad"
+            maxLength={20}
             editable={!isLoading}
           />
           <TextInput
@@ -1037,6 +1095,7 @@ export default function OnboardingScreen() {
             onChangeText={setBusinessWebsite}
             keyboardType="url"
             autoCapitalize="none"
+            maxLength={500}
             editable={!isLoading}
           />
         </View>
@@ -1431,7 +1490,58 @@ const styles = StyleSheet.create({
     bottom: 14,
   },
 
-  // ── Interest chips ──
+  // ── Interest tiles (Spotify-style 3-column grid) ──
+  tileGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: TILE_GAP,
+    justifyContent: 'flex-start',
+  },
+  tile: {
+    width: TILE_SIZE,
+    height: TILE_SIZE,
+    borderRadius: 12,
+    overflow: 'hidden',
+  },
+  tileGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  tileIcon: {
+    fontSize: 32,
+    marginBottom: 14,
+  },
+  tileTextOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+    paddingTop: 20,
+  },
+  tileName: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '600',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  tileCheckmark: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  // ── Legacy chip styles (kept for reference, unused) ──
   chipsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',

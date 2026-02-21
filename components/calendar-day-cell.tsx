@@ -128,8 +128,9 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
   const pillColors = useMemo(() => getPillGradientColors(dots), [dots]);
   const hasEvents = gradientColors.length > 0;
 
-  // Gradient ring appears on any selected day with events
-  const showGradientRing = isSelected && hasEvents;
+  // All selected days get the unified metallic ring treatment.
+  // Days with events also keep the gradient color pill below.
+  const showMetallicRing = isSelected;
 
   // Spring scale animation on selection
   const scale = useSharedValue(1);
@@ -173,53 +174,8 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
       style={styles.wrapper}
     >
       <Animated.View style={[styles.container, animatedStyle]}>
-        {showGradientRing ? (
-          /* Selected + events — gradient ring from event colors */
-          <LinearGradient
-            colors={gradientColors as [string, string, ...string[]]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.gradientRing}
-          >
-            <View
-              style={[
-                styles.ringInner,
-                { backgroundColor: isDark ? 'rgba(0,0,0,0.95)' : (theme?.calendarBackground || '#FFFFFF') },
-              ]}
-            >
-              {/* Barely-there tint matching ring colors — lens effect
-                 Scale opacity by color count: fewer colors = more concentrated
-                 tint, so dial down; more colors = more diffused, so dial up. */}
-              <LinearGradient
-                colors={gradientColors.map(c => {
-                  if (!isDark) return c + '07';
-                  // Convert hex color to rgba with task-count-scaled opacity
-                  // 1 task → 0.033, 2 → 0.022, 3 → 0.011, 4 → 0.040, 5+ → 0.052
-                  const opacities: Record<number, number> = { 1: 0.033, 2: 0.022, 3: 0.011, 4: 0.040 };
-                  const a = opacities[dots.length] ?? 0.052;
-                  const r = parseInt(c.slice(1, 3), 16);
-                  const g = parseInt(c.slice(3, 5), 16);
-                  const b = parseInt(c.slice(5, 7), 16);
-                  return `rgba(${r},${g},${b},${a})`;
-                }) as [string, string, ...string[]]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={StyleSheet.absoluteFill}
-              />
-              <Text style={[styles.dayText, styles.dayTextGlow, { color: selectedTextColor }]}>
-                {date?.day}
-              </Text>
-            </View>
-          </LinearGradient>
-        ) : isSelected && isToday ? (
-          /* Today selected empty — loopBlue ring + blue fill */
-          <View style={[styles.dayCircle, styles.dayCircleTodaySelected]}>
-            <Text style={[styles.dayText, styles.dayTextBold, { color: selectedTextColor }]}>
-              {date?.day}
-            </Text>
-          </View>
-        ) : isSelected ? (
-          /* Selected empty — shiny metallic gradient ring */
+        {showMetallicRing ? (
+          /* All selected days — unified metallic gradient ring */
           <LinearGradient
             colors={
               isDark
@@ -236,7 +192,7 @@ const CalendarDayCellInner: React.FC<CalendarDayCellProps> = ({
                 { backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.75)' },
               ]}
             >
-              <Text style={[styles.dayText, styles.dayTextBold, { color: selectedTextColor }]}>
+              <Text style={[styles.dayText, hasEvents ? styles.dayTextGlow : styles.dayTextBold, { color: selectedTextColor }]}>
                 {date?.day}
               </Text>
             </View>

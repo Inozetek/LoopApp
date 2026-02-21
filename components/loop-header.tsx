@@ -33,6 +33,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
+import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
@@ -261,7 +262,12 @@ export function LoopHeader({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
+    <BlurHeaderWrapper
+      style={{ paddingTop: insets.top + Spacing.sm }}
+      showBottomBorder={false}
+      bottomBorderColor="rgba(0, 191, 255, 0.1)"
+    >
+    <View style={styles.container}>
       {/* Left Side */}
       <View style={styles.leftSection}>
         {showBackButton ? (
@@ -478,6 +484,7 @@ export function LoopHeader({
         </Animated.View>
       </View>
     </View>
+    </BlurHeaderWrapper>
   );
 }
 
@@ -488,9 +495,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0, 191, 255, 0.1)',
-    ...Shadows.sm,
   },
   leftSection: {
     flex: 1,

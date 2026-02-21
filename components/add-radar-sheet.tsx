@@ -66,6 +66,7 @@ const RADAR_TYPES: { type: HookType; plusOnly: boolean }[] = [
   { type: 'artist', plusOnly: false },
   { type: 'film_talent', plusOnly: false },
   { type: 'category', plusOnly: false },
+  { type: 'keyword', plusOnly: false },
   { type: 'venue', plusOnly: true },
   { type: 'proximity', plusOnly: true },
 ];
@@ -206,6 +207,14 @@ export function AddRadarSheet({
         }
         params.category = selectedCategory;
         params.entityName = CATEGORY_OPTIONS.find(c => c.value === selectedCategory)?.label;
+        break;
+      case 'keyword':
+        if (!searchQuery.trim()) {
+          Alert.alert('Required', 'Please enter a keyword to search for.');
+          return;
+        }
+        params.searchKeyword = searchQuery.trim();
+        params.entityName = searchQuery.trim();
         break;
       case 'proximity':
         // TODO: friend selection UI
@@ -363,16 +372,18 @@ function ConfigureStep({
   onCreate: () => void;
   creating: boolean;
 }) {
-  const isSearchType = hookType === 'artist' || hookType === 'film_talent' || hookType === 'venue';
+  const isSearchType = hookType === 'artist' || hookType === 'film_talent' || hookType === 'venue' || hookType === 'keyword';
   const isCategoryType = hookType === 'category';
 
-  const placeholder = {
+  const placeholder: Record<HookType, string> = {
     artist: 'Search for an artist...',
     film_talent: 'Search actors, directors...',
     venue: 'Search for a venue...',
+    keyword: 'e.g., tallow fries, gluten free, rooftop...',
     category: '',
     proximity: '',
-  }[hookType];
+  };
+  const placeholderText = placeholder[hookType];
 
   return (
     <ScrollView style={styles.stepContainer} contentContainerStyle={styles.stepContent}>
@@ -382,12 +393,13 @@ function ConfigureStep({
           <Ionicons name="search" size={18} color={colors.textSecondary} />
           <TextInput
             style={[styles.searchInput, { color: colors.text }]}
-            placeholder={placeholder}
+            placeholder={placeholderText}
             placeholderTextColor={colors.textSecondary}
             value={searchQuery}
             onChangeText={onSearchChange}
             autoFocus
             returnKeyType="done"
+            maxLength={200}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => onSearchChange('')}>

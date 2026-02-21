@@ -21,7 +21,7 @@ import * as Haptics from 'expo-haptics';
 import { Colors } from '@/constants/theme';
 import { BrandColors } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { IconSymbol } from '@/components/ui/icon-symbol';
+import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { DragHandle } from '@/components/drag-handle';
 
@@ -37,14 +37,14 @@ interface FeedbackModalProps {
 }
 
 const FEEDBACK_TAGS = [
-  { id: 'too_expensive', label: 'Too expensive', icon: 'dollarsign.circle.fill' },
-  { id: 'too_far', label: 'Too far', icon: 'location.fill' },
-  { id: 'too_crowded', label: 'Too crowded', icon: 'person.3.fill' },
-  { id: 'boring', label: 'Boring', icon: 'hand.thumbsdown.fill' },
-  { id: 'bad_weather', label: 'Bad weather', icon: 'cloud.rain.fill' },
-  { id: 'great_value', label: 'Great value', icon: 'star.fill' },
-  { id: 'convenient', label: 'Convenient', icon: 'checkmark.circle.fill' },
-  { id: 'loved_it', label: 'Loved it!', icon: 'heart.fill' },
+  { id: 'too_expensive', label: 'Too expensive', icon: 'cash-outline' },
+  { id: 'too_far', label: 'Too far', icon: 'location-outline' },
+  { id: 'too_crowded', label: 'Too crowded', icon: 'people-outline' },
+  { id: 'boring', label: 'Boring', icon: 'sad-outline' },
+  { id: 'bad_weather', label: 'Bad weather', icon: 'rainy-outline' },
+  { id: 'great_value', label: 'Great value', icon: 'star' },
+  { id: 'convenient', label: 'Convenient', icon: 'checkmark-circle' },
+  { id: 'loved_it', label: 'Loved it!', icon: 'heart' },
 ];
 
 export function FeedbackModal({
@@ -224,7 +224,7 @@ export function FeedbackModal({
               How was it?
             </Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-              <IconSymbol name="xmark.circle.fill" size={28} color={colors.icon} />
+              <Ionicons name="close-circle" size={28} color={colors.icon} />
             </TouchableOpacity>
           </View>
 
@@ -247,8 +247,8 @@ export function FeedbackModal({
                   },
                 ]}
               >
-                <IconSymbol
-                  name="hand.thumbsup.fill"
+                <Ionicons
+                  name="thumbs-up"
                   size={32}
                   color={rating === 'thumbs_up' ? BrandColors.white : colors.icon}
                 />
@@ -273,8 +273,8 @@ export function FeedbackModal({
                   },
                 ]}
               >
-                <IconSymbol
-                  name="hand.thumbsdown.fill"
+                <Ionicons
+                  name="thumbs-down"
                   size={32}
                   color={rating === 'thumbs_down' ? BrandColors.white : colors.icon}
                 />
@@ -313,7 +313,7 @@ export function FeedbackModal({
                         },
                       ]}
                     >
-                      <IconSymbol
+                      <Ionicons
                         name={tag.icon as any}
                         size={16}
                         color={selectedTags.includes(tag.id) ? BrandColors.white : colors.icon}

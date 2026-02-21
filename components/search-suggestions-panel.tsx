@@ -22,6 +22,8 @@ interface SearchSuggestionsPanelProps {
   onClearRecent: () => void;
   onTrendingPress: (item: ExploreItem) => void;
   tileSize: number;
+  onRadarsPress?: () => void;
+  radarCount?: number;
 }
 
 export function SearchSuggestionsPanel({
@@ -31,12 +33,39 @@ export function SearchSuggestionsPanel({
   onClearRecent,
   onTrendingPress,
   tileSize,
+  onRadarsPress,
+  radarCount = 0,
 }: SearchSuggestionsPanelProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = ThemeColors[colorScheme];
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+      {/* My Radars Quick Access */}
+      {onRadarsPress && (
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={[styles.radarShortcut, { backgroundColor: colors.card }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              onRadarsPress();
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.radarIconBg, { backgroundColor: BrandColors.loopOrange + '15' }]}>
+              <Ionicons name="radio-outline" size={18} color={BrandColors.loopOrange} />
+            </View>
+            <View style={styles.radarShortcutText}>
+              <Text style={[styles.radarTitle, { color: colors.text }]}>My Radars</Text>
+              <Text style={[styles.radarSubtitle, { color: colors.textSecondary }]}>
+                {radarCount > 0 ? `${radarCount} active` : 'Set alerts for new spots'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Recent Searches */}
       {recentSearches.length > 0 && (
         <View style={styles.section}>
@@ -139,5 +168,30 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 3,
+  },
+  radarShortcut: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderRadius: 12,
+    gap: 10,
+  },
+  radarIconBg: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  radarShortcutText: {
+    flex: 1,
+  },
+  radarTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  radarSubtitle: {
+    fontSize: 12,
+    marginTop: 1,
   },
 });

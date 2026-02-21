@@ -558,45 +558,110 @@ export default function FriendsScreen() {
     </View>
   );
 
+  const handleFriendLongPress = (friend: Friend) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Alert.alert(
+      friend.name,
+      undefined,
+      [
+        {
+          text: 'View Loop',
+          onPress: () => viewFriendLoop(friend),
+        },
+        {
+          text: 'Message',
+          onPress: () => router.push('/chat' as any),
+        },
+        {
+          text: 'Invite to Plan',
+          onPress: () => setShowGroupPlanning(true),
+        },
+        {
+          text: 'Remove Friend',
+          style: 'destructive',
+          onPress: () => {
+            Alert.alert(
+              'Remove Friend',
+              `Are you sure you want to remove ${friend.name}?`,
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Remove',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      await supabase.from('friendships').delete().eq('id', friend.id);
+                      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                      loadFriends();
+                    } catch (err) {
+                      Alert.alert('Error', 'Failed to remove friend');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]
+    );
+  };
+
+  const getLastActivityText = (friend: Friend) => {
+    const created = new Date(friend.created_at);
+    const now = new Date();
+    const diffMs = now.getTime() - created.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    if (diffDays === 0) return 'Added today';
+    if (diffDays === 1) return 'Added yesterday';
+    if (diffDays < 7) return `Added ${diffDays}d ago`;
+    if (diffDays < 30) return `Added ${Math.floor(diffDays / 7)}w ago`;
+    return `Friends for ${Math.floor(diffDays / 30)}mo`;
+  };
+
   const renderFriend = ({ item }: { item: Friend }) => (
     <TouchableOpacity
       style={[styles.friendCard, { backgroundColor: isDark ? '#1f2123' : '#ffffff' }]}
       onPress={() => viewFriendLoop(item)}
+      onLongPress={() => handleFriendLongPress(item)}
+      delayLongPress={400}
+      activeOpacity={0.7}
     >
-      <View style={styles.friendHeader}>
+      <View style={styles.friendRow}>
         {item.profile_picture_url ? (
-          <Image source={{ uri: item.profile_picture_url }} style={styles.avatar} />
+          <Image source={{ uri: item.profile_picture_url }} style={styles.friendAvatar} />
         ) : (
-          <View style={[styles.avatarPlaceholder, { backgroundColor: BrandColors.loopBlue }]}>
+          <View style={[styles.friendAvatarPlaceholder, { backgroundColor: BrandColors.loopBlue }]}>
             <Text style={styles.avatarText}>{getInitials(item.name)}</Text>
           </View>
         )}
 
         <View style={styles.friendInfo}>
-          <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
-            {item.name}
-          </Text>
-          <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
-            {item.email}
+          <View style={styles.friendNameRow}>
+            <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text }]} numberOfLines={1}>
+              {item.name}
+            </Text>
+            <View style={styles.loopScorePill}>
+              <Ionicons name="flash" size={12} color={BrandColors.star} />
+              <Text style={styles.loopScoreText}>{item.loop_score}</Text>
+            </View>
+          </View>
+          <Text style={[styles.lastActivityText, { color: Colors[colorScheme ?? 'light'].icon }]} numberOfLines={1}>
+            {getLastActivityText(item)}
           </Text>
         </View>
 
-        <View style={styles.loopScoreContainer}>
-          <Ionicons name="flash" size={20} color={BrandColors.star} />
-          <Text style={[Typography.titleMedium, { color: BrandColors.star, marginLeft: 4 }]}>
-            {item.loop_score}
-          </Text>
-        </View>
+        <TouchableOpacity
+          style={styles.messageAction}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/chat' as any);
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Ionicons name="chatbubble-outline" size={20} color={Colors[colorScheme ?? 'light'].icon} />
+        </TouchableOpacity>
       </View>
-
-      {item.can_view_loop && (
-        <View style={styles.viewLoopButton}>
-          <Ionicons name="eye-outline" size={16} color={BrandColors.loopBlue} />
-          <Text style={[Typography.bodySmall, { color: BrandColors.loopBlue, marginLeft: 4 }]}>
-            View Loop
-          </Text>
-        </View>
-      )}
     </TouchableOpacity>
   );
 
@@ -857,6 +922,7 @@ export default function FriendsScreen() {
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
+                maxLength={200}
               />
 
               <TouchableOpacity
@@ -1064,31 +1130,57 @@ const styles = StyleSheet.create({
   },
   friendCard: {
     borderRadius: BorderRadius.md,
-    padding: Spacing.md,
-    marginBottom: Spacing.md,
-    ...Shadows.md,
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    marginBottom: 2,
   },
-  friendHeader: {
+  friendRow: {
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  friendAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    marginRight: Spacing.md,
+  },
+  friendAvatarPlaceholder: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
   },
   friendInfo: {
     flex: 1,
   },
-  loopScoreContainer: {
+  friendNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  loopScorePill: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: BrandColors.star + '15',
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 4,
-    borderRadius: BorderRadius.sm,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 10,
+    gap: 2,
   },
-  viewLoopButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.sm,
-    paddingVertical: Spacing.xs,
+  loopScoreText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: BrandColors.star,
+  },
+  lastActivityText: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  messageAction: {
+    padding: Spacing.sm,
+    marginLeft: Spacing.sm,
   },
   emptyState: {
     alignItems: 'center',

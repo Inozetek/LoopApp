@@ -384,6 +384,7 @@ export function LocationAutocomplete({
           autoCorrect={false}
           returnKeyType="search"
           blurOnSubmit={true}
+          maxLength={500}
         />
         {loading && (
           <View style={styles.loadingIndicator}>

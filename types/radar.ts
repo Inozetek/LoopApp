@@ -11,8 +11,8 @@
 // HOOK TYPES
 // ============================================================================
 
-/** The five types of Radar that users can create */
-export type HookType = 'artist' | 'film_talent' | 'category' | 'venue' | 'proximity';
+/** The six types of Radar that users can create */
+export type HookType = 'artist' | 'film_talent' | 'category' | 'venue' | 'proximity' | 'keyword';
 
 /** Display metadata for each hook type */
 export const HOOK_TYPE_META: Record<HookType, { label: string; icon: string; description: string }> = {
@@ -41,6 +41,11 @@ export const HOOK_TYPE_META: Record<HookType, { label: string; icon: string; des
     icon: '👥',
     description: 'Get alerted when friends are nearby and free',
   },
+  keyword: {
+    label: 'Keyword',
+    icon: '🔍',
+    description: 'Find places matching a keyword (e.g., "tallow fries", "rooftop")',
+  },
 };
 
 // ============================================================================
@@ -62,6 +67,8 @@ export interface UserHook {
   category?: string;
   /** Custom search keywords (Plus only) */
   customKeywords?: string[];
+  /** Primary search keyword for keyword-type radars */
+  searchKeyword?: string;
   /** Friend user IDs for proximity hooks */
   friendIds?: string[];
   /** Proximity radius in miles (default 1.0) */
@@ -94,6 +101,8 @@ export interface HookNotification {
   body: string;
   /** Full event details for rendering in the feed card */
   eventData?: RadarEventData;
+  /** Place details for keyword radar notifications */
+  placeData?: PlaceRadarData;
 
   status: HookNotificationStatus;
   sentAt?: string;
@@ -103,6 +112,20 @@ export interface HookNotification {
   pushSentAt?: string;
 
   createdAt: string;
+}
+
+/** Place data for keyword radar notifications (non-event) */
+export interface PlaceRadarData {
+  placeId: string;
+  name: string;
+  address: string;
+  rating: number;
+  reviewsCount: number;
+  priceLevel: number;
+  photoUrl?: string;
+  category: string;
+  distance?: string;
+  matchedKeyword: string;
 }
 
 /** Event data embedded in a notification for card rendering */
@@ -193,6 +216,8 @@ export interface RadarLimits {
   venue: number;
   /** Max proximity radars (0 = Plus only) */
   proximity: number;
+  /** Max keyword radars (counted within total limit for free) */
+  keyword: number;
   /** Whether push notifications are enabled for radar alerts */
   pushNotifications: boolean;
   /** Whether real-time alerts are enabled (vs weekly digest) */
@@ -212,6 +237,7 @@ export const RADAR_LIMITS: Record<'free' | 'plus', RadarLimits> = {
     category: 2,
     venue: 0,
     proximity: 0,
+    keyword: 3, // Counted within total limit of 3
     pushNotifications: false,
     realTimeAlerts: false,
     customKeywords: false,
@@ -224,6 +250,7 @@ export const RADAR_LIMITS: Record<'free' | 'plus', RadarLimits> = {
     category: Infinity,
     venue: Infinity,
     proximity: 5,
+    keyword: Infinity,
     pushNotifications: true,
     realTimeAlerts: true,
     customKeywords: true,
@@ -244,6 +271,7 @@ export interface CreateRadarParams {
   talentDepartment?: string;
   category?: string;
   customKeywords?: string[];
+  searchKeyword?: string;
   friendIds?: string[];
   proximityRadiusMiles?: number;
 }

@@ -198,6 +198,7 @@ export default function CalendarScreen() {
   const [monthEvents, setMonthEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showAddOptions, setShowAddOptions] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'loop'>('list'); // Toggle between list and map view
 
   // Create task form state
@@ -587,6 +588,12 @@ export default function CalendarScreen() {
 
   const openCreateModal = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Pre-fill date with the currently selected calendar day
+    if (selectedDate) {
+      const [y, m, d] = selectedDate.split('-').map(Number);
+      const selected = new Date(y, m - 1, d);
+      setNewTaskDate(selected);
+    }
     setShowCreateModal(true);
   };
 
@@ -1003,7 +1010,10 @@ export default function CalendarScreen() {
         <CalendarHeader
           title="Loop"
           showLoopIcon={true}
-          onAddPress={openCreateModal}
+          onAddPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            setShowAddOptions(true);
+          }}
           onMenuPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setShowMenuDrawer(true);
@@ -1434,6 +1444,54 @@ export default function CalendarScreen() {
           />
         </View>
       )}
+
+      {/* Add Options Sheet — YouTube-style expandable FAB */}
+      <Modal visible={showAddOptions} animationType="fade" transparent={true}>
+        <TouchableWithoutFeedback onPress={() => setShowAddOptions(false)}>
+          <View style={styles.modalOverlay}>
+            <TouchableWithoutFeedback>
+              <View style={[styles.addOptionsSheet, { backgroundColor: colors.card }]}>
+                <View style={styles.addOptionsHandle} />
+                <TouchableOpacity
+                  style={styles.addOptionRow}
+                  onPress={() => {
+                    setShowAddOptions(false);
+                    openCreateModal();
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.addOptionIcon, { backgroundColor: BrandColors.loopBlue + '15' }]}>
+                    <Ionicons name="create-outline" size={22} color={BrandColors.loopBlue} />
+                  </View>
+                  <View style={styles.addOptionText}>
+                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>New Task</Text>
+                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>Create with time, location & category</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors[colorScheme ?? 'light'].icon} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.addOptionRow}
+                  onPress={() => {
+                    setShowAddOptions(false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    router.push('/(tabs)');
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.addOptionIcon, { backgroundColor: BrandColors.loopGreen + '15' }]}>
+                    <Ionicons name="sparkles-outline" size={22} color={BrandColors.loopGreen} />
+                  </View>
+                  <View style={styles.addOptionText}>
+                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>From Recommendations</Text>
+                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>Browse AI-curated suggestions</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={Colors[colorScheme ?? 'light'].icon} />
+                </TouchableOpacity>
+              </View>
+            </TouchableWithoutFeedback>
+          </View>
+        </TouchableWithoutFeedback>
+      </Modal>
 
       {/* Create Task Modal */}
       <Modal visible={showCreateModal} animationType="slide" transparent={true}>
@@ -2517,6 +2575,37 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
+  },
+  addOptionsSheet: {
+    borderTopLeftRadius: BorderRadius.xl,
+    borderTopRightRadius: BorderRadius.xl,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.xl,
+    paddingHorizontal: Spacing.lg,
+  },
+  addOptionsHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: 'rgba(128,128,128,0.3)',
+    alignSelf: 'center',
+    marginBottom: Spacing.lg,
+  },
+  addOptionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.md,
+    gap: Spacing.md,
+  },
+  addOptionIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  addOptionText: {
+    flex: 1,
   },
   modalContent: {
     borderTopLeftRadius: BorderRadius.xl,

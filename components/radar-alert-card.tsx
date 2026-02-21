@@ -85,7 +85,10 @@ export function RadarAlertCard({
   }));
 
   const event = notification.eventData;
-  const hasImage = !!event?.imageUrl;
+  const place = notification.placeData;
+  const isPlaceResult = !!place;
+
+  const hasImage = isPlaceResult ? !!place?.photoUrl : !!event?.imageUrl;
   const hasPrice = event?.priceMin != null;
   const hasTicketUrl = !!event?.ticketUrl;
 
@@ -138,51 +141,86 @@ export function RadarAlertCard({
           </Pressable>
         </View>
 
-        {/* Event image */}
+        {/* Image — place photo or event image */}
         {hasImage && (
           <Image
-            source={{ uri: event!.imageUrl }}
+            source={{ uri: isPlaceResult ? place!.photoUrl : event!.imageUrl }}
             style={styles.eventImage}
             resizeMode="cover"
           />
         )}
 
-        {/* Event details */}
+        {/* Details — place or event layout */}
         <View style={styles.detailsContainer}>
           <Text style={[styles.eventName, { color: colors.text }]} numberOfLines={2}>
-            {event?.name || notification.title}
+            {isPlaceResult ? place!.name : (event?.name || notification.title)}
           </Text>
 
-          {event?.venue && (
-            <View style={styles.infoRow}>
-              <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
-              <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={1}>
-                {event.venue}
-              </Text>
-            </View>
-          )}
-
-          {event?.date && (
-            <View style={styles.infoRow}>
-              <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
-              <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-                {formatEventDate(event.date)}{event.time ? `, ${formatEventTime(event.time)}` : ''}
-              </Text>
-            </View>
-          )}
-
-          <View style={styles.metaRow}>
-            {priceText && (
-              <View style={styles.priceBadge}>
-                <Text style={styles.priceText}>{priceText}</Text>
+          {isPlaceResult ? (
+            <>
+              {/* Place layout: address, rating, category, distance */}
+              <View style={styles.infoRow}>
+                <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {place!.address}
+                </Text>
               </View>
-            )}
-            {event?.distanceMiles != null && (
-              <Text style={[styles.distanceText, { color: colors.textSecondary }]}>
-                {event.distanceMiles.toFixed(1)} mi away
-              </Text>
-            )}
-          </View>
+
+              <View style={styles.metaRow}>
+                {place!.rating > 0 && (
+                  <View style={styles.priceBadge}>
+                    <Text style={styles.priceText}>
+                      {'★ '}{place!.rating.toFixed(1)}{place!.reviewsCount > 0 ? ` (${place!.reviewsCount})` : ''}
+                    </Text>
+                  </View>
+                )}
+                {place!.category && (
+                  <Text style={[styles.distanceText, { color: colors.textSecondary }]}>
+                    {place!.category}
+                  </Text>
+                )}
+                {place!.distance && (
+                  <Text style={[styles.distanceText, { color: colors.textSecondary }]}>
+                    {place!.distance}
+                  </Text>
+                )}
+              </View>
+            </>
+          ) : (
+            <>
+              {/* Event layout: venue, date, price */}
+              {event?.venue && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="location-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.infoText, { color: colors.textSecondary }]} numberOfLines={1}>
+                    {event.venue}
+                  </Text>
+                </View>
+              )}
+
+              {event?.date && (
+                <View style={styles.infoRow}>
+                  <Ionicons name="calendar-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+                    {formatEventDate(event.date)}{event.time ? `, ${formatEventTime(event.time)}` : ''}
+                  </Text>
+                </View>
+              )}
+
+              <View style={styles.metaRow}>
+                {priceText && (
+                  <View style={styles.priceBadge}>
+                    <Text style={styles.priceText}>{priceText}</Text>
+                  </View>
+                )}
+                {event?.distanceMiles != null && (
+                  <Text style={[styles.distanceText, { color: colors.textSecondary }]}>
+                    {event.distanceMiles.toFixed(1)} mi away
+                  </Text>
+                )}
+              </View>
+            </>
+          )}
 
           {/* Match reason */}
           <View style={styles.matchReasonRow}>
@@ -195,12 +233,17 @@ export function RadarAlertCard({
 
         {/* Action buttons */}
         <View style={styles.actionRow}>
-          {hasTicketUrl && (
+          {isPlaceResult ? (
+            <Pressable style={styles.primaryButton} onPress={handleSave}>
+              <Ionicons name="add-circle-outline" size={16} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>View Details</Text>
+            </Pressable>
+          ) : hasTicketUrl ? (
             <Pressable style={styles.primaryButton} onPress={handleGetTickets}>
               <Ionicons name="ticket-outline" size={16} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>Get Tickets</Text>
             </Pressable>
-          )}
+          ) : null}
           <Pressable
             style={[styles.secondaryButton, { borderColor: colors.border }]}
             onPress={handleSave}

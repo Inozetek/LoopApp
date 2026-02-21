@@ -7,20 +7,11 @@ import { Platform } from 'react-native';
 // Get Supabase credentials from environment variables
 const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
 // Validate environment variables
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error(
     'Missing Supabase environment variables. Please check your .env.local file.\n' +
     'Required: EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY'
-  );
-}
-
-if (!supabaseServiceKey) {
-  console.warn(
-    '⚠️ Missing SUPABASE_SERVICE_ROLE_KEY - Backend operations (cache seeding) will fail.\n' +
-    'Add SUPABASE_SERVICE_ROLE_KEY to your .env.local file for full functionality.'
   );
 }
 
@@ -59,24 +50,12 @@ const supabaseClient = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   },
 });
 
-// Create service role client for backend operations (bypasses RLS)
-// This client has elevated permissions and should only be used for:
-// - Cache seeding (places_cache, events_cache)
-// - Background jobs (cleanup, analytics)
-// - System operations that users shouldn't trigger directly
-const supabaseAdminClient = supabaseServiceKey
-  ? createClient<Database>(supabaseUrl, supabaseServiceKey, {
-      auth: {
-        autoRefreshToken: false,
-        persistSession: false,
-      },
-    })
-  : null;
-
 // Export with relaxed typing for MVP to avoid type errors
 // TODO: Fix type generation in future phase
 export const supabase = supabaseClient as any;
-export const supabaseAdmin = supabaseAdminClient as any;
+
+// NOTE: supabaseAdmin (service role client) has been removed from client-side code.
+// Service role operations (cache seeding, background jobs) should use Supabase Edge Functions.
 
 // Test connection helper
 export async function testSupabaseConnection(): Promise<boolean> {

@@ -39,10 +39,10 @@ import {
 import { CardActionMenu } from '@/components/card-action-menu';
 import { FEATURE_FLAGS } from '@/constants/feature-flags';
 
-const SCREEN_WIDTH = Dimensions.get('window').width;
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 const CARD_MARGIN = 8; // Minimal margins for near edge-to-edge cards
 const CARD_WIDTH = SCREEN_WIDTH - (CARD_MARGIN * 2);
-const IMAGE_HEIGHT = 400; // 60% of typical card
+const IMAGE_HEIGHT = Math.min(400, Math.max(280, Math.round(SCREEN_HEIGHT * 0.42))); // Responsive: 280-400px
 
 /**
  * Instagram-Style Photo Carousel Component
@@ -92,6 +92,13 @@ function PhotoCarousel({ photos, imageError, onImageError }: PhotoCarouselProps)
           index,
         })}
       />
+
+      {/* Photo counter (top right) */}
+      {photos.length > 1 && (
+        <View style={styles.photoCounter}>
+          <Text style={styles.photoCounterText}>{currentIndex + 1}/{photos.length}</Text>
+        </View>
+      )}
 
       {/* Instagram-style dot indicators */}
       <View style={styles.paginationContainer}>
@@ -323,10 +330,10 @@ function ActivityCardIntelligentComponent({
     });
   }, [placeId, recommendation.title, likeState.totalLikes, router]);
 
-  // Social proof seeding: add Google reviewsCount so new-user cards don't look dead
-  const googleReviewsSeed = recommendation.activity?.reviewsCount ?? 0;
-  const displayLikes = likeState.totalLikes + googleReviewsSeed;
-  const displayComments = (commentsCount ?? 0) + googleReviewsSeed;
+  // Honest engagement: Loop likes/comments at real values (no Google seeding)
+  const displayLikes = likeState.totalLikes;
+  const displayComments = commentsCount ?? 0;
+  // Google review count shown separately in metadata row (A2)
 
   // Pulsing border animation for pending invitations
   useEffect(() => {
@@ -365,10 +372,21 @@ function ActivityCardIntelligentComponent({
   // Check if this is a curated "Loop Pick"
   const isCurated = recommendation.isCurated === true;
 
-  // Calculate AI match percentage (for subtle badge)
+  // Calculate AI match score (for border glow only)
   const matchScore = score.finalScore || recommendation.score || 0;
-  const matchPercentage = Math.min(99, Math.round((matchScore / 100) * 100));
-  const isStrongMatch = matchPercentage >= 55;
+  const isStrongMatch = matchScore >= 55;
+
+  // Descriptive insight tag — max 1 per card, derived from scoreBreakdown
+  const getInsightTag = (): { icon: keyof typeof Ionicons.glyphMap; label: string } | null => {
+    if (!showInsights) return null;
+    if (hasFriendActivity) return { icon: 'people', label: 'Popular with friends' };
+    if (score.feedbackScore >= 12) return { icon: 'thumbs-up', label: 'Based on places you liked' };
+    if (score.locationScore >= 18) return { icon: 'navigate', label: 'Near your route' };
+    if (score.baseScore >= 35) return { icon: 'sparkles-outline' as any, label: 'Matches your interests' };
+    if (score.timeScore >= 12) return { icon: 'time', label: 'Great timing' };
+    return null;
+  };
+  const insightTag = getInsightTag();
 
   // Phase 2: Check card type for conditional rendering
   const isGroupPlan = Boolean(groupPlan);
@@ -451,61 +469,54 @@ function ActivityCardIntelligentComponent({
     return distanceStr;
   };
 
-  // AI Explanation - Use server-generated explanation if available, otherwise build smart fallback
+  // AI Explanation — backward-looking (verifiable references, not predictions)
+  // Research: Spotify "Because you listened to [Artist]" pattern builds more trust
   const getAIExplanation = () => {
-    // Prefer server-generated explanation if it's substantive
+    // Prefer server-generated explanation if it's substantive and backward-looking
     if (recommendation.aiExplanation &&
         recommendation.aiExplanation.length > 20 &&
         !recommendation.aiExplanation.includes('Recommended for you')) {
       return recommendation.aiExplanation;
     }
 
-    // Build smart explanation from score breakdown
     const parts: string[] = [];
+    const reviewCount = recommendation.activity?.reviewsCount ?? 0;
 
-    // Interest match (most important - what makes this relevant to user)
-    if (score.baseScore >= 35) {
-      parts.push(`Perfect for your ${recommendation.category?.toLowerCase() || 'interests'} craving`);
-    } else if (score.baseScore >= 25) {
-      parts.push(`Great ${recommendation.category?.toLowerCase() || 'spot'} pick`);
+    // Backward-looking: reference user's own history first
+    if (score.feedbackScore >= 12) {
+      const cat = recommendation.category?.toLowerCase() || 'places';
+      parts.push(`You've liked several ${cat} spots`);
+    } else if (score.baseScore >= 35) {
+      const cat = recommendation.category?.toLowerCase() || '';
+      parts.push(`Matches your ${cat} interests`);
     }
 
-    // Rating boost (social proof)
-    if (recommendation.rating >= 4.5) {
-      const reviewCount = recommendation.activity?.reviewsCount;
-      if (reviewCount && reviewCount >= 100) {
-        parts.push(`${recommendation.rating}★ favorite with ${reviewCount}+ reviews`);
-      } else {
-        parts.push(`highly rated ${recommendation.rating}★`);
-      }
+    // Data-source explanations (verifiable, not predictive)
+    if (recommendation.rating >= 4.5 && reviewCount >= 100) {
+      parts.push(`${recommendation.rating}★ on Google with ${formatCount(reviewCount)} reviews`);
+    } else if (recommendation.rating >= 4.0 && reviewCount >= 50) {
+      parts.push(`${recommendation.rating}★ with ${formatCount(reviewCount)} reviews`);
     } else if (recommendation.rating >= 4.0) {
-      parts.push(`solid ${recommendation.rating}★ rating`);
+      parts.push(`rated ${recommendation.rating}★`);
     }
 
-    // Location context
+    // Location context (verifiable)
     if (score.locationScore >= 18) {
-      parts.push('right on your route');
+      parts.push('on your route');
     } else if (score.locationScore >= 15) {
-      parts.push('nearby and convenient');
-    } else if (score.locationScore >= 10) {
-      parts.push('easy to get to');
+      parts.push('nearby');
     }
 
-    // Time context
-    if (score.timeScore >= 12) {
-      const hour = new Date().getHours();
-      if (hour < 12) parts.push('perfect morning spot');
-      else if (hour < 17) parts.push('great afternoon choice');
-      else parts.push('ideal for tonight');
-    }
-
-    // Combine parts intelligently
+    // Combine — max 2 parts for conciseness
     if (parts.length === 0) {
-      return recommendation.aiExplanation || 'Trending in your area';
+      // New user fallback: pure data-source explanation
+      if (recommendation.rating > 0 && reviewCount > 0) {
+        return `${recommendation.rating}★ on Google with ${formatCount(reviewCount)} reviews`;
+      }
+      return recommendation.aiExplanation || 'Popular in your area';
     } else if (parts.length === 1) {
       return parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
     } else {
-      // Join first 2 parts with dash
       return parts[0].charAt(0).toUpperCase() + parts[0].slice(1) + ' — ' + parts[1];
     }
   };
@@ -723,70 +734,91 @@ function ActivityCardIntelligentComponent({
             </Pressable>
           )}
 
-          {/* BADGES OVERLAY ON IMAGE */}
+          {/* BADGES OVERLAY ON IMAGE — priority capped at 2 */}
           <View style={styles.badgeContainer} pointerEvents="box-none">
-            {/* AI Match Badge (subtle, for strong matches — hidden when insights off) */}
-            {isStrongMatch && !isEvent && showInsights && (
-              <View style={styles.aiMatchBadge}>
-                <LinearGradient
-                  colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.aiMatchGradient}
-                >
-                  <IconSymbol name="sparkles" size={10} color="#FFFFFF" />
-                  <Text style={styles.aiMatchText}>{matchPercentage}%</Text>
-                </LinearGradient>
-              </View>
-            )}
+            {(() => {
+              // Badge priority system: max 2 badges per card
+              const badges: React.ReactNode[] = [];
 
-            {/* Event Badge (for Ticketmaster events) */}
-            {isEvent && eventMetadata && eventMetadata.start_time && (
-              <View style={styles.eventBadge}>
-                <View style={styles.eventBadgeHeader}>
-                  <Ionicons name="calendar" size={14} color="#fff" />
-                  <Text style={styles.eventBadgeDate}>
-                    {formatEventDate(eventMetadata.start_time)}
-                  </Text>
-                </View>
-                {eventMetadata.is_free === true && (
-                  <View style={styles.freeBadge}>
-                    <Text style={styles.freeBadgeText}>FREE</Text>
+              // Priority 1: Event date (always wins)
+              if (isEvent && eventMetadata?.start_time) {
+                badges.push(
+                  <View key="event" style={styles.eventBadge}>
+                    <View style={styles.eventBadgeHeader}>
+                      <Ionicons name="calendar" size={14} color="#fff" />
+                      <Text style={styles.eventBadgeDate}>
+                        {formatEventDate(eventMetadata.start_time)}
+                      </Text>
+                    </View>
+                    {eventMetadata.is_free === true && (
+                      <View style={styles.freeBadge}>
+                        <Text style={styles.freeBadgeText}>FREE</Text>
+                      </View>
+                    )}
                   </View>
-                )}
-              </View>
-            )}
+                );
+              }
 
-            {/* Loop Pick Badge (curated recommendations — only when insights shown) */}
-            {isCurated && !isEvent && showInsights && (
-              <View style={styles.loopPickBadge}>
-                <Ionicons name="star" size={11} color="#FFFFFF" />
-                <Text style={styles.loopPickText}>Loop Pick</Text>
-              </View>
-            )}
+              // Priority 2: Social proof badges (Friends > Trending > Loop Pick)
+              if (badges.length < 2 && hasFriendActivity && !isEvent) {
+                badges.push(
+                  <View key="friends" style={styles.loopPickBadge}>
+                    <Ionicons name="people" size={11} color="#FFFFFF" />
+                    <Text style={styles.loopPickText}>Friends Visited</Text>
+                  </View>
+                );
+              }
+              if (badges.length < 2 && isTrending && !isEvent) {
+                badges.push(
+                  <View key="trending" style={styles.trendingBadge}>
+                    <Ionicons name="flame" size={12} color="#FFFFFF" />
+                    <Text style={styles.trendingText}>Trending</Text>
+                  </View>
+                );
+              }
+              if (badges.length < 2 && isCurated && !isEvent && showInsights) {
+                badges.push(
+                  <View key="pick" style={styles.loopPickBadge}>
+                    <Ionicons name="star" size={11} color="#FFFFFF" />
+                    <Text style={styles.loopPickText}>Loop Pick</Text>
+                  </View>
+                );
+              }
 
-            {/* Trending Badge (high engagement — always visible) */}
-            {isTrending && !isEvent && !isCurated && (
-              <View style={styles.trendingBadge}>
-                <Ionicons name="flame" size={12} color="#FFFFFF" />
-                <Text style={styles.trendingText}>Trending</Text>
-              </View>
-            )}
+              // Priority 3: Insight tag (replaces old match %)
+              if (badges.length < 2 && insightTag && !isEvent) {
+                badges.push(
+                  <View key="insight" style={styles.insightTagBadge}>
+                    <Ionicons name={insightTag.icon} size={11} color="#FFFFFF" />
+                    <Text style={styles.insightTagText}>{insightTag.label}</Text>
+                  </View>
+                );
+              }
 
-            {/* Open Now Badge (only for places, not events) */}
-            {!isEvent && recommendation.openNow && (
-              <View style={styles.openNowBadge}>
-                <View style={styles.greenDot} />
-                <Text style={styles.openNowText}>Open Now</Text>
-              </View>
-            )}
+              // Priority 4: Open Now
+              if (badges.length < 2 && !isEvent && recommendation.openNow) {
+                badges.push(
+                  <View key="open" style={styles.openNowBadge}>
+                    <View style={styles.greenDot} />
+                    <Text style={styles.openNowText}>Open Now</Text>
+                  </View>
+                );
+              }
 
-            {/* Sponsored Badge */}
-            {recommendation.isSponsored && (
-              <View style={styles.sponsoredBadge}>
-                <Text style={styles.sponsoredText}>Sponsored</Text>
-              </View>
-            )}
+              // Sponsored always shows (counts toward limit)
+              if (recommendation.isSponsored) {
+                badges.push(
+                  <View key="sponsored" style={styles.sponsoredBadge}>
+                    <Text style={styles.sponsoredText}>Sponsored</Text>
+                  </View>
+                );
+              }
+
+              // Hard cap at 2 (sponsored doesn't count toward the cap)
+              const sponsoredBadge = badges.find(b => (b as any).key === 'sponsored');
+              const nonSponsored = badges.filter(b => (b as any).key !== 'sponsored').slice(0, 2);
+              return [...nonSponsored, sponsoredBadge].filter(Boolean);
+            })()}
           </View>
 
           {/* Category Badge (bottom left of image) */}
@@ -809,14 +841,27 @@ function ActivityCardIntelligentComponent({
             {recommendation.title}
           </Text>
 
-          {/* Metadata Row - Simplified (price + distance only) */}
+          {/* Metadata Row — price · ★ rating (reviews) · neighborhood — distance */}
           <View style={styles.metadata}>
             <Text style={[styles.metaText, { color: colors.text }]}>
               {getPriceDisplay(recommendation.priceRange)}
             </Text>
+            {recommendation.rating > 0 && (
+              <>
+                <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
+                <Text style={[styles.metaText, { color: colors.text }]}>
+                  {'★ '}{recommendation.rating.toFixed(1)}
+                  {(recommendation.activity?.reviewsCount ?? 0) > 0 && (
+                    <Text style={{ color: colors.textSecondary }}>{' '}({formatCount(recommendation.activity!.reviewsCount!)})</Text>
+                  )}
+                </Text>
+              </>
+            )}
             <Text style={[styles.metaDot, { color: colors.textSecondary }]}>•</Text>
-            <Text style={[styles.metaText, { color: colors.textSecondary }]}>
-              {getDistanceText(recommendation.distance)}
+            <Text style={[styles.metaText, { color: colors.textSecondary }]} numberOfLines={1}>
+              {recommendation.neighborhood
+                ? `${recommendation.neighborhood} — ${getDistanceText(recommendation.distance)}`
+                : getDistanceText(recommendation.distance)}
             </Text>
             {/* Time context chip (e.g. "☕ Morning spot", "🍽️ Dinner spot") */}
             {timeContext && !isGroupPlan && (
@@ -1163,24 +1208,6 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: Spacing.xs,
   },
-  // AI Match Badge (subtle, futuristic)
-  aiMatchBadge: {
-    borderRadius: BorderRadius.full,
-    overflow: 'hidden',
-  },
-  aiMatchGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    gap: 4,
-  },
-  aiMatchText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
   // Loop Pick Badge (curated recommendations)
   loopPickBadge: {
     flexDirection: 'row',
@@ -1232,6 +1259,22 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
     letterSpacing: 0.5,
+  },
+  // Insight tag badge (replaces gradient match %)
+  insightTagBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    paddingHorizontal: Spacing.sm,
+    paddingVertical: 4,
+    borderRadius: BorderRadius.full,
+    gap: 4,
+  },
+  insightTagText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   sponsoredBadge: {
     backgroundColor: 'rgba(0, 0, 0, 0.6)',
@@ -1382,8 +1425,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    paddingVertical: 4,
-    paddingHorizontal: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
   },
   actionCount: {
     fontSize: 13,
@@ -1444,6 +1487,22 @@ const styles = StyleSheet.create({
     width: '100%',
     height: IMAGE_HEIGHT,
     position: 'relative',
+  },
+  photoCounter: {
+    position: 'absolute',
+    top: Spacing.sm,
+    right: Spacing.sm,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: BorderRadius.full,
+    zIndex: 10,
+  },
+  photoCounterText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.3,
   },
   carouselImage: {
     width: CARD_WIDTH,

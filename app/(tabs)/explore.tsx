@@ -23,9 +23,11 @@ import {
   RefreshControl,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BrandColors } from '@/constants/brand';
 import { useAuth } from '@/contexts/auth-context';
@@ -60,6 +62,10 @@ export default function ExploreScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = ThemeColors[colorScheme];
   const { user } = useAuth();
+  const router = useRouter();
+
+  // Radar count state
+  const [radarCount, setRadarCount] = useState(0);
 
   // Search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -107,6 +113,18 @@ export default function ExploreScreen() {
       .sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))
       .slice(0, 6);
   }, [allItems]);
+
+  // Load radar count
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from('radar_hooks')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .then(({ count }) => setRadarCount(count || 0))
+      .catch(() => setRadarCount(0));
+  }, [user]);
 
   // Initial load
   useEffect(() => {
@@ -588,6 +606,8 @@ export default function ExploreScreen() {
             onClearRecent={() => setRecentSearches([])}
             onTrendingPress={handleItemPress}
             tileSize={SMALL_TILE_SIZE}
+            onRadarsPress={() => router.push('/radar-management' as any)}
+            radarCount={radarCount}
           />
         ) : isSearchActive ? (
           // Search mode: flat 3-column grid with rich tiles
@@ -608,7 +628,31 @@ export default function ExploreScreen() {
               keyExtractor={(item) => item.id}
               numColumns={3}
               columnWrapperStyle={styles.searchColumnWrapper}
-              ListHeaderComponent={ListHeader}
+              ListHeaderComponent={() => (
+                <TouchableOpacity
+                  style={[styles.radarCta, { backgroundColor: BrandColors.loopOrange + '12' }]}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    Alert.alert(
+                      'Create Radar',
+                      `Set a radar alert for "${searchQuery}"? You'll be notified when new matching spots appear.`,
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Create Radar',
+                          onPress: () => router.push('/radar-management' as any),
+                        },
+                      ]
+                    );
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="radio-outline" size={16} color={BrandColors.loopOrange} />
+                  <Text style={[styles.radarCtaText, { color: BrandColors.loopOrange }]}>
+                    Set a radar for "{searchQuery}"
+                  </Text>
+                </TouchableOpacity>
+              )}
               contentContainerStyle={styles.gridContent}
               showsVerticalScrollIndicator={false}
             />
@@ -752,5 +796,19 @@ const styles = StyleSheet.create({
   },
   loadingMoreText: {
     fontSize: 14,
+  },
+  radarCta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    marginHorizontal: Spacing.sm,
+    marginVertical: Spacing.sm,
+    borderRadius: 10,
+    gap: 6,
+  },
+  radarCtaText: {
+    fontSize: 13,
+    fontWeight: '600',
   },
 });

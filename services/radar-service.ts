@@ -348,6 +348,7 @@ export async function getRadarSummary(userId: string, tier: SubscriptionTier): P
     category: 0,
     venue: 0,
     proximity: 0,
+    keyword: 0,
   };
 
   for (const radar of radars) {

@@ -23,6 +23,7 @@ import {
   TextInput,
   Image,
   Alert,
+  Dimensions,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
@@ -30,6 +31,7 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { ProfileHeader } from '@/components/profile-header';
 import ProfileStatsBar, { TraitPills, type FeedbackStats } from '@/components/profile-stats-bar';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { getUserFeedbackStats } from '@/services/feedback-service';
@@ -38,6 +40,36 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 import { generatePersonalitySummary, type PersonalityInput } from '@/utils/personality-generator';
+
+// Spotify-style tile gradients per category (matches onboarding.tsx)
+const TILE_GRADIENTS: Record<string, [string, string]> = {
+  'Dining': ['#C62828', '#6D1B1B'],
+  'Coffee & Cafes': ['#795548', '#3E2723'],
+  'Bars & Nightlife': ['#6A1B9A', '#311B92'],
+  'Live Music': ['#E65100', '#BF360C'],
+  'Entertainment': ['#AD1457', '#880E4F'],
+  'Fitness & Gym': ['#2E7D32', '#1B5E20'],
+  'Outdoor Sports': ['#2E7D32', '#1B5E20'],
+  'Yoga & Mindfulness': ['#00796B', '#004D40'],
+  'Arts & Culture': ['#4527A0', '#283593'],
+  'Museums & Art': ['#4527A0', '#283593'],
+  'Photography': ['#37474F', '#263238'],
+  'Shopping': ['#C2185B', '#880E4F'],
+  'Beauty & Spa': ['#AD1457', '#880E4F'],
+  'Parks & Nature': ['#00796B', '#004D40'],
+  'Hiking & Trails': ['#2E7D32', '#1B5E20'],
+  'Movies & Cinema': ['#37474F', '#263238'],
+  'Comedy & Theater': ['#E65100', '#BF360C'],
+  'Gaming': ['#6A1B9A', '#311B92'],
+  'Desserts & Treats': ['#C62828', '#6D1B1B'],
+  'Sports': ['#1565C0', '#0D47A1'],
+  'Wellness': ['#00838F', '#006064'],
+};
+
+const SCREEN_W = Dimensions.get('window').width;
+const PROFILE_TILE_GAP = 4;
+const PROFILE_TILE_PADDING = Spacing.lg * 2; // ScrollView horizontal padding
+const PROFILE_TILE_SIZE = Math.floor((SCREEN_W - PROFILE_TILE_PADDING - (PROFILE_TILE_GAP * 2)) / 3);
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -354,106 +386,60 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Interests Section - TikTok-Style Grouped Categories */}
+        {/* Interests Section - Spotify-Style Gradient Tiles */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
             Your Interests ({selectedInterests.length})
           </Text>
           <Text style={[styles.hint, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
-            Select interests to get personalized recommendations
+            Tap to toggle — we'll refine as you use Loop
           </Text>
 
-          {/* Group interests by type (Food, Entertainment, etc.) */}
-          {(() => {
-            // Define category groupings manually based on interest types
-            const categoryGroups: { name: string; icon: string; interests: string[] }[] = [
-              {
-                name: 'Food & Dining',
-                icon: '🍽️',
-                interests: ['Dining', 'Coffee & Cafes', 'Bars & Nightlife', 'Desserts & Treats'],
-              },
-              {
-                name: 'Entertainment',
-                icon: '🎭',
-                interests: ['Live Music', 'Movies & Cinema', 'Comedy & Theater', 'Gaming'],
-              },
-              {
-                name: 'Fitness & Wellness',
-                icon: '💪',
-                interests: ['Fitness & Gym', 'Outdoor Sports', 'Yoga & Mindfulness'],
-              },
-              {
-                name: 'Arts & Culture',
-                icon: '🎨',
-                interests: ['Museums & Art', 'Photography'],
-              },
-              {
-                name: 'Outdoors & Nature',
-                icon: '🌲',
-                interests: ['Parks & Nature', 'Hiking & Trails'],
-              },
-              {
-                name: 'Shopping & Services',
-                icon: '🛍️',
-                interests: ['Shopping', 'Beauty & Spa'],
-              },
-            ];
+          <View style={styles.profileTileGrid}>
+            {ONBOARDING_INTERESTS.map((interest) => {
+              const isSelected = selectedInterests.includes(interest);
+              const group = INTEREST_GROUPS[interest];
+              const gradientColors = TILE_GRADIENTS[interest] || ['#333', '#111'];
 
-            // Filter to only show groups that have at least one interest in ONBOARDING_INTERESTS
-            return categoryGroups
-              .filter(group => group.interests.some(i => ONBOARDING_INTERESTS.includes(i)))
-              .map((group) => {
-                const validInterests = group.interests.filter(i => ONBOARDING_INTERESTS.includes(i));
-                if (validInterests.length === 0) return null;
-
-                return (
-                  <View key={group.name} style={styles.interestCategory}>
-                    {/* Category Header */}
-                    <View style={styles.interestCategoryHeader}>
-                      <Text style={styles.interestCategoryIcon}>{group.icon}</Text>
-                      <Text style={[styles.interestCategoryTitle, { color: colors.text }]}>
-                        {group.name}
+              return (
+                <TouchableOpacity
+                  key={interest}
+                  style={[
+                    styles.profileTile,
+                    {
+                      opacity: isSelected ? 1 : 0.7,
+                      borderWidth: isSelected ? 2 : 1,
+                      borderColor: isSelected ? BrandColors.loopBlue : 'rgba(255,255,255,0.12)',
+                    },
+                  ]}
+                  onPress={() => toggleInterest(interest)}
+                  activeOpacity={0.7}
+                >
+                  <LinearGradient
+                    colors={gradientColors}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.profileTileGradient}
+                  >
+                    <Text style={styles.profileTileIcon}>{group?.icon}</Text>
+                    <LinearGradient
+                      colors={['transparent', 'rgba(0,0,0,0.6)']}
+                      style={styles.profileTileOverlay}
+                    >
+                      <Text style={styles.profileTileName} numberOfLines={2}>
+                        {interest}
                       </Text>
-                      <Text style={[styles.interestCategoryCount, { color: colors.textSecondary }]}>
-                        {validInterests.filter(i => selectedInterests.includes(i)).length}/{validInterests.length}
-                      </Text>
-                    </View>
-
-                    {/* Interests in this category */}
-                    <View style={styles.interestsGrid}>
-                      {validInterests.map((interest) => {
-                        const isSelected = selectedInterests.includes(interest);
-                        const interestGroup = INTEREST_GROUPS[interest];
-                        return (
-                          <TouchableOpacity
-                            key={interest}
-                            style={[
-                              styles.interestChip,
-                              {
-                                backgroundColor: isSelected ? BrandColors.loopBlue : colors.card,
-                                borderColor: isSelected ? BrandColors.loopBlue : colors.border,
-                              }
-                            ]}
-                            onPress={() => toggleInterest(interest)}
-                          >
-                            <Text style={styles.interestEmoji}>{interestGroup?.icon}</Text>
-                            <Text style={[
-                              styles.interestText,
-                              { color: isSelected ? '#FFFFFF' : colors.text }
-                            ]}>
-                              {interest}
-                            </Text>
-                            {isSelected && (
-                              <Ionicons name="checkmark-circle" size={14} color="#FFFFFF" />
-                            )}
-                          </TouchableOpacity>
-                        );
-                      })}
-                    </View>
-                  </View>
-                );
-              });
-          })()}
+                    </LinearGradient>
+                    {isSelected && (
+                      <View style={[styles.profileTileCheck, { backgroundColor: BrandColors.loopBlue }]}>
+                        <Ionicons name="checkmark" size={14} color="#fff" />
+                      </View>
+                    )}
+                  </LinearGradient>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
         </View>
 
         {/* Save Button — only visible when edits have been made */}
@@ -588,48 +574,54 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
-  // TikTok-Style Interest Categories (v2.0)
-  interestCategory: {
-    marginBottom: Spacing.lg,
-  },
-  interestCategoryHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Spacing.sm,
-    gap: Spacing.xs,
-  },
-  interestCategoryIcon: {
-    fontSize: 18,
-  },
-  interestCategoryTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    flex: 1,
-  },
-  interestCategoryCount: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  interestsGrid: {
+  // Spotify-Style Interest Tiles (matches onboarding)
+  profileTileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.xs,
+    gap: PROFILE_TILE_GAP,
   },
-  interestChip: {
-    flexDirection: 'row',
+  profileTile: {
+    width: PROFILE_TILE_SIZE,
+    height: PROFILE_TILE_SIZE,
+    borderRadius: BorderRadius.md,
+    overflow: 'hidden',
+  },
+  profileTileGradient: {
+    flex: 1,
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: Spacing.sm,
-    paddingVertical: 6,
-    borderRadius: BorderRadius.full,
-    borderWidth: 1,
+    justifyContent: 'center',
   },
-  interestEmoji: {
-    fontSize: 14,
+  profileTileIcon: {
+    fontSize: 24,
+    marginBottom: 4,
   },
-  interestText: {
-    fontSize: 13,
-    fontWeight: '500',
+  profileTileOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 6,
+    paddingBottom: 6,
+    paddingTop: 16,
+  },
+  profileTileName: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '600',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0,0,0,0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
+  },
+  profileTileCheck: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   saveButton: {
     height: 56,

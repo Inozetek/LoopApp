@@ -35,7 +35,7 @@ jest.mock('@/lib/supabase', () => ({
       })),
     })),
   },
-  supabaseAdmin: null,
+  // supabaseAdmin removed from client code (moved to Edge Functions)
 }));
 
 // Mock Google Places API

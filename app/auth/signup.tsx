@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   ScrollView,
+  Linking,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -17,6 +18,8 @@ import { Link, router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
+
+const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 
 // Always-dark theme
 const theme = {
@@ -48,6 +51,10 @@ export default function SignupScreen() {
   async function handleSignUp() {
     if (!email || !password || !confirmPassword) {
       Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+    if (!isValidEmail(email)) {
+      Alert.alert('Invalid Email', 'Please enter a valid email address');
       return;
     }
     if (password !== confirmPassword) {
@@ -210,6 +217,7 @@ export default function SignupScreen() {
                     onChangeText={setEmail}
                     autoCapitalize="none"
                     keyboardType="email-address"
+                    maxLength={254}
                     editable={!isLoading}
                   />
                   <TextInput
@@ -219,6 +227,7 @@ export default function SignupScreen() {
                     value={password}
                     onChangeText={setPassword}
                     secureTextEntry
+                    maxLength={128}
                     editable={!isLoading}
                   />
                   <TextInput
@@ -228,6 +237,7 @@ export default function SignupScreen() {
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
                     secureTextEntry
+                    maxLength={128}
                     editable={!isLoading}
                   />
                   <TouchableOpacity
@@ -270,7 +280,10 @@ export default function SignupScreen() {
 
             {/* Terms - Bottom */}
             <Text style={[styles.terms, { color: theme.textSubtle }]}>
-              by continuing, you agree to our terms and privacy policy
+              by continuing, you agree to our{' '}
+              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/terms')}>terms</Text>
+              {' '}and{' '}
+              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/privacy')}>privacy policy</Text>
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>

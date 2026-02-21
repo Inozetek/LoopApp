@@ -15,6 +15,7 @@ import {
   Modal,
   FlatList,
   ActivityIndicator,
+  Linking,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
@@ -158,6 +159,60 @@ export default function SettingsScreen() {
           ))}
         </View>
       </View>
+    );
+  };
+
+  const handleDeleteAccount = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Alert.alert(
+      'Delete Account',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete Account',
+          style: 'destructive',
+          onPress: () => {
+            // Second confirmation
+            Alert.alert(
+              'Are you absolutely sure?',
+              'All your data including recommendations, feedback, friends, and calendar events will be permanently deleted.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Yes, Delete Everything',
+                  style: 'destructive',
+                  onPress: async () => {
+                    try {
+                      // Delete user data from all tables
+                      if (!user) return;
+                      const { supabase } = require('@/lib/supabase');
+
+                      // Delete in order (respect foreign keys)
+                      await supabase.from('feedback').delete().eq('user_id', user.id);
+                      await supabase.from('calendar_events').delete().eq('user_id', user.id);
+                      await supabase.from('hook_notifications').delete().eq('user_id', user.id);
+                      await supabase.from('radar_hooks').delete().eq('user_id', user.id);
+                      await supabase.from('activity_likes').delete().eq('user_id', user.id);
+                      await supabase.from('activity_comments').delete().eq('user_id', user.id);
+                      await supabase.from('friendships').delete().or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+                      await supabase.from('blocked_activities').delete().eq('user_id', user.id);
+                      await supabase.from('users').delete().eq('id', user.id);
+
+                      // Sign out
+                      await signOut();
+                      Alert.alert('Account Deleted', 'Your account has been successfully deleted.');
+                    } catch (error) {
+                      console.error('Error deleting account:', error);
+                      Alert.alert('Error', 'Failed to delete account. Please try again or contact support.');
+                    }
+                  },
+                },
+              ]
+            );
+          },
+        },
+      ]
     );
   };
 
@@ -332,6 +387,15 @@ export default function SettingsScreen() {
               }
             )
           )}
+
+          {renderMenuItem(
+            'trash',
+            BrandColors.error,
+            BrandColors.error + '20',
+            'Delete Account',
+            'Permanently delete your account and data',
+            handleDeleteAccount
+          )}
         </View>
 
         {/* Preferences Section */}
@@ -405,7 +469,14 @@ export default function SettingsScreen() {
             BrandColors.loopPurple + '20',
             'Terms & Privacy',
             undefined,
-            () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              Alert.alert('Terms & Privacy', 'Which would you like to view?', [
+                { text: 'Terms of Service', onPress: () => Linking.openURL('https://loopapp.com/terms') },
+                { text: 'Privacy Policy', onPress: () => Linking.openURL('https://loopapp.com/privacy') },
+                { text: 'Cancel', style: 'cancel' },
+              ]);
+            }
           )}
 
           {renderMenuItem(

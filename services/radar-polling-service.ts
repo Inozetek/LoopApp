@@ -11,8 +11,10 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import type { UserHook, HookType, CachedEvent, RadarEventData, HookNotification } from '@/types/radar';
+import type { UserHook, HookType, CachedEvent, RadarEventData, PlaceRadarData, HookNotification } from '@/types/radar';
 import { sendRadarPushNotification } from '@/services/radar-push-service';
+import { searchPlacesByText } from '@/services/places-text-search';
+import type { PlaceResult } from '@/services/places-common';
 import type { SubscriptionTier } from '@/types/subscription';
 
 // ============================================================================
@@ -298,7 +300,128 @@ function transformTicketmasterEvent(event: any): CachedEvent | null {
 }
 
 // ============================================================================
-// HOOK MATCHING
+// KEYWORD RADAR — PLACE MATCHING
+// ============================================================================
+
+/** Default radius for keyword place search (8km ≈ 5 miles) */
+const KEYWORD_SEARCH_RADIUS = 8000;
+
+/** Max place results per keyword per poll cycle */
+const MAX_KEYWORD_RESULTS = 3;
+
+/** Cache TTL for keyword searches (7 days — places change less than events) */
+const KEYWORD_CACHE_DAYS = 7;
+
+/**
+ * Search for places matching a keyword radar.
+ * Uses Google Places Text Search API with caching.
+ */
+export async function matchHookToPlaces(
+  hook: UserHook,
+  userLocation?: { lat: number; lng: number },
+): Promise<PlaceRadarData[]> {
+  const keyword = hook.searchKeyword || hook.entityName || '';
+  if (!keyword) return [];
+
+  const city = DEFAULT_CITY;
+  const cacheKey = `keyword:${keyword.toLowerCase().replace(/\s+/g, '_')}:${city.toLowerCase()}`;
+
+  // Check cache first (7-day TTL)
+  const cachedPlaces = await getCachedKeywordResults(cacheKey);
+  if (cachedPlaces) {
+    return cachedPlaces.slice(0, MAX_KEYWORD_RESULTS);
+  }
+
+  // No cache — query Google Places Text Search
+  const location = userLocation || { lat: 32.7767, lng: -96.7970 }; // Default: Dallas
+  const places = await searchPlacesByText({
+    query: keyword,
+    location,
+    radius: KEYWORD_SEARCH_RADIUS,
+    maxResults: 10,
+  });
+
+  // Transform to PlaceRadarData
+  const results: PlaceRadarData[] = places.slice(0, MAX_KEYWORD_RESULTS).map(p => ({
+    placeId: p.place_id,
+    name: p.name,
+    address: p.formatted_address || p.vicinity || '',
+    rating: p.rating || 0,
+    reviewsCount: p.user_ratings_total || 0,
+    priceLevel: p.price_level || 0,
+    photoUrl: undefined, // Photo requires separate API call
+    category: p.types?.[0]?.replace(/_/g, ' ') || 'place',
+    matchedKeyword: keyword,
+  }));
+
+  // Cache for 7 days
+  await cacheKeywordResults(cacheKey, results, keyword);
+
+  return results;
+}
+
+/**
+ * Check keyword cache.
+ */
+async function getCachedKeywordResults(cacheKey: string): Promise<PlaceRadarData[] | null> {
+  try {
+    const { data, error } = await supabase
+      .from('event_cache')
+      .select('*')
+      .eq('cache_key', cacheKey)
+      .single();
+
+    if (error || !data) return null;
+
+    // Check expiry
+    if (data.expires_at && new Date(data.expires_at) < new Date()) {
+      return null;
+    }
+
+    return data.events as unknown as PlaceRadarData[];
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Cache keyword search results (reuse event_cache table).
+ */
+async function cacheKeywordResults(
+  cacheKey: string,
+  results: PlaceRadarData[],
+  keyword: string,
+): Promise<void> {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + KEYWORD_CACHE_DAYS);
+
+  const nextFetch = new Date();
+  nextFetch.setDate(nextFetch.getDate() + KEYWORD_CACHE_DAYS);
+
+  try {
+    await supabase
+      .from('event_cache')
+      .upsert(
+        {
+          cache_key: cacheKey,
+          source: 'google_places',
+          entity_type: 'keyword',
+          entity_name: keyword,
+          events: results as any, // Reuse events JSONB column for place data
+          location_city: DEFAULT_CITY,
+          last_fetched_at: new Date().toISOString(),
+          next_fetch_at: nextFetch.toISOString(),
+          expires_at: expiresAt.toISOString(),
+        },
+        { onConflict: 'cache_key' }
+      );
+  } catch (err) {
+    console.error('[RadarPolling] Error caching keyword results:', err);
+  }
+}
+
+// ============================================================================
+// HOOK MATCHING — EVENTS
 // ============================================================================
 
 /** Map Loop interest categories to Ticketmaster classification names */
@@ -347,6 +470,10 @@ export async function matchHookToEvents(hook: UserHook): Promise<CachedEvent[]> 
       fetchFn = () => searchTicketmasterByVenue(venue, city);
       break;
     }
+    case 'keyword':
+      // Keyword hooks use Places Text Search, not Ticketmaster
+      // Handled separately in pollRadarsForUser
+      return [];
     default:
       return [];
   }
@@ -422,11 +549,74 @@ export async function pollRadarsForUser(userId: string, tier: SubscriptionTier =
         entityName: hookRow.entity_name,
         entityId: hookRow.entity_id,
         category: hookRow.category,
+        searchKeyword: hookRow.search_keyword,
         isActive: hookRow.is_active,
         triggerCount: hookRow.trigger_count || 0,
         createdAt: hookRow.created_at,
         updatedAt: hookRow.updated_at,
       };
+
+      // Keyword hooks use Places Text Search (not Ticketmaster)
+      if (hook.hookType === 'keyword') {
+        const places = await matchHookToPlaces(hook);
+        if (places.length === 0) continue;
+
+        // Dedup: check existing notifications by place_id
+        const { data: existingNotifs } = await supabase
+          .from('hook_notifications')
+          .select('place_data')
+          .eq('hook_id', hook.id)
+          .eq('user_id', userId);
+
+        const notifiedPlaceIds = new Set(
+          (existingNotifs || [])
+            .map((n: any) => n.place_data?.placeId)
+            .filter(Boolean)
+        );
+
+        for (const place of places) {
+          if (notifiedPlaceIds.has(place.placeId)) continue;
+
+          const expiresAt = new Date();
+          expiresAt.setDate(expiresAt.getDate() + KEYWORD_CACHE_DAYS);
+
+          const { data: insertedNotif } = await supabase.from('hook_notifications').insert({
+            user_id: userId,
+            hook_id: hook.id,
+            title: place.name,
+            body: `Matches your "${place.matchedKeyword}" radar — ${place.rating}★`,
+            place_data: place,
+            status: 'pending',
+            expires_at: expiresAt.toISOString(),
+          }).select().single();
+
+          if (insertedNotif) {
+            const notification: HookNotification = {
+              id: insertedNotif.id,
+              userId,
+              hookId: hook.id,
+              title: place.name,
+              body: `Matches your "${place.matchedKeyword}" radar — ${place.rating}★`,
+              placeData: place,
+              status: 'pending',
+              createdAt: insertedNotif.created_at,
+            };
+            await sendRadarPushNotification(notification, tier);
+          }
+          newNotifications++;
+        }
+
+        if (newNotifications > 0) {
+          await supabase
+            .from('user_hooks')
+            .update({
+              last_triggered_at: new Date().toISOString(),
+              trigger_count: hook.triggerCount + newNotifications,
+            })
+            .eq('id', hook.id);
+        }
+        continue;
+      }
 
       const events = await matchHookToEvents(hook);
       if (events.length === 0) continue;

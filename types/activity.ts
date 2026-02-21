@@ -65,6 +65,7 @@ export interface Recommendation {
   title: string;
   category: string;
   location: string;
+  neighborhood?: string; // Parsed area name (e.g. "Deep Ellum", "Uptown")
   distance: string;
   priceRange: number;
   rating: number;

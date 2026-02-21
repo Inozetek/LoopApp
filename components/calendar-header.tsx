@@ -16,6 +16,7 @@ import * as Haptics from 'expo-haptics';
 import { Spacing, Typography } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
 
 interface CalendarHeaderProps {
   title?: string;
@@ -54,7 +55,8 @@ export function CalendarHeader({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top + Spacing.sm }]}>
+    <BlurHeaderWrapper style={{ paddingTop: insets.top + Spacing.sm }}>
+    <View style={styles.container}>
       {/* Left Side - Menu Button */}
       <View style={styles.leftSection}>
         {onMenuPress && (
@@ -94,6 +96,7 @@ export function CalendarHeader({
         )}
       </View>
     </View>
+    </BlurHeaderWrapper>
   );
 }
 
@@ -104,8 +107,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: Spacing.md,
     paddingBottom: Spacing.sm,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
   },
   leftSection: {
     width: 40,
