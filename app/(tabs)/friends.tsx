@@ -9,7 +9,17 @@ import {
   TextInput,
   Alert,
   Image,
+  Dimensions,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useAnimatedProps,
+  withSpring,
+  interpolate,
+  Extrapolate,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -40,6 +50,12 @@ import {
   getFriendGroups,
 } from '@/services/friend-groups-service';
 import { getUnreadCount as getChatUnreadCount } from '@/services/chat-service';
+import { useMenuAnimation } from '@/contexts/menu-animation-context';
+import { useSearchAnimation } from '@/contexts/search-animation-context';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
+import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
+import { MainMenuModal } from '@/components/main-menu-modal';
+import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
 
 interface Friend {
   id: string;
@@ -101,6 +117,159 @@ export default function FriendsScreen() {
 
   // Chat unread count
   const [chatUnreadCount, setChatUnreadCount] = useState(0);
+
+  // ── Menu + Search drawer animation (mirrors rec feed pattern) ──
+  const { menuProgress } = useMenuAnimation();
+  const { searchProgress } = useSearchAnimation();
+
+  // Menu drawer state
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [menuGestureControlled, setMenuGestureControlled] = useState(false);
+
+  // Search drawer state
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [searchGestureControlled, setSearchGestureControlled] = useState(false);
+
+  // Drawer dimension constants
+  const DRAWER_WIDTH = Dimensions.get('window').width * MENU_DIMENSIONS.widthPercentage;
+  const SEARCH_DRAWER_WIDTH = Dimensions.get('window').width * 0.92;
+  const EDGE_ZONE_MENU = 30;
+
+  // Animated style: scale + translateX + borderRadius on main content
+  const contentAnimStyle = useAnimatedStyle(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    const menuTx = interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP);
+    const searchTx = interpolate(searchProgress.value, [0, 1], [0, -MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP);
+    return {
+      transform: [
+        { scale: interpolate(combinedP, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
+        { translateX: menuTx + searchTx },
+      ],
+      borderRadius: interpolate(combinedP, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
+      overflow: combinedP > 0.01 ? 'hidden' as const : 'visible' as const,
+    };
+  });
+
+  // Animated props for blur intensity overlay
+  const contentBlurProps = useAnimatedProps(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    return {
+      intensity: SUPPORTS_ANIMATED_BLUR
+        ? interpolate(combinedP, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
+        : MENU_CONTENT_BLUR.backgroundBlurIntensity,
+    };
+  });
+
+  // Animated style for blur overlay opacity
+  const contentBlurOverlay = useAnimatedStyle(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    return {
+      opacity: SUPPORTS_ANIMATED_BLUR
+        ? (combinedP > 0.01 ? 1 : 0)
+        : interpolate(combinedP, [0, 1], [0, 1], Extrapolate.CLAMP),
+    };
+  });
+
+  // ── Menu gesture handlers (swipe right to open from header button) ──
+  const handleHeaderMenuDrag = useCallback((translationX: number) => {
+    const progress = Math.min(translationX / DRAWER_WIDTH, 1);
+    menuProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [DRAWER_WIDTH, menuProgress, showMainMenu]);
+
+  const handleHeaderMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    if (translationX > 60 || velocityX > 600) {
+      menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showMainMenu) {
+        setMenuGestureControlled(true);
+        setShowMainMenu(true);
+      }
+    } else {
+      menuProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowMainMenu(false);
+      setMenuGestureControlled(false);
+    }
+  }, [showMainMenu, menuProgress]);
+
+  // ── Search gesture handlers (swipe left to open from header button) ──
+  const handleHeaderSearchDrag = useCallback((absTranslationX: number) => {
+    const progress = Math.min(absTranslationX / SEARCH_DRAWER_WIDTH, 1);
+    searchProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showAdvancedSearch) {
+      setSearchGestureControlled(true);
+      setShowAdvancedSearch(true);
+    }
+  }, [SEARCH_DRAWER_WIDTH, searchProgress, showAdvancedSearch]);
+
+  const handleHeaderSearchDragEnd = useCallback((absTranslationX: number, absVelocityX: number) => {
+    if (absTranslationX > 60 || absVelocityX > 600) {
+      searchProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showAdvancedSearch) {
+        setSearchGestureControlled(true);
+        setShowAdvancedSearch(true);
+      }
+    } else {
+      searchProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowAdvancedSearch(false);
+      setSearchGestureControlled(false);
+    }
+  }, [showAdvancedSearch, searchProgress]);
+
+  // Close handlers
+  const handleCloseMenu = useCallback(() => {
+    setShowMainMenu(false);
+    setMenuGestureControlled(false);
+  }, []);
+
+  const handleCloseSearch = useCallback(() => {
+    setShowAdvancedSearch(false);
+    setSearchGestureControlled(false);
+  }, []);
+
+  // Edge pan gesture: swipe from left edge to open menu
+  const openMenuFromGesture = useCallback(() => {
+    if (!showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [showMainMenu]);
+
+  const handleMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    if (translationX > 60 || velocityX > 600) {
+      menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showMainMenu) {
+        setMenuGestureControlled(true);
+        setShowMainMenu(true);
+      }
+    } else {
+      menuProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowMainMenu(false);
+      setMenuGestureControlled(false);
+    }
+  }, [showMainMenu, menuProgress]);
+
+  const menuEdgeGesture = Gesture.Pan()
+    .activeOffsetX([10, 999])
+    .failOffsetY([-5, 5])
+    .onUpdate((event) => {
+      if (event.absoluteX - event.translationX > EDGE_ZONE_MENU) return;
+      const progress = Math.min(event.translationX / DRAWER_WIDTH, 1);
+      menuProgress.value = Math.max(0, progress);
+      if (progress > 0.05) {
+        runOnJS(openMenuFromGesture)();
+      }
+    })
+    .onEnd((event) => {
+      if (event.absoluteX - event.translationX > EDGE_ZONE_MENU) return;
+      runOnJS(handleMenuDragEnd)(event.translationX, event.velocityX);
+    })
+    .runOnJS(false);
 
   useEffect(() => {
     loadFriends();
@@ -671,8 +840,10 @@ export default function FriendsScreen() {
   );
 
   return (
-    <SwipeableLayout>
-      <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
+    <SwipeableLayout disableLeftEdgeSwipe>
+      <GestureDetector gesture={menuEdgeGesture}>
+      <View style={{ flex: 1, backgroundColor: Colors[colorScheme ?? 'light'].background }}>
+      <Animated.View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }, contentAnimStyle]}>
         {/* Header */}
         <FriendsHeader
           onAddPress={openSocialActionSheet}
@@ -1052,7 +1223,19 @@ export default function FriendsScreen() {
         userId={user?.id || ''}
         onSaved={loadFriendGroups}
       />
+
+        {/* Blur overlay for menu/search transition */}
+        <AnimatedBlurView
+          animatedProps={contentBlurProps}
+          tint="dark"
+          experimentalBlurMethod={ANDROID_BLUR_METHOD}
+          style={[StyleSheet.absoluteFill, contentBlurOverlay]}
+          pointerEvents="none"
+        />
+      </Animated.View>
+
       </View>
+      </GestureDetector>
     </SwipeableLayout>
   );
 }

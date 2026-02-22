@@ -25,6 +25,15 @@ import {
   Alert,
   TouchableOpacity,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useAnimatedProps,
+  withSpring,
+  interpolate,
+  Extrapolate,
+  runOnJS,
+} from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -41,6 +50,10 @@ import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { ExploreHeader } from '@/components/explore-header';
 import { ExploreTile } from '@/components/explore-tile';
 import { SearchSuggestionsPanel } from '@/components/search-suggestions-panel';
+import { MainMenuModal } from '@/components/main-menu-modal';
+import { useMenuAnimation } from '@/contexts/menu-animation-context';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
+import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
 import type { Recommendation, Activity, RecommendationScore } from '@/types/activity';
 import type { ExploreItem, ExploreRow } from '@/types/explore';
 import {
@@ -68,6 +81,106 @@ export default function ExploreScreen() {
   const safeInsets = useSafeAreaInsets();
   /** Height of the absolutely-positioned explore blur header (taller due to search + chips) */
   const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.explore;
+
+  // ── Menu drawer animation ──
+  const { menuProgress } = useMenuAnimation();
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [menuGestureControlled, setMenuGestureControlled] = useState(false);
+
+  const DRAWER_WIDTH = Dimensions.get('window').width * MENU_DIMENSIONS.widthPercentage;
+  const EDGE_ZONE_MENU = 30;
+
+  // Content scale + shift when menu opens
+  const contentAnimStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      transform: [
+        { scale: interpolate(menuProgress.value, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
+        { translateX: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP) },
+      ],
+      borderRadius: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
+      overflow: menuProgress.value > 0.01 ? 'hidden' as const : 'visible' as const,
+    };
+  });
+
+  // Blur intensity on content when menu opens
+  const contentBlurProps = useAnimatedProps(() => {
+    'worklet';
+    return {
+      intensity: SUPPORTS_ANIMATED_BLUR
+        ? interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
+        : MENU_CONTENT_BLUR.backgroundBlurIntensity,
+    };
+  });
+
+  // Blur overlay opacity
+  const contentBlurOverlay = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      opacity: SUPPORTS_ANIMATED_BLUR
+        ? (menuProgress.value > 0.01 ? 1 : 0)
+        : interpolate(menuProgress.value, [0, 1], [0, 1], Extrapolate.CLAMP),
+    };
+  });
+
+  // Menu drag handlers for header button
+  const handleHeaderMenuDrag = useCallback((translationX: number) => {
+    const progress = Math.min(translationX / DRAWER_WIDTH, 1);
+    menuProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [DRAWER_WIDTH, menuProgress, showMainMenu]);
+
+  const handleMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    if (translationX > 60 || velocityX > 600) {
+      menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showMainMenu) {
+        setMenuGestureControlled(true);
+        setShowMainMenu(true);
+      }
+    } else {
+      menuProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowMainMenu(false);
+      setMenuGestureControlled(false);
+    }
+  }, [showMainMenu, menuProgress]);
+
+  const handleHeaderMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    handleMenuDragEnd(translationX, velocityX);
+  }, [handleMenuDragEnd]);
+
+  /** Open the menu modal when gesture crosses threshold */
+  const openMenuFromGesture = useCallback(() => {
+    if (!showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [showMainMenu]);
+
+  /** Left-edge pan gesture for opening menu */
+  const menuEdgeGesture = Gesture.Pan()
+    .activeOffsetX([10, 999])
+    .failOffsetY([-5, 5])
+    .onUpdate((event) => {
+      if (event.absoluteX - event.translationX > EDGE_ZONE_MENU) return;
+      const progress = Math.min(event.translationX / DRAWER_WIDTH, 1);
+      menuProgress.value = Math.max(0, progress);
+      if (progress > 0.05) {
+        runOnJS(openMenuFromGesture)();
+      }
+    })
+    .onEnd((event) => {
+      if (event.absoluteX - event.translationX > EDGE_ZONE_MENU) return;
+      runOnJS(handleMenuDragEnd)(event.translationX, event.velocityX);
+    })
+    .runOnJS(false);
+
+  const handleCloseMenu = useCallback(() => {
+    setShowMainMenu(false);
+    setMenuGestureControlled(false);
+  }, []);
 
   // Radar count state
   const [radarCount, setRadarCount] = useState(0);
@@ -127,7 +240,7 @@ export default function ExploreScreen() {
       .select('id', { count: 'exact', head: true })
       .eq('user_id', user.id)
       .eq('is_active', true)
-      .then(({ count }) => setRadarCount(count || 0))
+      .then(({ count }: { count: number | null }) => setRadarCount(count || 0))
       .catch(() => setRadarCount(0));
   }, [user]);
 
@@ -581,8 +694,10 @@ export default function ExploreScreen() {
   const showSuggestions = isSearchFocused && searchQuery.length < 2;
 
   return (
-    <SwipeableLayout>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <SwipeableLayout disableLeftEdgeSwipe>
+      <GestureDetector gesture={menuEdgeGesture}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Animated.View style={[styles.container, { backgroundColor: colors.background }, contentAnimStyle]}>
         <ExploreHeader
           searchQuery={searchQuery}
           onSearchChange={handleSearch}
@@ -746,7 +861,19 @@ export default function ExploreScreen() {
             }}
           />
         )}
+
+        {/* Blur overlay for menu transition */}
+        <AnimatedBlurView
+          animatedProps={contentBlurProps}
+          tint="dark"
+          experimentalBlurMethod={ANDROID_BLUR_METHOD}
+          style={[StyleSheet.absoluteFill, contentBlurOverlay]}
+          pointerEvents="none"
+        />
+      </Animated.View>
+
       </View>
+      </GestureDetector>
     </SwipeableLayout>
   );
 }

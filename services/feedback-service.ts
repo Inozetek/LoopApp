@@ -6,6 +6,7 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { recordActivity } from '@/services/gamification-service';
 
 export interface CompletedActivity {
   eventId: string;
@@ -68,17 +69,14 @@ export async function getPendingFeedbackActivities(
 
     const events = completedEvents as any[];
 
-    // Check which ones already have feedback
-    const eventIds = events.map((e) => e.id);
-
-    // Check feedback by event_id since not all events have activity_id
+    // Check which ones already have feedback (by activity_id AND event_id)
+    const eventIds = events.map((e: any) => e.id);
     let existingFeedbackEventIds: Set<string> = new Set();
 
-    // We need to check if feedback exists for these events
-    // Since feedback table might reference activity_id or we can check by event metadata
+    // Check by activity_id (for events linked to activities)
     const eventActivityIds = events
-      .map((e) => e.activity_id)
-      .filter((id) => id !== null);
+      .map((e: any) => e.activity_id)
+      .filter((id: any) => id !== null);
 
     if (eventActivityIds.length > 0) {
       const { data: feedbackData, error: feedbackError } = await (supabase
@@ -89,13 +87,27 @@ export async function getPendingFeedbackActivities(
 
       if (!feedbackError && feedbackData) {
         const feedbackActivityIds = new Set(
-          (feedbackData as any[]).map((f) => f.activity_id)
+          (feedbackData as any[]).map((f: any) => f.activity_id)
         );
-        // Map back to event IDs
-        events.forEach(event => {
+        events.forEach((event: any) => {
           if (event.activity_id && feedbackActivityIds.has(event.activity_id)) {
             existingFeedbackEventIds.add(event.id);
           }
+        });
+      }
+    }
+
+    // Also check by event_id (for manual events without activity_id)
+    if (eventIds.length > 0) {
+      const { data: feedbackByEvent } = await (supabase
+        .from('feedback') as any)
+        .select('event_id')
+        .eq('user_id', userId)
+        .in('event_id', eventIds);
+
+      if (feedbackByEvent) {
+        (feedbackByEvent as any[]).forEach((f: any) => {
+          if (f.event_id) existingFeedbackEventIds.add(f.event_id);
         });
       }
     }
@@ -129,7 +141,8 @@ export async function getPendingFeedbackActivities(
  * This triggers the feedback flow
  */
 export async function markEventAsCompleted(
-  eventId: string
+  eventId: string,
+  userId?: string
 ): Promise<{ success: boolean; error?: string }> {
   // Skip for demo mode (event IDs would be demo-specific)
   if (eventId.startsWith('demo-')) {
@@ -146,6 +159,11 @@ export async function markEventAsCompleted(
       .eq('id', eventId);
 
     if (error) throw error;
+
+    // Award gamification points for completing a task (fire-and-forget)
+    if (userId) {
+      void recordActivity(userId, 'TASK_COMPLETED');
+    }
 
     return { success: true };
   } catch (error: any) {
@@ -216,13 +234,15 @@ export async function getPastEventsNeedingFeedback(
     if (!pastEvents || pastEvents.length === 0) return [];
 
     const events = pastEvents as any[];
+    const eventIds = events.map((e: any) => e.id);
 
-    // Check which already have feedback
-    const eventActivityIds = events
-      .map((e) => e.activity_id)
-      .filter((id) => id !== null);
-
+    // Check which already have feedback (by activity_id AND event_id)
     let feedbackActivityIds = new Set<string>();
+    let feedbackEventIds = new Set<string>();
+
+    const eventActivityIds = events
+      .map((e: any) => e.activity_id)
+      .filter((id: any) => id !== null);
 
     if (eventActivityIds.length > 0) {
       const { data: feedbackData } = await (supabase
@@ -233,15 +253,33 @@ export async function getPastEventsNeedingFeedback(
 
       if (feedbackData) {
         feedbackActivityIds = new Set(
-          (feedbackData as any[]).map((f) => f.activity_id)
+          (feedbackData as any[]).map((f: any) => f.activity_id)
         );
       }
     }
 
-    // Filter out events that already have feedback
+    // Also check by event_id (for manual events without activity_id)
+    if (eventIds.length > 0) {
+      const { data: feedbackByEvent } = await (supabase
+        .from('feedback') as any)
+        .select('event_id')
+        .eq('user_id', userId)
+        .in('event_id', eventIds);
+
+      if (feedbackByEvent) {
+        feedbackEventIds = new Set(
+          (feedbackByEvent as any[]).filter((f: any) => f.event_id).map((f: any) => f.event_id)
+        );
+      }
+    }
+
+    // Filter out events that already have feedback (by either key)
     return events
-      .filter((event) => {
+      .filter((event: any) => {
         if (event.activity_id && feedbackActivityIds.has(event.activity_id)) {
+          return false;
+        }
+        if (feedbackEventIds.has(event.id)) {
           return false;
         }
         return true;
@@ -301,6 +339,7 @@ export async function shouldPromptForFeedback(
 export async function submitFeedback(feedback: {
   userId: string;
   activityId: string;
+  eventId?: string;
   recommendationId?: string;
   rating: 'thumbs_up' | 'thumbs_down';
   tags?: string[];
@@ -312,10 +351,11 @@ export async function submitFeedback(feedback: {
 
     // CRITICAL FIX: Verify activity exists before inserting feedback
     // This prevents foreign key constraint violations (code 23503)
+    let googlePlaceId: string | null = null;
     if (feedback.activityId) {
       const { data: activityExists, error: checkError } = await supabase
         .from('activities')
-        .select('id')
+        .select('id, google_place_id')
         .eq('id', feedback.activityId)
         .single();
 
@@ -323,6 +363,8 @@ export async function submitFeedback(feedback: {
         console.warn('⚠️  Activity not found in database, skipping activity_id');
         // Clear activity_id if it doesn't exist (manual calendar events)
         feedback.activityId = null as any;
+      } else {
+        googlePlaceId = (activityExists as any).google_place_id || null;
       }
     }
 
@@ -341,6 +383,21 @@ export async function submitFeedback(feedback: {
       }
     }
 
+    // Also check by event_id (covers manual events without activity_id)
+    if (feedback.eventId) {
+      const { data: existingByEvent } = await (supabase
+        .from('feedback') as any)
+        .select('id')
+        .eq('user_id', feedback.userId)
+        .eq('event_id', feedback.eventId)
+        .limit(1);
+
+      if (existingByEvent && existingByEvent.length > 0) {
+        console.log('⏭️  Already rated this event, skipping duplicate');
+        return { success: true };
+      }
+    }
+
     // 2. Insert feedback into database
     const feedbackRecord: any = {
       user_id: feedback.userId,
@@ -353,6 +410,11 @@ export async function submitFeedback(feedback: {
     // Only add activity_id if it exists in database
     if (feedback.activityId) {
       feedbackRecord.activity_id = feedback.activityId;
+    }
+
+    // Add event_id for dedup of manual events
+    if (feedback.eventId) {
+      feedbackRecord.event_id = feedback.eventId;
     }
 
     // Only add recommendation_id if provided
@@ -372,6 +434,18 @@ export async function submitFeedback(feedback: {
     }
 
     console.log('✅ Feedback inserted successfully:', feedbackData.id);
+
+    // Award gamification points for giving feedback (fire-and-forget)
+    void recordActivity(feedback.userId, 'FEEDBACK_GIVEN');
+
+    // Update place ratings aggregate so community approval shows on cards
+    if (googlePlaceId) {
+      void supabase
+        .rpc('update_place_ratings_aggregate', { p_place_id: googlePlaceId })
+        .then(({ error: rpcErr }: { error: any }) => {
+          if (rpcErr) console.error('Failed to update place ratings aggregate:', rpcErr);
+        });
+    }
 
     // 2. Update user's AI profile based on feedback
     await updateAIProfile(feedback);

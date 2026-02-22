@@ -15,6 +15,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { CATEGORIES } from '@/components/category-selector';
 import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
+import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
 
 /** Short labels for category chips */
 const SHORT_LABELS: Record<string, string> = {
@@ -106,13 +107,9 @@ export function ExploreHeader({
         </View>
 
         {onFilterPress && (
-          <TouchableOpacity
-            onPress={handleFilterPress}
-            style={[styles.filterButton, { backgroundColor: colors.card }]}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="options-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
+          <MetallicRingButton onPress={handleFilterPress}>
+            <Ionicons name="options-outline" size={18} color={colors.icon} />
+          </MetallicRingButton>
         )}
       </View>
 

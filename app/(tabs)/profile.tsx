@@ -13,18 +13,28 @@
  * - Consistent phone field visual treatment
  */
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   TextInput,
   Image,
   Alert,
   Dimensions,
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useAnimatedProps,
+  useSharedValue,
+  withSpring,
+  withTiming,
+  interpolate,
+  Extrapolate,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
@@ -41,9 +51,13 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Spacing, BorderRadius, BrandColors, CategoryColors } from '@/constants/brand';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 import { generatePersonalitySummary, type PersonalityInput } from '@/utils/personality-generator';
+import { useMenuAnimation } from '@/contexts/menu-animation-context';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
+import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
+import { MainMenuModal } from '@/components/main-menu-modal';
 
-// Ionicons for interest tiles (matches search modal style — no emojis)
-const TILE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+// Ionicons for interest icons — filled (selected) and outline (unselected)
+const TILE_ICONS_FILLED: Record<string, keyof typeof Ionicons.glyphMap> = {
   'Dining': 'restaurant',
   'Coffee & Cafes': 'cafe',
   'Bars & Nightlife': 'wine',
@@ -59,9 +73,29 @@ const TILE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
   'Gaming': 'game-controller',
   'Photography': 'camera',
   'Food & Cooking': 'flame',
-  'Technology': 'laptop-outline',
+  'Technology': 'laptop',
   'Reading': 'book',
   'Travel': 'airplane',
+};
+const TILE_ICONS_OUTLINE: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Dining': 'restaurant-outline',
+  'Coffee & Cafes': 'cafe-outline',
+  'Bars & Nightlife': 'wine-outline',
+  'Live Music': 'musical-notes-outline',
+  'Entertainment': 'film-outline',
+  'Sports': 'basketball-outline',
+  'Fitness': 'fitness-outline',
+  'Wellness': 'heart-outline',
+  'Arts & Culture': 'color-palette-outline',
+  'Outdoor Activities': 'leaf-outline',
+  'Shopping': 'cart-outline',
+  'Movies': 'videocam-outline',
+  'Gaming': 'game-controller-outline',
+  'Photography': 'camera-outline',
+  'Food & Cooking': 'flame-outline',
+  'Technology': 'laptop-outline',
+  'Reading': 'book-outline',
+  'Travel': 'airplane-outline',
 };
 
 // Map interest names to CategoryColors for selected tile borders/badges
@@ -87,18 +121,381 @@ const TILE_CATEGORY_COLORS: Record<string, string> = {
 };
 
 const SCREEN_W = Dimensions.get('window').width;
-const PROFILE_TILE_GAP = 4;
-const PROFILE_TILE_PADDING = Spacing.lg * 2; // ScrollView horizontal padding
-const PROFILE_TILE_SIZE = Math.floor((SCREEN_W - PROFILE_TILE_PADDING - (PROFILE_TILE_GAP * 2)) / 3);
+const INTEREST_COLS = 4;
+const INTEREST_GAP = 12;
+const INTEREST_PADDING = Spacing.lg * 2;
+const INTEREST_ICON_AREA = Math.floor((SCREEN_W - INTEREST_PADDING - (INTEREST_GAP * (INTEREST_COLS - 1))) / INTEREST_COLS);
+
+// ============================================================================
+// INTEREST ICON — Navbar lens-style: B&W icons, circular lens on selection
+// Lens clones from last-selected icon, travels via spring translate, pops on lock
+// On deselect: lens shrinks/fades in place (no travel)
+// First selection (no previous): lens pops in from scale 0→1
+// ============================================================================
+
+// Base circle behind all icons — matches navbar dark background
+const ICON_BASE_BG = { dark: '#1C1C1E', light: '#E8E8ED' };
+// Lens bubble on selection — lighter, same as tab bar active lens
+const LENS_BG = { dark: '#2D2D30', light: '#D1D1D6' };
+
+// Spring config from the tab bar (SCALE_CONFIG)
+const SCALE_SPRING = { damping: 25, stiffness: 400, mass: 0.5 };
+// Slightly faster spring for the travel animation
+const TRAVEL_SPRING = { damping: 22, stiffness: 350, mass: 0.4 };
+
+// B&W icon colors (outline state)
+const ICON_MUTED = { dark: '#808080', light: '#8E8E93' };
+
+// Approximate row height for vertical travel calculation:
+// paddingVertical(8) + icon(48) + marginTop(4) + label(~12) + paddingVertical(8) = ~80
+// plus gap(12) between rows = ~92 center-to-center vertically
+const CELL_STEP_X = INTEREST_ICON_AREA + INTEREST_GAP;
+const CELL_STEP_Y = 92;
+
+/** Get grid column and row from a flat index (4 columns) */
+function gridPos(index: number): { col: number; row: number } {
+  return { col: index % INTEREST_COLS, row: Math.floor(index / INTEREST_COLS) };
+}
+
+interface InterestIconProps {
+  interest: string;
+  isSelected: boolean;
+  isDark: boolean;
+  textColor: string;
+  categoryColor: string;
+  gridIndex: number;
+  lastSelectedIndex: number | null;
+  onToggle: (interest: string) => void;
+}
+
+function InterestIcon({
+  interest,
+  isSelected,
+  isDark,
+  textColor,
+  categoryColor,
+  gridIndex,
+  lastSelectedIndex,
+  onToggle,
+}: InterestIconProps) {
+  const lensScale = useSharedValue(isSelected ? 1 : 0);
+  const lensTranslateX = useSharedValue(0);
+  const lensTranslateY = useSharedValue(0);
+  const iconScale = useSharedValue(1);
+  const prevSelected = useRef(isSelected);
+
+  useEffect(() => {
+    if (isSelected && !prevSelected.current) {
+      // === SELECTING ===
+      if (lastSelectedIndex !== null && lastSelectedIndex !== gridIndex) {
+        // Traveling lens: start offset toward last-selected position, slide to center
+        const from = gridPos(lastSelectedIndex);
+        const to = gridPos(gridIndex);
+        const deltaCol = from.col - to.col;
+        const deltaRow = from.row - to.row;
+
+        // Set initial offset (where the last selected icon is relative to this one)
+        lensTranslateX.value = deltaCol * CELL_STEP_X;
+        lensTranslateY.value = deltaRow * CELL_STEP_Y;
+        lensScale.value = 0.7; // start slightly smaller
+
+        // Animate: travel to center position + scale up
+        lensTranslateX.value = withSpring(0, TRAVEL_SPRING);
+        lensTranslateY.value = withSpring(0, TRAVEL_SPRING);
+        lensScale.value = withSpring(1, SCALE_SPRING);
+      } else {
+        // First selection or same-index re-select: just pop in
+        lensTranslateX.value = 0;
+        lensTranslateY.value = 0;
+        lensScale.value = 0;
+        lensScale.value = withSpring(1, SCALE_SPRING);
+      }
+
+      // Icon reacts — brief scale-up like tab bar pressIn
+      iconScale.value = withSpring(1.15, SCALE_SPRING);
+      setTimeout(() => {
+        iconScale.value = withSpring(1, SCALE_SPRING);
+      }, 150);
+    } else if (!isSelected && prevSelected.current) {
+      // === DESELECTING — lens shrinks/fades in place, no travel ===
+      lensScale.value = withSpring(0, SCALE_SPRING);
+      lensTranslateX.value = withTiming(0, { duration: 100 });
+      lensTranslateY.value = withTiming(0, { duration: 100 });
+
+      // Icon bumps down briefly
+      iconScale.value = withSpring(0.9, SCALE_SPRING);
+      setTimeout(() => {
+        iconScale.value = withSpring(1, SCALE_SPRING);
+      }, 100);
+    }
+    prevSelected.current = isSelected;
+  }, [isSelected, lastSelectedIndex, gridIndex]);
+
+  const lensStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: lensTranslateX.value },
+      { translateY: lensTranslateY.value },
+      { scale: lensScale.value },
+    ],
+    opacity: lensScale.value,
+  }));
+
+  const iconAnimStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: iconScale.value }],
+  }));
+
+  const handlePress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    onToggle(interest);
+  }, [interest, onToggle]);
+
+  const mutedColor = isDark ? ICON_MUTED.dark : ICON_MUTED.light;
+  const baseBg = isDark ? ICON_BASE_BG.dark : ICON_BASE_BG.light;
+  const lensBg = isDark ? LENS_BG.dark : LENS_BG.light;
+  // Outline icon when unselected, filled icon when selected (like navbar)
+  const iconName = isSelected
+    ? (TILE_ICONS_FILLED[interest] || 'ellipse')
+    : (TILE_ICONS_OUTLINE[interest] || 'ellipse-outline');
+
+  return (
+    <Pressable onPress={handlePress} style={styles.interestIconWrapper}>
+      {/* Base dark circle behind all icons (like navbar bar background) */}
+      <View style={[styles.interestIconBase, { backgroundColor: baseBg }]} />
+
+      {/* Lens bubble — lighter circle that slides on top when selected */}
+      <Animated.View style={[styles.interestLens, { backgroundColor: lensBg }, lensStyle]} />
+
+      {/* Icon — centered, outline→filled on selection */}
+      <Animated.View style={[styles.interestIconContent, iconAnimStyle]}>
+        <Ionicons
+          name={iconName}
+          size={26}
+          color={isSelected ? categoryColor : mutedColor}
+        />
+      </Animated.View>
+      <Text
+        style={[
+          styles.interestLabel,
+          { color: isSelected ? textColor : mutedColor },
+        ]}
+        numberOfLines={1}
+      >
+        {interest}
+      </Text>
+    </Pressable>
+  );
+}
+
+// ============================================================================
+// INLINE SAVE INDICATOR — pencil → Save → checkmark → pencil cycle
+// ============================================================================
+interface InlineSaveIndicatorProps {
+  hasChanges: boolean;
+  saveState: 'idle' | 'saving' | 'saved';
+  onSave: () => void;
+  /** Show pencil icon in idle state (Personal Info) vs hidden (Interests) */
+  showPencil?: boolean;
+  isDark: boolean;
+}
+
+function InlineSaveIndicator({ hasChanges, saveState, onSave, showPencil = false, isDark }: InlineSaveIndicatorProps) {
+  const pencilScale = useSharedValue(1);
+  const brightOpacity = useSharedValue(0); // 0 = muted showing, 1 = bright showing
+  const checkOpacity = useSharedValue(0);
+  const checkScale = useSharedValue(0.5);
+
+  // Pencil tap — bounce + flash brighter
+  const handlePencilPress = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    pencilScale.value = withSpring(1.3, SCALE_SPRING, () => {
+      pencilScale.value = withSpring(1, SCALE_SPRING);
+    });
+    // Flash to bright color then fade back to muted
+    brightOpacity.value = withTiming(1, { duration: 100 }, () => {
+      brightOpacity.value = withTiming(0, { duration: 600 });
+    });
+  }, []);
+
+  // Checkmark: slow fade in, hold, slow fade out (symmetrical)
+  useEffect(() => {
+    if (saveState === 'saved') {
+      checkOpacity.value = 0;
+      checkScale.value = 0.8;
+      checkOpacity.value = withTiming(1, { duration: 800 });
+      checkScale.value = withSpring(1, SCALE_SPRING);
+      const timer = setTimeout(() => {
+        checkOpacity.value = withTiming(0, { duration: 800 });
+      }, 1400);
+      return () => clearTimeout(timer);
+    }
+  }, [saveState]);
+
+  const pencilContainerStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: pencilScale.value }],
+  }));
+
+  // Muted icon fades out as bright fades in
+  const mutedStyle = useAnimatedStyle(() => ({
+    opacity: 1 - brightOpacity.value,
+  }));
+
+  const brightStyle = useAnimatedStyle(() => ({
+    opacity: brightOpacity.value,
+  }));
+
+  const checkStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: checkScale.value }],
+    opacity: checkOpacity.value,
+  }));
+
+  // State: saved → show outline checkmark (no filled circle bg), slow fade
+  if (saveState === 'saved') {
+    return (
+      <Animated.View style={[{ marginLeft: Spacing.sm }, checkStyle]}>
+        <Ionicons name="checkmark" size={17} color={BrandColors.loopGreen} />
+      </Animated.View>
+    );
+  }
+
+  // State: saving → subtle text
+  if (saveState === 'saving') {
+    return (
+      <Text style={[indicatorStyles.saveLink, { opacity: 0.4, marginLeft: Spacing.sm }]}>Saving...</Text>
+    );
+  }
+
+  // State: idle + changes → show Save link
+  if (hasChanges) {
+    return (
+      <TouchableOpacity
+        onPress={onSave}
+        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        style={{ marginLeft: Spacing.sm }}
+      >
+        <Text style={indicatorStyles.saveLink}>Save</Text>
+      </TouchableOpacity>
+    );
+  }
+
+  // State: idle + no changes → show pencil (if enabled) or nothing
+  // Two overlapping icons: muted (default) and bright (on press)
+  if (showPencil) {
+    const mutedColor = isDark ? '#555' : '#AAAAAA';
+    const brightColor = isDark ? '#CCCCCC' : '#555555';
+    return (
+      <Animated.View style={[{ marginLeft: 6, marginBottom: 1 }, pencilContainerStyle]}>
+        <Pressable onPressIn={handlePencilPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+          <View style={{ width: 15, height: 15 }}>
+            {/* Muted pencil — default visible */}
+            <Animated.View style={[{ position: 'absolute' }, mutedStyle]}>
+              <Ionicons name="pencil-outline" size={15} color={mutedColor} />
+            </Animated.View>
+            {/* Bright pencil — flashes on press */}
+            <Animated.View style={[{ position: 'absolute' }, brightStyle]}>
+              <Ionicons name="pencil-outline" size={15} color={brightColor} />
+            </Animated.View>
+          </View>
+        </Pressable>
+      </Animated.View>
+    );
+  }
+
+  return null;
+}
+
+const indicatorStyles = StyleSheet.create({
+  saveLink: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: BrandColors.loopBlue,
+    opacity: 0.85,
+  },
+});
+
+// ============================================================================
+// PROFILE SCREEN
+// ============================================================================
 
 export default function ProfileScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = ThemeColors[colorScheme ?? 'light'];
   const { user, updateUserProfile } = useAuth();
   const safeInsets = useSafeAreaInsets();
   /** Height of the absolutely-positioned blur header */
   const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.standard;
+
+  // ── Menu animation: blur + scale main content when left drawer opens ──
+  const { menuProgress } = useMenuAnimation();
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [menuGestureControlled, setMenuGestureControlled] = useState(false);
+
+  const DRAWER_WIDTH = Dimensions.get('window').width * MENU_DIMENSIONS.widthPercentage;
+
+  // Animated styles for content scale/shift when menu is open
+  const menuContentStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      transform: [
+        { scale: interpolate(menuProgress.value, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
+        { translateX: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP) },
+      ],
+      borderRadius: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
+      overflow: menuProgress.value > 0.01 ? 'hidden' as const : 'visible' as const,
+    };
+  });
+
+  // Animated blur intensity for content overlay
+  const menuBlurAnimatedProps = useAnimatedProps(() => {
+    'worklet';
+    return {
+      intensity: SUPPORTS_ANIMATED_BLUR
+        ? interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
+        : MENU_CONTENT_BLUR.backgroundBlurIntensity,
+    };
+  });
+
+  // Animated opacity for blur overlay
+  const menuBlurOverlayStyle = useAnimatedStyle(() => {
+    'worklet';
+    return {
+      opacity: SUPPORTS_ANIMATED_BLUR
+        ? (menuProgress.value > 0.01 ? 1 : 0)
+        : interpolate(menuProgress.value, [0, 1], [0, 1], Extrapolate.CLAMP),
+    };
+  });
+
+  // ── Menu gesture handlers (drag-to-open from hamburger button) ──
+  const handleHeaderMenuDrag = useCallback((translationX: number) => {
+    const progress = Math.min(translationX / DRAWER_WIDTH, 1);
+    menuProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [DRAWER_WIDTH, menuProgress, showMainMenu]);
+
+  const handleHeaderMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    if (translationX > 60 || velocityX > 600) {
+      // Snap open
+      menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showMainMenu) {
+        setMenuGestureControlled(true);
+        setShowMainMenu(true);
+      }
+    } else {
+      // Snap closed
+      menuProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowMainMenu(false);
+      setMenuGestureControlled(false);
+    }
+  }, [showMainMenu, menuProgress]);
+
+  const handleCloseMenu = useCallback(() => {
+    setShowMainMenu(false);
+    setMenuGestureControlled(false);
+  }, []);
 
   // Form state
   const [name, setName] = useState(user?.name || '');
@@ -107,7 +504,11 @@ export default function ProfileScreen() {
   const [selectedInterests, setSelectedInterests] = useState<string[]>(
     (user?.interests as string[]) || []
   );
-  const [isSaving, setIsSaving] = useState(false);
+  // Track the grid index of the PREVIOUS selection (for traveling lens origin).
+  // We use a state pair: prevSelectedIndex is what the lens travels FROM,
+  // and a ref tracks the "current" so we can derive "previous" on next selection.
+  const lastSelectedRef = useRef<number | null>(null);
+  const [travelOriginIndex, setTravelOriginIndex] = useState<number | null>(null);
   const [feedbackStats, setFeedbackStats] = useState<FeedbackStats>({
     totalFeedback: 0,
     thumbsUpCount: 0,
@@ -127,14 +528,22 @@ export default function ProfileScreen() {
   const initialPicture = user?.profile_picture_url || '';
   const initialInterests = (user?.interests as string[]) || [];
 
-  const hasChanges = useMemo(() => {
+  const hasPersonalChanges = useMemo(() => {
     if (name !== initialName) return true;
     if (phone !== initialPhone) return true;
     if (profilePicture !== initialPicture) return true;
+    return false;
+  }, [name, phone, profilePicture, initialName, initialPhone, initialPicture]);
+
+  const hasInterestChanges = useMemo(() => {
     if (selectedInterests.length !== initialInterests.length) return true;
     if (selectedInterests.some((i) => !initialInterests.includes(i))) return true;
     return false;
-  }, [name, phone, profilePicture, selectedInterests, initialName, initialPhone, initialPicture, initialInterests]);
+  }, [selectedInterests, initialInterests]);
+
+  // Save confirmation animation states
+  const [personalSaveState, setPersonalSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
+  const [interestSaveState, setInterestSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
 
   // Personality summary
   const personality = useMemo(() => {
@@ -202,18 +611,26 @@ export default function ProfileScreen() {
     }
   };
 
-  // Toggle interest selection
-  const toggleInterest = (interest: string) => {
+  // Toggle interest selection — track travel origin for traveling lens
+  const toggleInterest = useCallback((interest: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const isDeselecting = selectedInterests.includes(interest);
+    if (!isDeselecting) {
+      // SELECTING: set travel origin to the PREVIOUS selection (ref value)
+      // before updating the ref to this new selection
+      setTravelOriginIndex(lastSelectedRef.current);
+      const idx = ONBOARDING_INTERESTS.indexOf(interest);
+      if (idx >= 0) lastSelectedRef.current = idx;
+    }
     setSelectedInterests(prev =>
-      prev.includes(interest)
+      isDeselecting
         ? prev.filter(i => i !== interest)
         : [...prev, interest]
     );
-  };
+  }, [selectedInterests]);
 
-  // Save profile changes
-  const handleSave = async () => {
+  // Inline save — saves all changes, shows checkmark on the section that triggered it
+  const handleInlineSave = useCallback(async (section: 'personal' | 'interests') => {
     if (!user) return;
 
     if (!name.trim()) {
@@ -226,51 +643,55 @@ export default function ProfileScreen() {
       return;
     }
 
-    setIsSaving(true);
+    const setSaveState = section === 'personal' ? setPersonalSaveState : setInterestSaveState;
+    setSaveState('saving');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({
-          name: name.trim(),
-          phone: phone.trim() || null,
-          profile_picture_url: profilePicture || null,
-          interests: selectedInterests,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
-      if (error) throw error;
-
-      // Update auth context
-      await updateUserProfile({
+      const updates = {
         name: name.trim(),
         phone: phone.trim() || null,
         profile_picture_url: profilePicture || null,
         interests: selectedInterests,
-      });
+        updated_at: new Date().toISOString(),
+      };
 
+      const { error } = await supabase
+        .from('users')
+        .update(updates)
+        .eq('id', user.id);
+
+      if (error) throw error;
+
+      // Show checkmark BEFORE updating context (so hasChanges doesn't flip first)
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success', 'Profile updated successfully!');
+      setSaveState('saved');
 
-      // Navigate back to feed
-      router.back();
+      // Update local auth context in background
+      updateUserProfile({
+        name: name.trim(),
+        phone: phone.trim() || null,
+        profile_picture_url: profilePicture || null,
+        interests: selectedInterests,
+      }).catch(() => {});
+
+      // Return to idle after checkmark shows
+      setTimeout(() => setSaveState('idle'), 1800);
     } catch (error) {
       console.error('Error saving profile:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Save Failed', 'Unable to save profile changes. Please try again.');
-    } finally {
-      setIsSaving(false);
+      setSaveState('idle');
     }
-  };
+  }, [user, name, phone, profilePicture, selectedInterests, updateUserProfile]);
 
   return (
     <SwipeableLayout>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
+      <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
         <ProfileHeader
           username={user?.email?.split('@')[0] || user?.name || 'Profile'}
-          onMenuPress={() => {
+          onSettingsPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.push('/(tabs)/settings');
           }}
@@ -334,8 +755,13 @@ export default function ProfileScreen() {
         {/* Personal Information Section */}
         <View style={styles.section}>
           <View style={styles.sectionTitleRow}>
-            <Ionicons name="pencil-outline" size={18} color={colors.textSecondary} />
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Personal Information</Text>
+            <InlineSaveIndicator
+              hasChanges={hasPersonalChanges}
+              saveState={personalSaveState}
+              onSave={() => handleInlineSave('personal')}
+              isDark={isDark}
+            />
           </View>
 
           {/* Name */}
@@ -409,73 +835,61 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Interests Section - Spotify-Style Gradient Tiles */}
+        {/* Interests Section — Navbar lens-style icons */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>
-            Your Interests ({selectedInterests.length})
-          </Text>
+          <View style={styles.sectionTitleRow}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>
+              Your Interests
+            </Text>
+            <Text style={[styles.sectionCount, { color: isDark ? '#555' : '#AAAAAA' }]}>
+              {selectedInterests.length}
+            </Text>
+            <InlineSaveIndicator
+              hasChanges={hasInterestChanges}
+              saveState={interestSaveState}
+              onSave={() => handleInlineSave('interests')}
+              isDark={isDark}
+            />
+          </View>
           <Text style={[styles.hint, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
             Tap to toggle — we'll refine as you use Loop
           </Text>
 
-          <View style={styles.profileTileGrid}>
-            {ONBOARDING_INTERESTS.map((interest) => {
+          <View style={styles.interestGrid}>
+            {ONBOARDING_INTERESTS.map((interest, idx) => {
               const isSelected = selectedInterests.includes(interest);
               const categoryColor = TILE_CATEGORY_COLORS[interest] || BrandColors.loopBlue;
 
               return (
-                <TouchableOpacity
+                <InterestIcon
                   key={interest}
-                  style={[
-                    styles.profileTile,
-                    {
-                      backgroundColor: colors.card,
-                      opacity: isSelected ? 1 : 0.7,
-                      borderWidth: isSelected ? 1.5 : StyleSheet.hairlineWidth,
-                      borderColor: isSelected ? categoryColor : colors.border,
-                    },
-                  ]}
-                  onPress={() => toggleInterest(interest)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.profileTileIconCircle, { backgroundColor: categoryColor + '1A' }]}>
-                    <Ionicons
-                      name={TILE_ICONS[interest] || 'ellipse'}
-                      size={22}
-                      color={categoryColor}
-                    />
-                  </View>
-                  <Text style={[styles.profileTileName, { color: colors.text }]} numberOfLines={2}>
-                    {interest}
-                  </Text>
-                  {isSelected && (
-                    <View style={[styles.profileTileCheck, { backgroundColor: categoryColor }]}>
-                      <Ionicons name="checkmark" size={14} color="#fff" />
-                    </View>
-                  )}
-                </TouchableOpacity>
+                  interest={interest}
+                  isSelected={isSelected}
+                  categoryColor={categoryColor}
+                  isDark={isDark}
+                  textColor={colors.text}
+                  gridIndex={idx}
+                  lastSelectedIndex={travelOriginIndex}
+                  onToggle={toggleInterest}
+                />
               );
             })}
           </View>
         </View>
 
-        {/* Save Button — only visible when edits have been made */}
-        {hasChanges && (
-          <TouchableOpacity
-            style={[styles.saveButton, {
-              backgroundColor: BrandColors.loopBlue,
-              opacity: isSaving ? 0.6 : 1,
-            }]}
-            onPress={handleSave}
-            disabled={isSaving}
-          >
-            <Text style={styles.saveButtonText}>
-              {isSaving ? 'Saving...' : 'Save Changes'}
-            </Text>
-          </TouchableOpacity>
-        )}
       </ScrollView>
+
+        {/* Blur overlay for menu transition */}
+        <AnimatedBlurView
+          animatedProps={menuBlurAnimatedProps}
+          tint="dark"
+          experimentalBlurMethod={ANDROID_BLUR_METHOD}
+          style={[StyleSheet.absoluteFill, menuBlurOverlayStyle]}
+          pointerEvents="none"
+        />
+      </Animated.View>
       </View>
+
     </SwipeableLayout>
   );
 }
@@ -496,8 +910,7 @@ const styles = StyleSheet.create({
   },
   sectionTitleRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
+    alignItems: 'flex-end',
     marginBottom: Spacing.md,
   },
   sectionTitle: {
@@ -591,54 +1004,50 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
-  // Card + circular icon interest tiles (matches onboarding)
-  profileTileGrid: {
+  // Interest icons — navbar lens-style grid
+  interestGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: PROFILE_TILE_GAP,
+    gap: INTEREST_GAP,
   },
-  profileTile: {
-    width: PROFILE_TILE_SIZE,
-    height: PROFILE_TILE_SIZE,
-    borderRadius: BorderRadius.md,
+  interestIconWrapper: {
+    width: INTEREST_ICON_AREA,
     alignItems: 'center',
-    justifyContent: 'center',
     paddingVertical: Spacing.sm,
   },
-  profileTileIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  interestIconBase: {
+    position: 'absolute',
+    top: Spacing.sm,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignSelf: 'center',
+  },
+  interestLens: {
+    position: 'absolute',
+    top: Spacing.sm,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignSelf: 'center',
+  },
+  interestIconContent: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 6,
   },
-  profileTileName: {
-    fontSize: 11,
+  interestLabel: {
+    fontSize: 10,
     fontWeight: '600',
     textAlign: 'center',
-    paddingHorizontal: 4,
+    marginTop: 4,
+    width: '100%',
   },
-  profileTileCheck: {
-    position: 'absolute',
-    top: 4,
-    right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  saveButton: {
-    height: 56,
-    borderRadius: BorderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: Spacing.lg,
-  },
-  saveButtonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '700',
+  sectionCount: {
+    fontSize: 15,
+    fontWeight: '500',
+    marginLeft: 6,
   },
 });

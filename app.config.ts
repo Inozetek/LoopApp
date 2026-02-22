@@ -1,10 +1,15 @@
 import { ExpoConfig, ConfigContext } from 'expo/config';
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pkg = require('./package.json') as { version: string };
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: 'LoopApp',
   slug: 'LoopApp',
-  version: '1.0.0',
+  // Version is sourced from package.json so there is a single source of truth.
+  // EAS manages versionCode / buildNumber via autoIncrement (eas.json) and
+  // appVersionSource: "remote" — do NOT hardcode the version string here.
+  version: pkg.version,
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'loopapp',
@@ -55,6 +60,23 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     favicon: './assets/images/favicon.png',
   },
   plugins: [
+    // Sentry plugin: uploads source maps during EAS builds so stack traces in
+    // the Sentry dashboard show original TypeScript source lines.
+    // Requires SENTRY_ORG, SENTRY_PROJECT, and SENTRY_AUTH_TOKEN in your
+    // build environment (EAS secrets or CI env vars).
+    // Remove this entry if you decide not to use Sentry.
+    [
+      '@sentry/react-native/expo',
+      {
+        organization: process.env.SENTRY_ORG || '',
+        project: process.env.SENTRY_PROJECT || '',
+        // authToken is only passed when set to avoid spurious warnings in
+        // local dev where SENTRY_AUTH_TOKEN is not configured.
+        ...(process.env.SENTRY_AUTH_TOKEN
+          ? { authToken: process.env.SENTRY_AUTH_TOKEN }
+          : {}),
+      },
+    ],
     'expo-router',
     [
       'expo-splash-screen',

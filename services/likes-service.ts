@@ -37,6 +37,8 @@ export interface PlaceRating {
   isLiked: boolean;
   friendsWhoLiked: FriendWhoLiked[];
   isTrending: boolean;
+  totalThumbsUp: number;
+  totalThumbsDown: number;
 }
 
 export interface LikerProfile {
@@ -194,11 +196,13 @@ export async function getPlaceRating(userId: string, placeId: string): Promise<P
     let totalLikes = 0;
     let isTrending = false;
     let loopCommunityScore = null;
+    let totalThumbsUp = 0;
+    let totalThumbsDown = 0;
 
     try {
       const { data: aggregate, error } = await supabase
         .from('place_ratings_aggregate')
-        .select('total_likes, loop_community_score, is_trending')
+        .select('total_likes, loop_community_score, is_trending, total_thumbs_up, total_thumbs_down')
         .eq('place_id', placeId)
         .maybeSingle();
 
@@ -206,6 +210,8 @@ export async function getPlaceRating(userId: string, placeId: string): Promise<P
         totalLikes = aggregate.total_likes || 0;
         loopCommunityScore = aggregate.loop_community_score || null;
         isTrending = aggregate.is_trending || false;
+        totalThumbsUp = (aggregate as any).total_thumbs_up || 0;
+        totalThumbsDown = (aggregate as any).total_thumbs_down || 0;
       }
     } catch {
       // Aggregate table doesn't exist - use fallback
@@ -227,6 +233,8 @@ export async function getPlaceRating(userId: string, placeId: string): Promise<P
       isLiked: isLikedResult,
       friendsWhoLiked: friendsResult,
       isTrending,
+      totalThumbsUp,
+      totalThumbsDown,
     };
   } catch (error) {
     // Return graceful fallback
@@ -236,6 +244,8 @@ export async function getPlaceRating(userId: string, placeId: string): Promise<P
       isLiked: false,
       friendsWhoLiked: [],
       isTrending: false,
+      totalThumbsUp: 0,
+      totalThumbsDown: 0,
     };
   }
 }
@@ -602,6 +612,8 @@ function getMockPlaceRating(placeId: string): PlaceRating {
   const hash = hashString(placeId);
   const friendCount = hash % 4;
   const totalLikes = (hash % 200) + 50;
+  const thumbsUp = (hash % 30) + 5;
+  const thumbsDown = hash % 8;
 
   return {
     totalLikes,
@@ -612,6 +624,8 @@ function getMockPlaceRating(placeId: string): PlaceRating {
       likedAt: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000).toISOString(),
     })),
     isTrending: hash % 10 === 0,
+    totalThumbsUp: thumbsUp,
+    totalThumbsDown: thumbsDown,
   };
 }
 

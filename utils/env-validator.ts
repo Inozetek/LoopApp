@@ -43,9 +43,11 @@ const ENV_VARS: EnvVar[] = [
     description: 'Google Places API key (REQUIRED for production - app will not function without it)',
   },
   {
-    key: 'SENTRY_DSN',
+    // EXPO_PUBLIC_ prefix is required so Expo inlines the value into the JS
+    // bundle and the React Native Sentry SDK can read it at runtime.
+    key: 'EXPO_PUBLIC_SENTRY_DSN',
     required: false,
-    description: 'Sentry DSN for error tracking',
+    description: 'Sentry DSN for error tracking (preferred — use EXPO_PUBLIC_ prefix)',
   },
   {
     key: 'EXPO_PUBLIC_POSTHOG_API_KEY',
@@ -214,7 +216,7 @@ export function printEnvironmentInfo(): void {
     `   Google Places API: ${process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY ? 'Configured ✅' : 'NOT CONFIGURED ❌ (REQUIRED FOR APP TO FUNCTION)'}`
   );
   console.log(
-    `   Sentry: ${process.env.SENTRY_DSN ? 'Enabled' : 'Disabled'}`
+    `   Sentry: ${process.env.EXPO_PUBLIC_SENTRY_DSN || process.env.SENTRY_DSN ? 'Enabled' : 'Disabled'}`
   );
   console.log(
     `   Analytics: ${process.env.EXPO_PUBLIC_POSTHOG_API_KEY || process.env.EXPO_PUBLIC_MIXPANEL_TOKEN ? 'Enabled' : 'Disabled'}`

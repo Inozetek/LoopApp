@@ -237,11 +237,15 @@ function ActivityCardIntelligentComponent({
     totalLikes: number;
     friendsWhoLiked: FriendWhoLiked[];
     isLoading: boolean;
+    totalThumbsUp: number;
+    totalThumbsDown: number;
   }>({
     isLiked: false,
     totalLikes: 0,
     friendsWhoLiked: [],
     isLoading: true,
+    totalThumbsUp: 0,
+    totalThumbsDown: 0,
   });
 
   // Get place ID for likes (prefer Google Place ID)
@@ -264,6 +268,8 @@ function ActivityCardIntelligentComponent({
           totalLikes: rating.totalLikes,
           friendsWhoLiked: rating.friendsWhoLiked,
           isLoading: false,
+          totalThumbsUp: rating.totalThumbsUp,
+          totalThumbsDown: rating.totalThumbsDown,
         });
       } catch (error) {
         console.error('Error loading like state:', error);
@@ -299,13 +305,14 @@ function ActivityCardIntelligentComponent({
         source: 'feed',
       });
 
-      // Update with server state
-      setLikeState({
+      // Update with server state (preserve thumbs data — likes don't change them)
+      setLikeState(prev => ({
+        ...prev,
         isLiked: result.isLiked,
         totalLikes: result.totalLikes,
         friendsWhoLiked: result.friendsWhoLiked,
         isLoading: false,
-      });
+      }));
 
       // Call parent callback if provided
       onLike?.();
@@ -995,6 +1002,21 @@ function ActivityCardIntelligentComponent({
               ) : null}
             </Pressable>
           )}
+
+          {/* Community approval rate — shown when 5+ users have rated */}
+          {(() => {
+            const totalFeedback = likeState.totalThumbsUp + likeState.totalThumbsDown;
+            if (totalFeedback < 5) return null;
+            const approvalPct = Math.round((likeState.totalThumbsUp / totalFeedback) * 100);
+            return (
+              <View style={styles.approvalRow}>
+                <Ionicons name="thumbs-up" size={13} color={colors.textSecondary} />
+                <Text style={[styles.approvalText, { color: colors.textSecondary }]}>
+                  {approvalPct}% of Loop users loved this
+                </Text>
+              </View>
+            );
+          })()}
         </Pressable>
 
         {/* UNIFIED SOCIAL ACTION BAR - Now includes inline RSVP for group plans */}
@@ -1440,6 +1462,17 @@ const styles = StyleSheet.create({
   likedByText: {
     fontSize: 13,
     lineHeight: 18,
+  },
+  approvalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 2,
+    marginBottom: Spacing.xs,
+  },
+  approvalText: {
+    fontSize: 12,
+    lineHeight: 16,
   },
 
   // SOCIAL ACTION BAR (Instagram-style)

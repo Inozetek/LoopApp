@@ -13,6 +13,7 @@ import {
 } from '@/services/oauth-service';
 import { type ExtractedGoogleData } from '@/services/google-data';
 import { registerPushToken } from '@/services/radar-push-service';
+import { checkAndUpdateStreak } from '@/services/gamification-service';
 
 // Required for OAuth redirect
 WebBrowser.maybeCompleteAuthSession();
@@ -204,6 +205,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(data);
         // Register push token for notifications (non-blocking)
         registerPushToken(data.id).catch(() => {});
+        // Check/update daily streak (non-blocking)
+        void checkAndUpdateStreak(data.id);
         // Fetch business profile if account_type is 'business'
         if (data.account_type === 'business') {
           try {

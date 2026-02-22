@@ -58,6 +58,7 @@ import { getPendingFeedbackNotificationCount, fetchDashboardNotifications } from
 import { computeTabBadges } from '@/utils/notification-routing';
 import { loadRecommendationsFromDB, saveRecommendationsToDB, clearPendingRecommendations, markAsAccepted, blockActivity } from '@/services/recommendation-persistence';
 import { shouldPromptForFeedback, submitFeedback, getRecommendationIdForActivity, getPendingFeedbackActivities, getPastEventsNeedingFeedback } from '@/services/feedback-service';
+import { recordActivity } from '@/services/gamification-service';
 import { getBatchCommentCounts } from '@/services/comments-service';
 import { checkTimeConflict, canMakeItOnTime } from '@/services/calendar-service';
 import { ShareBottomSheet } from '@/components/share-bottom-sheet';
@@ -455,6 +456,7 @@ export default function RecommendationFeedScreen() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [feedbackActivity, setFeedbackActivity] = useState<{
     activityId: string;
+    eventId?: string;
     activityName: string;
     completedAt: string;
     recommendationId?: string;
@@ -1449,6 +1451,7 @@ export default function RecommendationFeedScreen() {
       const result = await submitFeedback({
         userId: user.id,
         activityId: feedbackActivity.activityId,
+        eventId: feedbackActivity.eventId,
         recommendationId: feedbackActivity.recommendationId,
         rating: feedback.rating,
         tags: feedback.tags,
@@ -1459,6 +1462,8 @@ export default function RecommendationFeedScreen() {
       if (result.success) {
         console.log('✅ Feedback submitted successfully');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Refresh badge count so it clears the feedback notification
+        refreshTabBadges();
       } else {
         console.error('❌ Failed to submit feedback:', result.error);
       }
@@ -1703,6 +1708,9 @@ export default function RecommendationFeedScreen() {
         );
       }
 
+      // Award gamification points for accepting a recommendation (fire-and-forget)
+      void recordActivity(user.id, 'RECOMMENDATION_ACCEPTED');
+
       // Close modal and show success toast
       setShowScheduleModal(false);
       setToastMessage('Added to calendar ✓');
@@ -1797,6 +1805,7 @@ export default function RecommendationFeedScreen() {
 
         setFeedbackActivity({
           activityId: result.activity.activityId || '',
+          eventId: result.activity.eventId,
           activityName: result.activity.activityName,
           completedAt: result.activity.completedAt,
           recommendationId: recommendationId || undefined,
@@ -1840,6 +1849,7 @@ export default function RecommendationFeedScreen() {
 
     setFeedbackActivity({
       activityId: data.activityId || '',
+      eventId: data.eventId,
       activityName: data.activityName,
       completedAt: data.completedAt,
       recommendationId: recommendationId || undefined,

@@ -4,11 +4,14 @@
  * Section title header for Friends tab.
  * Features:
  * - Clean "Groops" text header (Instagram/Snapchat style)
- * - Add friend button on right
+ * - Menu button on left with swipe-to-open gesture (matches rec feed)
+ * - Add friend / search button on right with swipe-to-open gesture
  */
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
+import { SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -24,6 +27,16 @@ interface FriendsHeaderProps {
   notificationCount?: number;
   onChatPress?: () => void;
   chatBadgeCount?: number;
+  // Menu drawer gesture callbacks (left button: swipe right to open)
+  onMenuPress?: () => void;
+  onMenuDrag?: (translationX: number) => void;
+  onMenuDragEnd?: (translationX: number, velocityX: number) => void;
+  menuProgress?: SharedValue<number>;
+  // Search drawer gesture callbacks (right button: swipe left to open)
+  onSearchPress?: () => void;
+  onSearchDrag?: (absTranslationX: number) => void;
+  onSearchDragEnd?: (absTranslationX: number, absVelocityX: number) => void;
+  searchProgress?: SharedValue<number>;
 }
 
 export function FriendsHeader({
@@ -32,6 +45,14 @@ export function FriendsHeader({
   notificationCount = 0,
   onChatPress,
   chatBadgeCount = 0,
+  onMenuPress,
+  onMenuDrag,
+  onMenuDragEnd,
+  menuProgress,
+  onSearchPress,
+  onSearchDrag,
+  onSearchDragEnd,
+  searchProgress,
 }: FriendsHeaderProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -39,12 +60,60 @@ export function FriendsHeader({
   const insets = useSafeAreaInsets();
   const iconColor = isDark ? '#FFFFFF' : '#000000';
 
+  // Pan gesture on menu button: swipe right to open menu drawer
+  const menuPan = Gesture.Pan()
+    .activeOffsetX([10, 999])
+    .failOffsetY([-15, 15])
+    .onUpdate((event) => {
+      if (event.translationX > 0 && onMenuDrag) {
+        onMenuDrag(event.translationX);
+      }
+    })
+    .onEnd((event) => {
+      if (onMenuDragEnd) {
+        onMenuDragEnd(event.translationX, event.velocityX);
+      }
+    })
+    .runOnJS(true);
+
+  // Pan gesture on search/add button: swipe left to open search drawer
+  const searchPan = Gesture.Pan()
+    .activeOffsetX([-999, -10])
+    .failOffsetY([-15, 15])
+    .onUpdate((event) => {
+      if (event.translationX < 0 && onSearchDrag) {
+        onSearchDrag(Math.abs(event.translationX));
+      }
+    })
+    .onEnd((event) => {
+      if (onSearchDragEnd) {
+        onSearchDragEnd(Math.abs(event.translationX), Math.abs(event.velocityX));
+      }
+    })
+    .runOnJS(true);
+
   return (
     <BlurHeaderWrapper style={{ paddingTop: insets.top + Spacing.sm }}>
     <View style={styles.container}>
-      {/* Left Side - Chat */}
+      {/* Left Side - Menu (matches rec feed pattern) */}
       <View style={styles.leftSection}>
-        {onChatPress && (
+        {onMenuPress ? (
+          <GestureDetector gesture={menuPan}>
+            <View>
+              <MetallicRingButton
+                onPress={onMenuPress}
+                size={36}
+                innerSize={33}
+                menuProgress={menuProgress}
+              >
+                <View style={styles.menuLines}>
+                  <View style={[styles.menuLine, { backgroundColor: iconColor }]} />
+                  <View style={[styles.menuLine, { backgroundColor: iconColor }]} />
+                </View>
+              </MetallicRingButton>
+            </View>
+          </GestureDetector>
+        ) : onChatPress ? (
           <View>
             <MetallicRingButton onPress={() => onChatPress()} size={36} innerSize={33}>
               <Ionicons name="chatbubble-outline" size={17} color={iconColor} />
@@ -57,7 +126,7 @@ export function FriendsHeader({
               </View>
             )}
           </View>
-        )}
+        ) : null}
       </View>
 
       {/* Center - Clean "Groops" text (Instagram/Snapchat style) */}
@@ -72,13 +141,26 @@ export function FriendsHeader({
         )}
       </View>
 
-      {/* Right Side - Add */}
+      {/* Right Side - Search/Add with gesture */}
       <View style={styles.rightSection}>
-        {onAddPress && (
+        {onSearchPress ? (
+          <GestureDetector gesture={searchPan}>
+            <View>
+              <MetallicRingButton
+                onPress={onSearchPress}
+                size={36}
+                innerSize={33}
+                menuProgress={searchProgress}
+              >
+                <Ionicons name="search-outline" size={17} color={iconColor} />
+              </MetallicRingButton>
+            </View>
+          </GestureDetector>
+        ) : onAddPress ? (
           <MetallicRingButton onPress={() => onAddPress()} size={36} innerSize={33}>
             <Ionicons name="add" size={18} color={iconColor} />
           </MetallicRingButton>
-        )}
+        ) : null}
       </View>
     </View>
     </BlurHeaderWrapper>
@@ -172,5 +254,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 4,
+  },
+  menuLines: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  menuLine: {
+    width: 14,
+    height: 1.5,
+    borderRadius: 1,
   },
 });

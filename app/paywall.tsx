@@ -2,7 +2,8 @@
  * Paywall / Pricing Screen
  *
  * Full-screen comparison of Free vs Loop Plus tiers.
- * Purchase actions are stubbed (Alert) until real RevenueCat/Stripe integration.
+ * Tapping "Start 7-Day Free Trial" creates a Stripe Checkout session via
+ * Supabase Edge Function and opens the checkout URL in the system browser.
  */
 
 import React, { useState } from 'react';
@@ -13,18 +14,25 @@ import {
   ScrollView,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, Typography, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
 import { TIER_PRICING, TIER_NAMES } from '@/types/subscription';
 import { useAuth } from '@/contexts/auth-context';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
+import {
+  createUserCheckoutSession,
+  restoreUserSubscription,
+  createCustomerPortalSession,
+} from '@/services/stripe-service';
 
 type BillingCycle = 'monthly' | 'annual';
 
@@ -47,6 +55,8 @@ export default function PaywallScreen() {
   const { user } = useAuth();
 
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('annual');
+  const [isLoading, setIsLoading] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
 
   const isAlreadyPlus = user?.subscription_tier === 'plus';
   const monthlyPrice = TIER_PRICING.plus;
@@ -54,23 +64,107 @@ export default function PaywallScreen() {
   const annualMonthly = (annualPrice / 12).toFixed(2);
   const savingsPercent = Math.round((1 - annualPrice / (monthlyPrice * 12)) * 100);
 
-  const handleSubscribe = () => {
+  const handleSubscribe = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const price = billingCycle === 'monthly' ? `$${monthlyPrice}/mo` : `$${annualPrice}/yr`;
-    Alert.alert(
-      'Coming Soon',
-      `Loop Plus (${price}) will be available when the app launches. You'll be among the first to know!`,
-      [{ text: 'OK' }],
-    );
+
+    if (!user?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to subscribe to Loop Plus.');
+      return;
+    }
+
+    setIsLoading(true);
+
+    try {
+      const result = await createUserCheckoutSession(user.id, billingCycle);
+
+      if (result.error) {
+        Alert.alert('Checkout Error', result.error);
+        return;
+      }
+
+      if (result.url) {
+        // Open Stripe Checkout in the system browser
+        await WebBrowser.openBrowserAsync(result.url);
+      }
+    } catch (error) {
+      console.error('[Paywall] Checkout error:', error);
+      Alert.alert(
+        'Something went wrong',
+        'Unable to start checkout. Please try again later.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleRestore = () => {
+  const handleRestore = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Alert.alert(
-      'Restore Purchases',
-      'Purchase restoration will be available when the app launches.',
-      [{ text: 'OK' }],
-    );
+
+    if (!user?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to restore your purchase.');
+      return;
+    }
+
+    setIsRestoring(true);
+
+    try {
+      const result = await restoreUserSubscription(user.id);
+
+      if (result.error) {
+        Alert.alert('Restore Failed', result.error);
+        return;
+      }
+
+      if (result.tier === 'plus') {
+        Alert.alert(
+          'Subscription Restored',
+          'Your Loop Plus subscription has been restored successfully!',
+          [{ text: 'OK', onPress: () => router.back() }],
+        );
+      } else {
+        Alert.alert(
+          'No Subscription Found',
+          'We could not find an active Loop Plus subscription for your account.',
+        );
+      }
+    } catch (error) {
+      console.error('[Paywall] Restore error:', error);
+      Alert.alert(
+        'Something went wrong',
+        'Unable to restore purchases. Please try again later.',
+      );
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    if (!user?.id) return;
+
+    setIsLoading(true);
+
+    try {
+      const result = await createCustomerPortalSession(user.id);
+
+      if (result.error) {
+        Alert.alert('Error', result.error);
+        return;
+      }
+
+      if (result.url) {
+        await WebBrowser.openBrowserAsync(result.url);
+      }
+    } catch (error) {
+      console.error('[Paywall] Portal error:', error);
+      Alert.alert(
+        'Something went wrong',
+        'Unable to open subscription management. Please try again later.',
+      );
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -201,15 +295,36 @@ export default function PaywallScreen() {
         </View>
 
         {/* Restore purchases */}
-        <TouchableOpacity onPress={handleRestore} style={styles.restoreButton}>
-          <Text style={[styles.restoreText, { color: colors.textSecondary }]}>
-            Restore Purchases
-          </Text>
+        <TouchableOpacity
+          onPress={handleRestore}
+          style={styles.restoreButton}
+          disabled={isRestoring}
+        >
+          {isRestoring ? (
+            <ActivityIndicator size="small" color={colors.textSecondary} />
+          ) : (
+            <Text style={[styles.restoreText, { color: colors.textSecondary }]}>
+              Restore Purchases
+            </Text>
+          )}
         </TouchableOpacity>
+
+        {/* Manage subscription (only for existing subscribers) */}
+        {isAlreadyPlus && (
+          <TouchableOpacity
+            onPress={handleManageSubscription}
+            style={styles.restoreButton}
+            disabled={isLoading}
+          >
+            <Text style={[styles.restoreText, { color: BrandColors.loopBlue }]}>
+              Manage Subscription
+            </Text>
+          </TouchableOpacity>
+        )}
 
         {/* Legal links */}
         <Text style={[styles.legalText, { color: colors.textSecondary }]}>
-          Payment will be charged to your App Store account. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period.
+          Payment will be processed securely via Stripe. Subscription automatically renews unless cancelled at least 24 hours before the end of the current period.
         </Text>
       </ScrollView>
 
@@ -217,9 +332,9 @@ export default function PaywallScreen() {
       <View style={[styles.ctaContainer, { paddingBottom: insets.bottom + Spacing.md, backgroundColor: colors.background }]}>
         <TouchableOpacity
           style={styles.ctaButton}
-          onPress={handleSubscribe}
+          onPress={isAlreadyPlus ? handleManageSubscription : handleSubscribe}
           activeOpacity={0.8}
-          disabled={isAlreadyPlus}
+          disabled={isLoading}
         >
           <LinearGradient
             colors={isAlreadyPlus
@@ -229,17 +344,23 @@ export default function PaywallScreen() {
             end={{ x: 1, y: 0 }}
             style={styles.ctaGradient}
           >
-            {isAlreadyPlus ? (
+            {isLoading ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : isAlreadyPlus ? (
               <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
             ) : (
               <LoopLogoVariant size={20} flat />
             )}
             <Text style={styles.ctaText}>
-              {isAlreadyPlus ? 'Already Subscribed' : 'Start 7-Day Free Trial'}
+              {isLoading
+                ? 'Loading...'
+                : isAlreadyPlus
+                  ? 'Manage Subscription'
+                  : 'Start 7-Day Free Trial'}
             </Text>
           </LinearGradient>
         </TouchableOpacity>
-        {!isAlreadyPlus && (
+        {!isAlreadyPlus && !isLoading && (
           <Text style={[styles.ctaSubtext, { color: colors.textSecondary }]}>
             Cancel anytime. No charge until trial ends.
           </Text>

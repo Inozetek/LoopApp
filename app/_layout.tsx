@@ -22,6 +22,7 @@ import { Colors } from '@/constants/theme';
 import { validateEnvironment, logValidationResults, printEnvironmentInfo } from '@/utils/env-validator';
 import { initializeErrorLogging } from '@/utils/error-logger';
 import { handleRadarNotificationTap } from '@/services/radar-push-service';
+import { initSentry, wrapWithSentry } from '@/lib/sentry';
 
 // Suppress known auth errors that are handled gracefully
 LogBox.ignoreLogs([
@@ -51,10 +52,13 @@ function RootLayoutNav() {
     logValidationResults(envResult);
     printEnvironmentInfo();
 
-    // 2. Initialize error logging (Sentry integration)
+    // 2. Initialize Sentry crash reporting (must run before error logger)
+    initSentry();
+
+    // 3. Initialize error logging (wires error-logger.ts → Sentry)
     initializeErrorLogging();
 
-    // 3. In production, prevent app from starting if required env vars are missing
+    // 4. In production, prevent app from starting if required env vars are missing
     if (!envResult.isValid && process.env.NODE_ENV === 'production') {
       console.error('❌ Cannot start app: Required environment variables are missing');
       // In a real production app, you might want to show an error screen
@@ -131,7 +135,7 @@ function RootLayoutNav() {
   );
 }
 
-export default function RootLayout() {
+function RootLayout() {
   const colorScheme = useColorScheme();
 
   // Load Urbanist font
@@ -176,3 +180,8 @@ export default function RootLayout() {
     </GestureHandlerRootView>
   );
 }
+
+// Wrap with Sentry to enable automatic JS error boundary reporting and
+// breadcrumb capture. wrapWithSentry is a no-op when Sentry is not configured
+// (placeholder DSN), so this is always safe to call.
+export default wrapWithSentry(RootLayout);

@@ -22,6 +22,7 @@ import {
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 import { LoopHeader } from '@/components/loop-header';
 import { useAuth } from '@/contexts/auth-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -30,6 +31,7 @@ import { supabase } from '@/lib/supabase';
 import { FEATURE_FLAGS } from '@/constants/feature-flags';
 import { CreateHotDropSheet } from '@/components/create-hot-drop-sheet';
 import type { BusinessTier } from '@/services/hot-drop-service';
+import { createBusinessCheckoutSession } from '@/services/stripe-service';
 
 interface BusinessAnalytics {
   impressions: number;
@@ -48,6 +50,7 @@ export default function BusinessDashboardScreen() {
   const [analytics, setAnalytics] = useState<BusinessAnalytics | null>(null);
   const [loadingAnalytics, setLoadingAnalytics] = useState(true);
   const [showHotDropSheet, setShowHotDropSheet] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
 
   // Fetch business analytics
   const fetchAnalytics = async () => {
@@ -299,14 +302,52 @@ export default function BusinessDashboardScreen() {
               </Text>
               <TouchableOpacity
                 style={[styles.upgradeButton, { backgroundColor: BrandColors.loopGreen }]}
-                onPress={() => {
+                disabled={upgradeLoading}
+                onPress={async () => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  Alert.alert('Upgrade', 'Stripe checkout coming soon!');
+
+                  if (!businessProfile?.id) {
+                    Alert.alert('Error', 'Business profile not found.');
+                    return;
+                  }
+
+                  const targetTier: 'boosted' | 'premium' =
+                    subscriptionTier === 'organic' ? 'boosted' : 'premium';
+
+                  setUpgradeLoading(true);
+
+                  try {
+                    const result = await createBusinessCheckoutSession(
+                      businessProfile.id,
+                      targetTier,
+                    );
+
+                    if (result.error) {
+                      Alert.alert('Checkout Error', result.error);
+                      return;
+                    }
+
+                    if (result.url) {
+                      await WebBrowser.openBrowserAsync(result.url);
+                    }
+                  } catch (error) {
+                    console.error('[BusinessDashboard] Upgrade error:', error);
+                    Alert.alert(
+                      'Something went wrong',
+                      'Unable to start checkout. Please try again later.',
+                    );
+                  } finally {
+                    setUpgradeLoading(false);
+                  }
                 }}
               >
-                <Text style={styles.upgradeButtonText}>
-                  Upgrade Now
-                </Text>
+                {upgradeLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.upgradeButtonText}>
+                    Upgrade Now
+                  </Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>

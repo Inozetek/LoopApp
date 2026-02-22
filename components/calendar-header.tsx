@@ -10,6 +10,8 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { SharedValue } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -28,6 +30,16 @@ interface CalendarHeaderProps {
   showLoopIcon?: boolean;
   /** Badge count to show on the hamburger menu button (e.g. pending feedback) */
   menuBadgeCount?: number;
+  /** Swipe-to-open gesture callbacks on hamburger button */
+  onMenuDrag?: (translationX: number) => void;
+  onMenuDragEnd?: (translationX: number, velocityX: number) => void;
+  /** Menu animation progress (0-1) — keeps button enlarged while menu is open/dragging */
+  menuProgress?: SharedValue<number>;
+  /** Swipe-to-open gesture callbacks on add button (swipe left to open create task) */
+  onAddDrag?: (absTranslationX: number) => void;
+  onAddDragEnd?: (absTranslationX: number, absVelocityX: number) => void;
+  /** Add button animation progress (0-1) */
+  addProgress?: SharedValue<number>;
 }
 
 export function CalendarHeader({
@@ -38,6 +50,12 @@ export function CalendarHeader({
   onTitlePress,
   showLoopIcon = true,
   menuBadgeCount = 0,
+  onMenuDrag,
+  onMenuDragEnd,
+  menuProgress,
+  onAddDrag,
+  onAddDragEnd,
+  addProgress,
 }: CalendarHeaderProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -65,17 +83,39 @@ export function CalendarHeader({
       {/* Left Side - Menu Button */}
       <View style={styles.leftSection}>
         {onMenuPress && (
-          <View style={{ position: 'relative' }}>
-            <MetallicRingButton onPress={handleMenuPress} size={36} innerSize={33}>
-              <View style={calMenuStyles.lines}>
-                <View style={[calMenuStyles.line, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
-                <View style={[calMenuStyles.line, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
-              </View>
-            </MetallicRingButton>
-            {menuBadgeCount > 0 && (
-              <View style={styles.menuBadgeDot} />
-            )}
-          </View>
+          (() => {
+            // Pan gesture on menu button: swipe right to open menu
+            const menuPan = Gesture.Pan()
+              .activeOffsetX([10, 999])
+              .failOffsetY([-15, 15])
+              .onUpdate((event) => {
+                if (event.translationX > 0 && onMenuDrag) {
+                  onMenuDrag(event.translationX);
+                }
+              })
+              .onEnd((event) => {
+                if (onMenuDragEnd) {
+                  onMenuDragEnd(event.translationX, event.velocityX);
+                }
+              })
+              .runOnJS(true);
+
+            return (
+              <GestureDetector gesture={menuPan}>
+                <View style={{ position: 'relative' }}>
+                  <MetallicRingButton onPress={handleMenuPress} size={36} innerSize={33} menuProgress={menuProgress}>
+                    <View style={calMenuStyles.lines}>
+                      <View style={[calMenuStyles.line, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
+                      <View style={[calMenuStyles.line, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
+                    </View>
+                  </MetallicRingButton>
+                  {menuBadgeCount > 0 && (
+                    <View style={styles.menuBadgeDot} />
+                  )}
+                </View>
+              </GestureDetector>
+            );
+          })()
         )}
       </View>
 
@@ -92,12 +132,35 @@ export function CalendarHeader({
         )}
       </TouchableOpacity>
 
-      {/* Right Side - Add Button */}
+      {/* Right Side - Add Button with swipe-left gesture */}
       <View style={styles.rightSection}>
         {onAddPress && (
-          <MetallicRingButton onPress={handleAddPress} size={36} innerSize={33}>
-            <Ionicons name="add" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
-          </MetallicRingButton>
+          (() => {
+            const addPan = Gesture.Pan()
+              .activeOffsetX([-999, -10])
+              .failOffsetY([-15, 15])
+              .onUpdate((event) => {
+                if (event.translationX < 0 && onAddDrag) {
+                  onAddDrag(Math.abs(event.translationX));
+                }
+              })
+              .onEnd((event) => {
+                if (onAddDragEnd) {
+                  onAddDragEnd(Math.abs(event.translationX), Math.abs(event.velocityX));
+                }
+              })
+              .runOnJS(true);
+
+            return (
+              <GestureDetector gesture={addPan}>
+                <View>
+                  <MetallicRingButton onPress={handleAddPress} size={36} innerSize={33} menuProgress={addProgress}>
+                    <Ionicons name="add" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
+                  </MetallicRingButton>
+                </View>
+              </GestureDetector>
+            );
+          })()
         )}
       </View>
     </View>
