@@ -623,7 +623,7 @@ export function LoopMapView({ tasks, homeLocation, currentLocation, onTaskPress,
             pitchEnabled={false}
             mapType="standard"
             userInterfaceStyle={colorScheme === 'dark' ? 'dark' : 'light'}
-            customMapStyle={mapProvider === PROVIDER_GOOGLE ? getMapStyle(colorScheme ?? null) : undefined}
+            customMapStyle={(mapProvider === PROVIDER_GOOGLE || Platform.OS === 'android') ? getMapStyle(colorScheme ?? null) : undefined}
           >
             {/* COMPLETED routes - Bold Google Maps blue with navy border */}
             {/* Border layer (dark navy) */}
