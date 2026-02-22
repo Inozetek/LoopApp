@@ -30,7 +30,7 @@ export default function AIPreferencesScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUserProfile } = useAuth();
 
-  const prefs = user?.preferences || {};
+  const prefs = (user?.preferences || {}) as Record<string, any>;
 
   const [friendSocialRecs, setFriendSocialRecs] = useState(prefs.friend_social_recs_enabled !== false);
   const [calendarLearning, setCalendarLearning] = useState(prefs.calendar_learning_enabled !== false);
@@ -39,7 +39,7 @@ export default function AIPreferencesScreen() {
   const [discoveryStyle, setDiscoveryStyleState] = useState<DiscoveryStyle>(prefs.discovery_style || 'balanced');
 
   const persist = async (updates: Record<string, any>) => {
-    const merged = { ...(user?.preferences || {}), ...updates };
+    const merged = { ...((user?.preferences || {}) as Record<string, any>), ...updates };
     await updateUserProfile({ preferences: merged });
   };
 

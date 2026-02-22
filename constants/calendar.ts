@@ -15,7 +15,7 @@ export const CATEGORY_COLORS: Record<string, string> = {
   other: CategoryColors.other,           // #8E8E93 (Gray)
 };
 
-export const CATEGORY_ICONS = {
+export const CATEGORY_ICONS: Record<string, string> = {
   work: '💼',
   personal: '✨',
   social: '👥',

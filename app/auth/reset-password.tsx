@@ -38,7 +38,7 @@ export default function ResetPasswordScreen() {
         setSessionReady(true);
       } else {
         // Listen for auth state change (token from deep link)
-        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event: string, session: any) => {
           if (event === 'PASSWORD_RECOVERY' && session) {
             setSessionReady(true);
           }

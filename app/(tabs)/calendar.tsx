@@ -1438,7 +1438,7 @@ export default function CalendarScreen() {
               onDayPress={onDayPress}
               markingType={'multi-dot'}
               markedDates={markedDates}
-              dayComponent={CalendarDayCell}
+              dayComponent={CalendarDayCell as any}
               onMonthChange={(month) => {
                 // Smooth fade transition on month change
                 calendarOpacity.value = withSequence(

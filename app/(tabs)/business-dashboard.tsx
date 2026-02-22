@@ -71,7 +71,7 @@ export default function BusinessDashboardScreen() {
       if (error) throw error;
 
       // Sum up the analytics
-      const totals = (data || []).reduce((acc, day) => ({
+      const totals = (data || []).reduce((acc: BusinessAnalytics, day: BusinessAnalytics) => ({
         impressions: acc.impressions + (day.impressions || 0),
         clicks: acc.clicks + (day.clicks || 0),
         calendar_adds: acc.calendar_adds + (day.calendar_adds || 0),
@@ -368,7 +368,7 @@ export default function BusinessDashboardScreen() {
           businessId={businessProfile?.id || ''}
           businessName={businessProfile?.business_name || user?.name || ''}
           businessTier={(businessProfile?.subscription_tier as BusinessTier) || 'organic'}
-          businessAddress={businessProfile?.address}
+          businessAddress={businessProfile?.address ?? undefined}
           businessLatitude={businessProfile?.latitude}
           businessLongitude={businessProfile?.longitude}
         />

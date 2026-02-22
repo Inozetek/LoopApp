@@ -149,7 +149,7 @@ class GooglePlacesService implements IActivitySource {
 
       // Convert PlaceResult[] to UnifiedActivity[]
       // Extract time-sensitive deals from editorial summaries
-      const activities: UnifiedActivity[] = results.map(place => {
+      const activities: UnifiedActivity[] = results.map((place: any) => {
         // PlaceResult uses 'description' while GooglePlaceResult uses 'editorial_summary'
         const editorialSummary = (place as any).editorial_summary || (place as any).description;
         const extractedDeals = extractDealsFromEditorial(editorialSummary);

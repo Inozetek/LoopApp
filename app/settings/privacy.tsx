@@ -30,8 +30,8 @@ export default function PrivacyScreen() {
   const insets = useSafeAreaInsets();
   const { user, updateUserProfile } = useAuth();
 
-  const privacy = user?.privacy_settings || {};
-  const groupInviteSettings = privacy.group_invite_settings || {};
+  const privacy = (user?.privacy_settings || {}) as Record<string, any>;
+  const groupInviteSettings = (privacy.group_invite_settings || {}) as Record<string, any>;
 
   const [shareLoopWith, setShareLoopWith] = useState<LoopVisibility>(privacy.share_loop_with || 'friends');
   const [discoverable, setDiscoverable] = useState(privacy.discoverable !== false);
@@ -39,7 +39,7 @@ export default function PrivacyScreen() {
   const [whoCanInvite, setWhoCanInvite] = useState<InviteSetting>(groupInviteSettings.who_can_invite || 'friends');
 
   const persist = async (updates: Record<string, any>) => {
-    const merged = { ...(user?.privacy_settings || {}), ...updates };
+    const merged = { ...((user?.privacy_settings || {}) as Record<string, any>), ...updates };
     await updateUserProfile({ privacy_settings: merged });
   };
 
@@ -60,7 +60,7 @@ export default function PrivacyScreen() {
 
   const handleWhoCanInvite = (val: InviteSetting) => {
     setWhoCanInvite(val);
-    const existingGroupSettings = user?.privacy_settings?.group_invite_settings || {};
+    const existingGroupSettings = ((user?.privacy_settings as Record<string, any>)?.group_invite_settings || {}) as Record<string, any>;
     persist({
       group_invite_settings: { ...existingGroupSettings, who_can_invite: val },
     });

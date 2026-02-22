@@ -30,6 +30,7 @@ export interface PlaceResult {
   photos?: Array<{ photo_reference: string }>;
   opening_hours?: {
     open_now?: boolean;
+    periods?: Array<{ open: { day: number; time: string }; close?: { day: number; time: string } }>;
   };
   source?: 'google_places' | 'ticketmaster' | 'yelp';
   event_metadata?: any;

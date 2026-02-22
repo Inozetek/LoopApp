@@ -208,7 +208,7 @@ export async function signOutFromGoogle(): Promise<void> {
  */
 export async function isGoogleSignedIn(): Promise<boolean> {
   try {
-    return await GoogleSignin.isSignedIn();
+    return await (GoogleSignin as any).isSignedIn();
   } catch {
     return false;
   }

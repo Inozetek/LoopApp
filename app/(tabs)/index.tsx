@@ -1077,7 +1077,7 @@ export default function RecommendationFeedScreen() {
             .from('users')
             .update({ current_location: `POINT(${location.longitude} ${location.latitude})` })
             .eq('id', user.id)
-            .then(({ error }) => {
+            .then(({ error }: { error: any }) => {
               if (error) console.warn('Failed to update current_location:', error.message);
             });
         }

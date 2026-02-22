@@ -337,6 +337,10 @@ export interface BusinessProfile {
   total_calendar_adds: number
   created_at: string
   updated_at: string
+  // Used by business dashboard for hot drops & tier display
+  subscription_tier?: string
+  latitude?: number
+  longitude?: number
 }
 
 export interface BusinessDailyAnalytics {
