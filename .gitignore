@@ -51,12 +51,17 @@ app-example
 # Test output
 coverage/
 test-data/
+jest-*.txt
+test-*.txt
 
-# Temp debug scripts
+# Temp debug/test scripts
 check-cache.js
 seed-cache.js
 seed-cache-simple.js
 test-cache-read.js
+test-*.js
+test-*.ts
+!__tests__/**
 
 # Windows null device artifact
 nul
