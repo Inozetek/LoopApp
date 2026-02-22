@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  Pressable,
   Modal,
   TextInput,
   Alert,
@@ -12,15 +13,21 @@ import {
   Keyboard,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
+  Dimensions,
 } from 'react-native';
 import Reanimated, {
   FadeIn,
   FadeInDown,
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedProps,
   withTiming,
+  withSpring,
   withSequence,
+  interpolate,
+  Extrapolate,
   Easing as ReanimatedEasing,
+  runOnJS,
 } from 'react-native-reanimated';
 // Map preview is handled by components/map-preview.tsx (.web.tsx for web)
 // let MapView: any;
@@ -42,6 +49,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/auth-context';
@@ -62,10 +70,16 @@ import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { CalendarDayCell } from '@/components/calendar-day-cell';
 import { TaskDetailsModal } from '@/components/task-details-modal';
 import { createMarkedDates } from '@/utils/calendar';
-import { DELAYS, GROK_SPRING, BOTTOM_SHEET_BLUR } from '@/constants/animations';
+import { DELAYS, GROK_SPRING, QUICK_SPRING, BOTTOM_SHEET_BLUR, MENU_CONTENT_BLUR, MENU_OPEN_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
+import { useMenuAnimation } from '@/contexts/menu-animation-context';
+import { useSearchAnimation } from '@/contexts/search-animation-context';
+import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
+import { MainMenuModal } from '@/components/main-menu-modal';
 import { AnimatedDrawer } from '@/components/animated-drawer';
 import { BlurView } from 'expo-blur';
-import { MiniLoopPreview, MiniLoopTask } from '@/components/mini-loop-preview';
+import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
+import { LoopRouteIcon } from '@/components/ui/loop-route-icon';
+import { LinearGradient } from 'expo-linear-gradient';
 import { MomentCaptureModal } from '@/components/moment-capture-modal';
 import { FeedbackCardStack } from '@/components/feedback-card-stack';
 import { getCurrentLocation } from '@/services/location-service';
@@ -78,6 +92,7 @@ import {
   submitFeedback,
   CompletedActivity,
 } from '@/services/feedback-service';
+import { TIER_PRICING } from '@/types/subscription';
 import {
   syncCalendarToDatabase,
   getUpcomingFreeTime,
@@ -189,6 +204,220 @@ function getCategoryFromPlaceTypes(types: string[]): string {
   return 'personal'; // Default fallback
 }
 
+/* ── ViewModeToggle ── pill track with sliding metallic lens + drag ── */
+const TOGGLE_CELL = 38;
+const TOGGLE_LENS_INNER = 35;
+const TOGGLE_SLIDE = 34;                               // px the lens travels
+const TOGGLE_TRACK_W = TOGGLE_CELL + TOGGLE_SLIDE;     // 72px track
+const TOGGLE_TRACK_H = TOGGLE_CELL;
+const TOGGLE_TRACK_R = TOGGLE_TRACK_H / 2;
+const TOGGLE_ANIM_DELAY = 650;
+const TOGGLE_SLIDE_SPRING = { duration: 500, dampingRatio: 0.75 } as const;
+const TOGGLE_SCALE_SPRING = { damping: 25, stiffness: 400, mass: 0.5 };
+
+function ViewModeToggle({
+  viewMode,
+  isDark,
+  onToggle,
+}: {
+  viewMode: 'list' | 'loop';
+  isDark: boolean;
+  onToggle: () => void;
+}) {
+  // 0 = list (left), 1 = loop (right)
+  const slide = useSharedValue(viewMode === 'loop' ? 1 : 0);
+  const dragStart = useSharedValue(0);
+  const lensScale = useSharedValue(1);
+  const currentSide = useSharedValue(viewMode === 'loop' ? 1 : 0);
+  const isDraggingSV = useSharedValue(false);
+
+  const [visualMode, setVisualMode] = useState(viewMode);
+  const isDraggingRef = useRef(false);
+  const pendingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync if viewMode changes externally (e.g. from drawer menu)
+  useEffect(() => {
+    setVisualMode(viewMode);
+    slide.value = withSpring(viewMode === 'loop' ? 1 : 0, TOGGLE_SLIDE_SPRING);
+    currentSide.value = viewMode === 'loop' ? 1 : 0;
+  }, [viewMode]);
+
+  const lensStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: slide.value * TOGGLE_SLIDE },
+      { scale: lensScale.value },
+    ],
+  }));
+
+  // ── Tap handler ──
+  const handleToggle = useCallback(() => {
+    if (isDraggingRef.current) return;
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+    const nextMode = visualMode === 'list' ? 'loop' : 'list';
+    setVisualMode(nextMode);
+    const target = nextMode === 'loop' ? 1 : 0;
+    // Grow lens while it slides (like navbar tap)
+    lensScale.value = withSpring(1.18, TOGGLE_SCALE_SPRING);
+    slide.value = withSpring(target, TOGGLE_SLIDE_SPRING);
+    // Shrink back once lens has settled
+    setTimeout(() => {
+      lensScale.value = withSpring(1, TOGGLE_SCALE_SPRING);
+    }, 200);
+    pendingTimerRef.current = setTimeout(onToggle, TOGGLE_ANIM_DELAY);
+  }, [visualMode, onToggle]);
+
+  // ── Drag callbacks (invoked from worklets via runOnJS) ──
+  const onDragStartJS = useCallback(() => {
+    isDraggingRef.current = true;
+    if (pendingTimerRef.current) {
+      clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+  }, []);
+
+  const onDragEndJS = useCallback((targetIsLoop: boolean) => {
+    isDraggingRef.current = false;
+    const newMode = targetIsLoop ? 'loop' : 'list';
+    setVisualMode(newMode);
+    if (newMode !== viewMode) {
+      pendingTimerRef.current = setTimeout(onToggle, TOGGLE_ANIM_DELAY);
+    }
+  }, [viewMode, onToggle]);
+
+  const onDragCrossJS = useCallback((isLoop: boolean) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setVisualMode(isLoop ? 'loop' : 'list');
+  }, []);
+
+  // ── Pan gesture ──
+  const panGesture = Gesture.Pan()
+    .onStart(() => {
+      'worklet';
+      isDraggingSV.value = true;
+      dragStart.value = slide.value;
+      lensScale.value = withSpring(1.18, TOGGLE_SCALE_SPRING);
+      runOnJS(onDragStartJS)();
+    })
+    .onUpdate((e) => {
+      'worklet';
+      const delta = e.translationX / TOGGLE_SLIDE;
+      const raw = dragStart.value + delta;
+      slide.value = Math.max(0, Math.min(1, raw));
+      const newSide = slide.value > 0.5 ? 1 : 0;
+      if (newSide !== currentSide.value) {
+        currentSide.value = newSide;
+        runOnJS(onDragCrossJS)(newSide === 1);
+      }
+    })
+    .onEnd(() => {
+      'worklet';
+      isDraggingSV.value = false;
+      const target = slide.value > 0.5 ? 1 : 0;
+      slide.value = withSpring(target, TOGGLE_SLIDE_SPRING);
+      lensScale.value = withSpring(1, TOGGLE_SCALE_SPRING);
+      currentSide.value = target;
+      runOnJS(onDragEndJS)(target === 1);
+    })
+    .minDistance(3);
+
+  // Colors
+  const selectedIconColor = isDark ? '#FFFFFF' : '#000000';
+  const idleIconColor = isDark
+    ? 'rgba(255, 255, 255, 0.35)'
+    : 'rgba(0, 0, 0, 0.30)';
+  const trackBorder = isDark
+    ? 'rgba(255, 255, 255, 0.20)'
+    : 'rgba(0, 0, 0, 0.12)';
+
+  return (
+    <GestureDetector gesture={panGesture}>
+      <Reanimated.View
+        style={{
+          width: TOGGLE_TRACK_W,
+          height: TOGGLE_TRACK_H,
+          borderRadius: TOGGLE_TRACK_R,
+          borderWidth: 1,
+          borderColor: trackBorder,
+          flexDirection: 'row',
+          overflow: 'visible',
+          marginRight: 8,
+        }}
+      >
+        {/* ── Sliding metallic lens (absolute) ── */}
+        <Reanimated.View
+          style={[
+            {
+              position: 'absolute',
+              top: -1,
+              left: -1,
+              width: TOGGLE_CELL,
+              height: TOGGLE_CELL,
+              borderRadius: TOGGLE_CELL / 2,
+              overflow: 'hidden',
+            },
+            lensStyle,
+          ]}
+        >
+          <LinearGradient
+            colors={
+              isDark
+                ? ['rgba(255,255,255,0.50)', 'rgba(255,255,255,0.10)', 'rgba(255,255,255,0.40)']
+                : ['rgba(0,0,0,0.08)', 'rgba(0,0,0,0.28)', 'rgba(0,0,0,0.06)']
+            }
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={{ width: TOGGLE_CELL, height: TOGGLE_CELL, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <View
+              style={{
+                width: TOGGLE_LENS_INNER,
+                height: TOGGLE_LENS_INNER,
+                borderRadius: TOGGLE_LENS_INNER / 2,
+                backgroundColor: isDark ? 'rgba(0,0,0,0.75)' : 'rgba(255,255,255,0.75)',
+              }}
+            />
+          </LinearGradient>
+        </Reanimated.View>
+
+        {/* ── List cell (left) ── */}
+        <Pressable
+          onPressIn={visualMode !== 'list' ? handleToggle : undefined}
+          style={{ width: TOGGLE_CELL, height: TOGGLE_CELL - 2, alignItems: 'center', justifyContent: 'center' }}
+        >
+          <Ionicons
+            name="menu"
+            size={18}
+            color={visualMode === 'list' ? selectedIconColor : idleIconColor}
+            style={{ marginLeft: -1 }}
+          />
+        </Pressable>
+
+        {/* ── Loop cell (right) ── */}
+        <Pressable
+          onPressIn={visualMode !== 'loop' ? handleToggle : undefined}
+          style={{
+            width: TOGGLE_CELL,
+            height: TOGGLE_CELL - 2,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginLeft: TOGGLE_SLIDE - TOGGLE_CELL,
+          }}
+        >
+          <View style={{ marginLeft: -1 }}>
+            <LoopRouteIcon
+              size={16}
+              color={visualMode === 'loop' ? selectedIconColor : idleIconColor}
+            />
+          </View>
+        </Pressable>
+      </Reanimated.View>
+    </GestureDetector>
+  );
+}
+
 export default function CalendarScreen() {
   const { user } = useAuth();
   const { setTabNotification } = useTabNotifications();
@@ -199,6 +428,87 @@ export default function CalendarScreen() {
   const safeInsets = useSafeAreaInsets();
   /** Height of the absolutely-positioned blur header */
   const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.standard;
+
+  // Menu + search animation: blur + scale main content when either drawer opens
+  const { menuProgress } = useMenuAnimation();
+  const { searchProgress } = useSearchAnimation();
+
+  const contentAnimStyle = useAnimatedStyle(() => {
+    'worklet';
+    // Combined progress: whichever drawer is more open drives scale/radius
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    // Menu shifts right, search shifts left
+    const menuTx = interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP);
+    const searchTx = interpolate(searchProgress.value, [0, 1], [0, -MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP);
+    return {
+      transform: [
+        { scale: interpolate(combinedP, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
+        { translateX: menuTx + searchTx },
+      ],
+      borderRadius: interpolate(combinedP, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
+      overflow: combinedP > 0.01 ? 'hidden' as const : 'visible' as const,
+    };
+  });
+
+  const contentBlurProps = useAnimatedProps(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    return {
+      intensity: SUPPORTS_ANIMATED_BLUR
+        ? interpolate(combinedP, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
+        : MENU_CONTENT_BLUR.backgroundBlurIntensity,
+    };
+  });
+
+  const contentBlurOverlay = useAnimatedStyle(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    return {
+      opacity: SUPPORTS_ANIMATED_BLUR
+        ? (combinedP > 0.01 ? 1 : 0)
+        : interpolate(combinedP, [0, 1], [0, 1], Extrapolate.CLAMP),
+    };
+  });
+
+  // Main menu modal state
+  const [showMainMenu, setShowMainMenu] = useState(false);
+  const [menuGestureControlled, setMenuGestureControlled] = useState(false);
+
+  // Drawer width for gesture calculations
+  const DRAWER_WIDTH = Dimensions.get('window').width * MENU_DIMENSIONS.widthPercentage;
+
+  /** JS-thread callbacks for CalendarHeader onMenuDrag / onMenuDragEnd */
+  const handleHeaderMenuDrag = useCallback((translationX: number) => {
+    const progress = Math.min(translationX / DRAWER_WIDTH, 1);
+    menuProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showMainMenu) {
+      setMenuGestureControlled(true);
+      setShowMainMenu(true);
+    }
+  }, [DRAWER_WIDTH, menuProgress, showMainMenu]);
+
+  const handleHeaderMenuDragEnd = useCallback((translationX: number, velocityX: number) => {
+    if (translationX > 60 || velocityX > 600) {
+      // Snap open
+      menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showMainMenu) {
+        setMenuGestureControlled(true);
+        setShowMainMenu(true);
+      }
+    } else {
+      // Snap closed
+      menuProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowMainMenu(false);
+      setMenuGestureControlled(false);
+    }
+  }, [showMainMenu, menuProgress, DRAWER_WIDTH]);
+
+  // Reset gestureControlled when menu closes
+  const handleCloseMenu = useCallback(() => {
+    setShowMainMenu(false);
+    setMenuGestureControlled(false);
+  }, []);
+
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const now = new Date();
@@ -249,9 +559,6 @@ export default function CalendarScreen() {
   // Edit task modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
-
-  // Menu drawer state
-  const [showMenuDrawer, setShowMenuDrawer] = useState(false);
 
   // Feedback card stack state
   const [showFeedbackStack, setShowFeedbackStack] = useState(false);
@@ -662,6 +969,30 @@ export default function CalendarScreen() {
     setNewTaskPlaceName('');
   };
 
+  // Create task drawer width for gesture calculation
+  const CREATE_DRAWER_WIDTH = Dimensions.get('window').width * 0.92;
+
+  /** JS-thread callbacks for CalendarHeader onAddDrag / onAddDragEnd */
+  const handleHeaderAddDrag = useCallback((absTranslationX: number) => {
+    const progress = Math.min(absTranslationX / CREATE_DRAWER_WIDTH, 1);
+    searchProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showCreateModal) {
+      openCreateModal();
+    }
+  }, [CREATE_DRAWER_WIDTH, searchProgress, showCreateModal]);
+
+  const handleHeaderAddDragEnd = useCallback((absTranslationX: number, absVelocityX: number) => {
+    if (absTranslationX > 60 || absVelocityX > 600) {
+      searchProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showCreateModal) {
+        openCreateModal();
+      }
+    } else {
+      searchProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      closeCreateModal();
+    }
+  }, [showCreateModal, searchProgress]);
+
   const createEvent = async () => {
     if (!user) return;
     if (!newTaskTitle.trim()) {
@@ -740,7 +1071,7 @@ export default function CalendarScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Mark event as completed in database
-    const result = await markEventAsCompleted(event.id);
+    const result = await markEventAsCompleted(event.id, user?.id);
 
     if (result.success) {
       // Trigger feedback modal
@@ -1070,6 +1401,7 @@ export default function CalendarScreen() {
   return (
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
+      <Reanimated.View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }, contentAnimStyle]}>
         {/* Header - Tap Loop icon/title to toggle map, menu button for options */}
         <CalendarHeader
           title="Loop"
@@ -1077,13 +1409,20 @@ export default function CalendarScreen() {
           menuBadgeCount={pendingFeedbackCount}
           onAddPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            setShowAddOptions(true);
+            openCreateModal();
           }}
           onMenuPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowMenuDrawer(true);
+            setMenuGestureControlled(false);
+            setShowMainMenu(true);
           }}
           onTitlePress={toggleViewMode}
+          onMenuDrag={handleHeaderMenuDrag}
+          onMenuDragEnd={handleHeaderMenuDragEnd}
+          menuProgress={menuProgress}
+          onAddDrag={handleHeaderAddDrag}
+          onAddDragEnd={handleHeaderAddDragEnd}
+          addProgress={searchProgress}
         />
 
       {/* Spacer to push content below the absolute-positioned blur header */}
@@ -1146,11 +1485,10 @@ export default function CalendarScreen() {
             )}
           </View>
           {loopMapTasks.length >= 2 && (
-            <MiniLoopPreview
-              tasks={loopMapTasks as MiniLoopTask[]}
-              homeLocation={parsedHomeLocation}
-              size={52}
-              onPress={toggleViewMode}
+            <ViewModeToggle
+              viewMode={viewMode}
+              isDark={isDark}
+              onToggle={toggleViewMode}
             />
           )}
         </View>
@@ -1426,12 +1764,21 @@ export default function CalendarScreen() {
                   </TouchableOpacity>
                 )}
 
-              {/* Status badge for completed events */}
+              {/* Feedback provided indicator for completed events */}
               {event.status === 'completed' && (
-                <View style={[styles.statusBadge, { backgroundColor: BrandColors.success }]}>
-                  <Ionicons name="checkmark-circle" size={16} color={BrandColors.white} />
-                  <Text style={[Typography.labelSmall, { color: BrandColors.white, marginLeft: 4 }]}>
-                    Completed
+                <View style={[styles.completeButton, { borderColor: BrandColors.loopIndigo, backgroundColor: BrandColors.loopIndigo + '10' }]}>
+                  <Ionicons
+                    name="checkmark-circle-outline"
+                    size={20}
+                    color={BrandColors.loopGreen}
+                  />
+                  <Text
+                    style={[
+                      Typography.labelMedium,
+                      { color: colors.textSecondary, marginLeft: 6 },
+                    ]}
+                  >
+                    Feedback Provided
                   </Text>
                 </View>
               )}
@@ -1459,15 +1806,11 @@ export default function CalendarScreen() {
                 day: 'numeric',
               })}
             </Text>
-            <TouchableOpacity
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                toggleViewMode();
-              }}
-              style={styles.backToListButton}
-            >
-              <Ionicons name="list" size={18} color={BrandColors.loopBlue} />
-            </TouchableOpacity>
+            <ViewModeToggle
+              viewMode={viewMode}
+              isDark={isDark}
+              onToggle={toggleViewMode}
+            />
           </View>
 
           {/* Map View */}
@@ -1576,25 +1919,28 @@ export default function CalendarScreen() {
         </TouchableWithoutFeedback>
       </Modal>
 
-      {/* Create Task Modal */}
-      <Modal visible={showCreateModal} animationType="slide" transparent={true}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <View style={styles.modalOverlay}>
-            <KeyboardAvoidingView
-              behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-              style={{ flex: 1, justifyContent: 'flex-end' }}
-            >
-              <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-                <View style={styles.modalHeader}>
-                  <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    Add to Loop
-                  </Text>
-                  <TouchableOpacity onPress={closeCreateModal}>
-                    <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
-                  </TouchableOpacity>
-                </View>
+      {/* Create Task Drawer */}
+      <AnimatedDrawer
+        visible={showCreateModal}
+        onClose={closeCreateModal}
+        side="right"
+        widthPercentage={0.92}
+        menuProgress={searchProgress}
+      >
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={{ flex: 1, paddingTop: safeInsets.top, paddingBottom: safeInsets.bottom + Spacing.md }}
+        >
+          <View style={styles.drawerHeader}>
+            <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
+              Add to Loop
+            </Text>
+            <TouchableOpacity onPress={closeCreateModal}>
+              <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
+            </TouchableOpacity>
+          </View>
 
-                <ScrollView style={styles.formContainer} keyboardShouldPersistTaps="handled">
+          <ScrollView style={styles.formContainer} keyboardShouldPersistTaps="handled">
               {/* Title */}
               <Text style={[Typography.labelLarge, styles.inputLabel, { color: Colors[colorScheme ?? 'light'].text }]}>
                 Title *
@@ -1889,12 +2235,9 @@ export default function CalendarScreen() {
               >
                 <Text style={[Typography.labelLarge, { color: '#ffffff' }]}>Add to Loop</Text>
               </TouchableOpacity>
-                </ScrollView>
-              </View>
-            </KeyboardAvoidingView>
-          </View>
-        </TouchableWithoutFeedback>
-      </Modal>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </AnimatedDrawer>
 
       {/* Edit Task Modal */}
       {editingEvent && (
@@ -2177,18 +2520,20 @@ export default function CalendarScreen() {
         }}
       />
 
-      {/* Menu Drawer — frosted glass left-side drawer */}
+      {/* Calendar Menu Drawer */}
       <AnimatedDrawer
-        visible={showMenuDrawer}
-        onClose={() => setShowMenuDrawer(false)}
+        visible={showMainMenu}
+        onClose={handleCloseMenu}
         side="left"
         widthPercentage={0.82}
+        menuProgress={menuProgress}
+        gestureControlled={menuGestureControlled}
       >
         <View style={[styles.drawerContent, { paddingTop: safeInsets.top + Spacing.md }]}>
           {/* Menu Header */}
           <View style={styles.drawerHeader}>
             <Text style={[Typography.headlineMedium, { color: colors.text }]}>Loop</Text>
-            <TouchableOpacity onPress={() => setShowMenuDrawer(false)} style={{ padding: Spacing.xs }}>
+            <TouchableOpacity onPress={handleCloseMenu} style={{ padding: Spacing.xs }}>
               <View style={styles.drawerCloseLines}>
                 <View style={[styles.drawerCloseLine, { backgroundColor: colors.text }]} />
                 <View style={[styles.drawerCloseLine, { backgroundColor: colors.text }]} />
@@ -2210,7 +2555,7 @@ export default function CalendarScreen() {
               ]}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                setShowMenuDrawer(false);
+                handleCloseMenu();
                 setTimeout(() => setShowFeedbackStack(true), 250);
               }}
               activeOpacity={0.7}
@@ -2255,7 +2600,7 @@ export default function CalendarScreen() {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
-                setShowMenuDrawer(false);
+                handleCloseMenu();
                 toggleViewMode();
               }}
             >
@@ -2281,7 +2626,7 @@ export default function CalendarScreen() {
             <TouchableOpacity
               style={styles.menuItem}
               onPress={() => {
-                setShowMenuDrawer(false);
+                handleCloseMenu();
                 handleSyncCalendar();
               }}
               disabled={isSyncing || isLoadingPreview}
@@ -2309,7 +2654,7 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={() => {
-                  setShowMenuDrawer(false);
+                  handleCloseMenu();
                   setShowFreeTime(!showFreeTime);
                 }}
               >
@@ -2328,25 +2673,79 @@ export default function CalendarScreen() {
               </TouchableOpacity>
             )}
           </View>
+
+          {/* Upgrade Prompt — only for free-tier users */}
+          {(!user?.subscription_tier || user.subscription_tier === 'free') && (
+            <TouchableOpacity
+              style={[
+                styles.upgradePrompt,
+                {
+                  borderColor: BrandColors.loopBlue + '30',
+                  backgroundColor: isDark
+                    ? 'rgba(59,130,246,0.08)'
+                    : 'rgba(59,130,246,0.04)',
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                handleCloseMenu();
+                setTimeout(() => router.push('/paywall'), 300);
+              }}
+              activeOpacity={0.7}
+            >
+              <LinearGradient
+                colors={[BrandColors.loopBlue, BrandColors.loopGreen]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.upgradePromptIcon}
+              >
+                <Ionicons name="sparkles" size={18} color="#FFFFFF" />
+              </LinearGradient>
+              <View style={styles.menuItemContent}>
+                <Text style={[Typography.labelLarge, { color: colors.text }]}>
+                  Upgrade to Loop Plus
+                </Text>
+                <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                  Unlimited picks, calendar sync & more — ${TIER_PRICING.plus}/mo
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={BrandColors.loopBlue} />
+            </TouchableOpacity>
+          )}
         </View>
       </AnimatedDrawer>
+
+      {/* Blur overlay for menu transition */}
+      <AnimatedBlurView
+        animatedProps={contentBlurProps}
+        tint="dark"
+        experimentalBlurMethod={ANDROID_BLUR_METHOD}
+        style={[StyleSheet.absoluteFill, contentBlurOverlay]}
+        pointerEvents="none"
+      />
+      </Reanimated.View>
 
       {/* Feedback Card Stack */}
       <FeedbackCardStack
         visible={showFeedbackStack}
         activities={pendingFeedbackActivities}
         onClose={() => setShowFeedbackStack(false)}
-        onSubmitFeedback={async (activityId, feedback) => {
+        onSubmitFeedback={async (activityOrEventId, feedback) => {
           if (!user) return;
           try {
+            // Find the matching pending activity to get both IDs
+            const pending = pendingFeedbackActivities.find(
+              a => (a.activityId || a.eventId) === activityOrEventId
+            );
             await submitFeedback({
               userId: user.id,
-              activityId,
+              activityId: pending?.activityId || activityOrEventId,
+              eventId: pending?.eventId,
               rating: feedback.rating,
               tags: feedback.tags,
-              completedAt: new Date().toISOString(),
+              completedAt: pending?.completedAt || new Date().toISOString(),
             });
-            setPendingFeedbackActivities(prev => prev.filter(a => (a.activityId || a.eventId) !== activityId));
+            setPendingFeedbackActivities(prev => prev.filter(a => (a.activityId || a.eventId) !== activityOrEventId));
             setPendingFeedbackCount(prev => Math.max(0, prev - 1));
           } catch (error) {
             console.error('Error submitting feedback:', error);
@@ -2550,14 +2949,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: `${BrandColors.loopBlue}33`, // 20% opacity
   },
-  backToListButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: `${BrandColors.loopBlue}15`,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   calendar: {
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,
@@ -2570,7 +2961,6 @@ const styles = StyleSheet.create({
   },
   eventsHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: Spacing.md,
   },
@@ -2792,6 +3182,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     marginBottom: Spacing.lg,
   },
+  drawerHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+  },
   formContainer: {
     paddingHorizontal: Spacing.lg,
     paddingBottom: Spacing.xl,
@@ -2979,15 +3378,6 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingBottom: Spacing.md,
   },
-  drawerHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(255,255,255,0.1)',
-  },
   drawerCloseLines: {
     gap: 6,
     alignItems: 'center',
@@ -3062,6 +3452,24 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
     marginHorizontal: Spacing.md,
     gap: Spacing.xs,
+  },
+  upgradePrompt: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.sm,
+    paddingVertical: Spacing.md,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+  },
+  upgradePromptIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.sm,
   },
   // Frosted glass add options sheet
   addOptionsSheetGlass: {
