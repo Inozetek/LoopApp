@@ -45,6 +45,7 @@ import Swipeable from 'react-native-gesture-handler/Swipeable';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuth } from '@/contexts/auth-context';
+import { useTabNotifications } from '@/contexts/tab-notifications-context';
 import { supabase } from '@/lib/supabase';
 import { BrandColors, CategoryColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -55,11 +56,18 @@ import { LoopMapView } from '@/components/loop-map-view';
 import { MapPreview } from '@/components/map-preview';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { LocationAutocomplete, RecentLocation, QuickPickLocation } from '@/components/location-autocomplete';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CalendarHeader } from '@/components/calendar-header';
+import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { CalendarDayCell } from '@/components/calendar-day-cell';
 import { TaskDetailsModal } from '@/components/task-details-modal';
 import { createMarkedDates } from '@/utils/calendar';
-import { DELAYS } from '@/constants/animations';
+import { DELAYS, GROK_SPRING, BOTTOM_SHEET_BLUR } from '@/constants/animations';
+import { AnimatedDrawer } from '@/components/animated-drawer';
+import { BlurView } from 'expo-blur';
+import { MiniLoopPreview, MiniLoopTask } from '@/components/mini-loop-preview';
+import { MomentCaptureModal } from '@/components/moment-capture-modal';
+import { FeedbackCardStack } from '@/components/feedback-card-stack';
 import { getCurrentLocation } from '@/services/location-service';
 import { parseLocation } from '@/utils/location-parser';
 import {
@@ -67,6 +75,7 @@ import {
   getPastEventsNeedingFeedback,
   markEventAsCompleted,
   shouldPromptForFeedback,
+  submitFeedback,
   CompletedActivity,
 } from '@/services/feedback-service';
 import {
@@ -182,10 +191,14 @@ function getCategoryFromPlaceTypes(types: string[]): string {
 
 export default function CalendarScreen() {
   const { user } = useAuth();
+  const { setTabNotification } = useTabNotifications();
   const colorScheme = useColorScheme();
   const router = useRouter();
   const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
+  const safeInsets = useSafeAreaInsets();
+  /** Height of the absolutely-positioned blur header */
+  const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.standard;
 
   const [selectedDate, setSelectedDate] = useState<string>(() => {
     const now = new Date();
@@ -225,12 +238,30 @@ export default function CalendarScreen() {
   // Track event IDs that need feedback (auto-detected past events)
   const [eventsNeedingFeedback, setEventsNeedingFeedback] = useState<Set<string>>(new Set());
 
+  // Moment capture state (Share to Loop from feedback)
+  const [showMomentCapture, setShowMomentCapture] = useState(false);
+  const [momentCaptureContext, setMomentCaptureContext] = useState<{
+    activityName: string;
+    activityCategory: string;
+    eventId: string;
+  } | null>(null);
+
   // Edit task modal state
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingEvent, setEditingEvent] = useState<CalendarEvent | null>(null);
 
   // Menu drawer state
   const [showMenuDrawer, setShowMenuDrawer] = useState(false);
+
+  // Feedback card stack state
+  const [showFeedbackStack, setShowFeedbackStack] = useState(false);
+  const [pendingFeedbackActivities, setPendingFeedbackActivities] = useState<CompletedActivity[]>([]);
+  const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
+
+  // Sync pending feedback count to the tab badge so it clears when all feedback is submitted
+  useEffect(() => {
+    setTabNotification('calendar', pendingFeedbackCount);
+  }, [pendingFeedbackCount]);
 
   // Task details modal state (opened from loop map "View Details")
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
@@ -540,9 +571,26 @@ export default function CalendarScreen() {
       if (error) throw error;
       setEvents(data || []);
 
-      // Load which past events need feedback (for "How was it?" chip)
-      getPastEventsNeedingFeedback(user.id).then(pending => {
-        setEventsNeedingFeedback(new Set(pending.map(p => p.eventId)));
+      // Load which past events need feedback (for "How was it?" chip + card stack)
+      Promise.all([
+        getPendingFeedbackActivities(user.id),
+        getPastEventsNeedingFeedback(user.id),
+      ]).then(([completed, past]) => {
+        const seenIds = new Set(completed.map(a => a.eventId));
+        const uniquePast = past.filter(a => !seenIds.has(a.eventId));
+        const merged = [...completed, ...uniquePast];
+        // Dedup by activityId so the same place isn't shown twice
+        const seenActivityIds = new Set<string>();
+        const allPending = merged.filter(a => {
+          if (a.activityId) {
+            if (seenActivityIds.has(a.activityId)) return false;
+            seenActivityIds.add(a.activityId);
+          }
+          return true;
+        });
+        setEventsNeedingFeedback(new Set(allPending.map(p => p.eventId)));
+        setPendingFeedbackActivities(allPending);
+        setPendingFeedbackCount(allPending.length);
       }).catch(() => {});
     } catch (error) {
       console.error('Error loading events:', error);
@@ -722,6 +770,22 @@ export default function CalendarScreen() {
 
     // NOTE: We no longer auto-check for more pending feedback.
     // Each task should be rated individually when the user taps "Rate Activity".
+  };
+
+  const handleShareToLoop = (context: {
+    activityName: string;
+    activityCategory: string;
+    eventId: string;
+    activityId: string | null;
+  }) => {
+    // Find the event to get location/place info for moment capture
+    const event = events.find((e) => e.id === context.eventId);
+    setMomentCaptureContext({
+      activityName: context.activityName,
+      activityCategory: context.activityCategory,
+      eventId: context.eventId,
+    });
+    setShowMomentCapture(true);
   };
 
   const handleEventPress = (event: CalendarEvent) => {
@@ -1010,6 +1074,7 @@ export default function CalendarScreen() {
         <CalendarHeader
           title="Loop"
           showLoopIcon={true}
+          menuBadgeCount={pendingFeedbackCount}
           onAddPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             setShowAddOptions(true);
@@ -1020,6 +1085,9 @@ export default function CalendarScreen() {
           }}
           onTitlePress={toggleViewMode}
         />
+
+      {/* Spacer to push content below the absolute-positioned blur header */}
+      <View style={{ height: headerOffset }} />
 
       {viewMode === 'list' ? (
         <>
@@ -1063,17 +1131,27 @@ export default function CalendarScreen() {
             contentContainerStyle={{ paddingBottom: 100 }}
           >
         <View style={styles.eventsHeader}>
-          <Text style={[Typography.titleLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-            {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
-              weekday: 'long',
-              month: 'long',
-              day: 'numeric',
-            })}
-          </Text>
-          {events.length > 0 && (
-            <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon }]}>
-              {events.length} {events.length === 1 ? 'activity' : 'activities'}
+          <View style={styles.eventsHeaderText}>
+            <Text style={[Typography.titleLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
+              {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
+                weekday: 'long',
+                month: 'long',
+                day: 'numeric',
+              })}
             </Text>
+            {events.length > 0 && (
+              <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon }]}>
+                {events.length} {events.length === 1 ? 'activity' : 'activities'}
+              </Text>
+            )}
+          </View>
+          {loopMapTasks.length >= 2 && (
+            <MiniLoopPreview
+              tasks={loopMapTasks as MiniLoopTask[]}
+              homeLocation={parsedHomeLocation}
+              size={52}
+              onPress={toggleViewMode}
+            />
           )}
         </View>
 
@@ -1310,7 +1388,7 @@ export default function CalendarScreen() {
                     onPress={() => handleMarkAsComplete(event)}
                   >
                     <Ionicons
-                      name="chatbubble-ellipses-outline"
+                      name="chatbubble-outline"
                       size={18}
                       color={BrandColors.loopGreen}
                     />
@@ -1365,36 +1443,31 @@ export default function CalendarScreen() {
           </View>
         )}
 
-        {/* Loop View Button - Show when there are events */}
-        {events.length > 0 && (
-          <TouchableOpacity
-            style={[styles.loopViewButton, { backgroundColor: BrandColors.loopBlue }]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              toggleViewMode();
-            }}
-          >
-            <Ionicons name="map" size={20} color="#ffffff" />
-            <Text style={[Typography.labelLarge, { color: '#ffffff', marginLeft: Spacing.sm }]}>
-              View Loop Map
-            </Text>
-          </TouchableOpacity>
-        )}
+        {/* Loop View Button removed — MiniLoopPreview near date header serves as the toggle */}
           </ScrollView>
         </>
       ) : (
         /* Loop View (Map) */
         <View style={styles.loopViewContainer}>
-          {/* Date Header for Loop View */}
+          {/* Date Header for Loop View — with back-to-list button */}
           <View style={styles.loopDateHeader}>
             <Ionicons name="calendar" size={20} color={BrandColors.loopBlue} />
-            <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text, marginLeft: 8 }]}>
+            <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text, marginLeft: 8, flex: 1 }]}>
               {new Date(selectedDate + 'T00:00:00').toLocaleDateString('en-US', {
                 weekday: 'long',
                 month: 'long',
                 day: 'numeric',
               })}
             </Text>
+            <TouchableOpacity
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                toggleViewMode();
+              }}
+              style={styles.backToListButton}
+            >
+              <Ionicons name="list" size={18} color={BrandColors.loopBlue} />
+            </TouchableOpacity>
           </View>
 
           {/* Map View */}
@@ -1445,12 +1518,22 @@ export default function CalendarScreen() {
         </View>
       )}
 
-      {/* Add Options Sheet — YouTube-style expandable FAB */}
+      {/* Add Options Sheet — Frosted glass bottom sheet */}
       <Modal visible={showAddOptions} animationType="fade" transparent={true}>
         <TouchableWithoutFeedback onPress={() => setShowAddOptions(false)}>
           <View style={styles.modalOverlay}>
             <TouchableWithoutFeedback>
-              <View style={[styles.addOptionsSheet, { backgroundColor: colors.card }]}>
+              <View style={styles.addOptionsSheetGlass}>
+                {Platform.OS === 'ios' && (
+                  <BlurView
+                    intensity={80}
+                    tint={isDark ? 'dark' : 'light'}
+                    style={StyleSheet.absoluteFill}
+                  />
+                )}
+                <View style={[StyleSheet.absoluteFill, {
+                  backgroundColor: isDark ? 'rgba(10,10,10,0.85)' : 'rgba(242,242,247,0.85)',
+                }]} />
                 <View style={styles.addOptionsHandle} />
                 <TouchableOpacity
                   style={styles.addOptionRow}
@@ -1464,10 +1547,10 @@ export default function CalendarScreen() {
                     <Ionicons name="create-outline" size={22} color={BrandColors.loopBlue} />
                   </View>
                   <View style={styles.addOptionText}>
-                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>New Task</Text>
-                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>Create with time, location & category</Text>
+                    <Text style={[Typography.labelLarge, { color: colors.text }]}>New Task</Text>
+                    <Text style={[Typography.bodySmall, { color: colors.icon }]}>Create with time, location & category</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={Colors[colorScheme ?? 'light'].icon} />
+                  <Ionicons name="chevron-forward" size={18} color={colors.icon} />
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.addOptionRow}
@@ -1482,10 +1565,10 @@ export default function CalendarScreen() {
                     <Ionicons name="sparkles-outline" size={22} color={BrandColors.loopGreen} />
                   </View>
                   <View style={styles.addOptionText}>
-                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>From Recommendations</Text>
-                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>Browse AI-curated suggestions</Text>
+                    <Text style={[Typography.labelLarge, { color: colors.text }]}>From Recommendations</Text>
+                    <Text style={[Typography.bodySmall, { color: colors.icon }]}>Browse AI-curated suggestions</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color={Colors[colorScheme ?? 'light'].icon} />
+                  <Ionicons name="chevron-forward" size={18} color={colors.icon} />
                 </TouchableOpacity>
               </View>
             </TouchableWithoutFeedback>
@@ -2031,6 +2114,35 @@ export default function CalendarScreen() {
           activityCategory={feedbackActivity.activityCategory}
           userId={user?.id || ''}
           recommendationId={feedbackActivity.recommendationId || undefined}
+          onShareToLoop={handleShareToLoop}
+        />
+      )}
+
+      {/* Moment Capture Modal (Share to Loop after positive feedback) */}
+      {momentCaptureContext && (
+        <MomentCaptureModal
+          visible={showMomentCapture}
+          currentUserId={user?.id || ''}
+          place={(() => {
+            const event = events.find((e) => e.id === momentCaptureContext.eventId);
+            if (!event) return undefined;
+            const parsed = parseLocation(event.location);
+            return {
+              id: event.activity_id || event.id,
+              name: event.title,
+              location: parsed ? { latitude: parsed.latitude, longitude: parsed.longitude } : undefined,
+              address: event.address,
+            };
+          })()}
+          onClose={() => {
+            setShowMomentCapture(false);
+            setMomentCaptureContext(null);
+          }}
+          onSuccess={() => {
+            setShowMomentCapture(false);
+            setMomentCaptureContext(null);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }}
         />
       )}
 
@@ -2065,127 +2177,182 @@ export default function CalendarScreen() {
         }}
       />
 
-      {/* Menu Drawer Modal */}
-      <Modal
+      {/* Menu Drawer — frosted glass left-side drawer */}
+      <AnimatedDrawer
         visible={showMenuDrawer}
-        animationType="fade"
-        transparent={true}
-        onRequestClose={() => setShowMenuDrawer(false)}
+        onClose={() => setShowMenuDrawer(false)}
+        side="left"
+        widthPercentage={0.82}
       >
-        <TouchableOpacity
-          style={styles.menuOverlay}
-          activeOpacity={1}
-          onPress={() => setShowMenuDrawer(false)}
-        >
-          <View
-            style={[
-              styles.menuDrawer,
-              { backgroundColor: colors.card },
-            ]}
-          >
-            {/* Menu Header */}
-            <View style={styles.menuHeader}>
-              <View style={styles.menuLoopIcon}>
-                <View style={[styles.menuLoopCircle, styles.menuLoopCircleBlue]} />
-                <View style={[styles.menuLoopCircle, styles.menuLoopCircleGreen]} />
+        <View style={[styles.drawerContent, { paddingTop: safeInsets.top + Spacing.md }]}>
+          {/* Menu Header */}
+          <View style={styles.drawerHeader}>
+            <Text style={[Typography.headlineMedium, { color: colors.text }]}>Loop</Text>
+            <TouchableOpacity onPress={() => setShowMenuDrawer(false)} style={{ padding: Spacing.xs }}>
+              <View style={styles.drawerCloseLines}>
+                <View style={[styles.drawerCloseLine, { backgroundColor: colors.text }]} />
+                <View style={[styles.drawerCloseLine, { backgroundColor: colors.text }]} />
               </View>
-              <Text style={[Typography.titleMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
-                Loop Menu
-              </Text>
-            </View>
-
-            {/* Menu Items */}
-            <View style={styles.menuItems}>
-              {/* View Toggle */}
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setShowMenuDrawer(false);
-                  toggleViewMode();
-                }}
-              >
-                <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopBlue}15` }]}>
-                  <Ionicons
-                    name={viewMode === 'list' ? 'map' : 'list'}
-                    size={22}
-                    color={BrandColors.loopBlue}
-                  />
-                </View>
-                <View style={styles.menuItemContent}>
-                  <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {viewMode === 'list' ? 'View Loop Map' : 'View Calendar List'}
-                  </Text>
-                  <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                    {viewMode === 'list' ? 'See your day as a connected route' : 'See your Loop as a list'}
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />
-              </TouchableOpacity>
-
-              {/* Sync Calendar */}
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setShowMenuDrawer(false);
-                  handleSyncCalendar();
-                }}
-                disabled={isSyncing || isLoadingPreview}
-              >
-                <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopGreen}15` }]}>
-                  <Ionicons
-                    name={isLoadingPreview ? 'hourglass' : isSyncing ? 'sync' : 'calendar'}
-                    size={22}
-                    color={BrandColors.loopGreen}
-                  />
-                </View>
-                <View style={styles.menuItemContent}>
-                  <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-                    {isLoadingPreview ? 'Loading...' : isSyncing ? 'Syncing...' : 'Sync Device Calendar'}
-                  </Text>
-                  <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                    Select events to import from your phone
-                  </Text>
-                </View>
-                <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />
-              </TouchableOpacity>
-
-              {/* Free Time (if we have slots) */}
-              {freeTimeSlots.length > 0 && (
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setShowMenuDrawer(false);
-                    setShowFreeTime(!showFreeTime);
-                  }}
-                >
-                  <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopOrange}15` }]}>
-                    <Ionicons name="time" size={22} color={BrandColors.loopOrange} />
-                  </View>
-                  <View style={styles.menuItemContent}>
-                    <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].text }]}>
-                      View Free Time
-                    </Text>
-                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                      {freeTimeSlots.length} free slots this week
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={Colors[colorScheme ?? 'light'].icon} />
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Close Button */}
-            <TouchableOpacity
-              style={styles.menuCloseButton}
-              onPress={() => setShowMenuDrawer(false)}
-            >
-              <Text style={[Typography.labelLarge, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                Close
-              </Text>
             </TouchableOpacity>
           </View>
-        </TouchableOpacity>
-      </Modal>
+
+          {/* Rate Activities — glowing CTA when pending */}
+          {pendingFeedbackCount > 0 && (
+            <TouchableOpacity
+              style={[
+                styles.feedbackCta,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(245,158,11,0.12)'
+                    : 'rgba(245,158,11,0.08)',
+                  borderColor: BrandColors.loopOrange + '50',
+                },
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowMenuDrawer(false);
+                setTimeout(() => setShowFeedbackStack(true), 250);
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={[styles.feedbackCtaIcon, { backgroundColor: BrandColors.loopOrange + '20' }]}>
+                <Ionicons name="star" size={20} color={BrandColors.loopOrange} />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={[Typography.labelLarge, { color: colors.text }]}>
+                  Rate Activities ({pendingFeedbackCount})
+                </Text>
+                <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                  Quick thumbs up/down
+                </Text>
+              </View>
+              <View style={styles.feedbackCtaBadge}>
+                <Text style={styles.feedbackCtaBadgeText}>{pendingFeedbackCount}</Text>
+              </View>
+            </TouchableOpacity>
+          )}
+          {pendingFeedbackCount === 0 && (
+            <View
+              style={[
+                styles.feedbackCtaDone,
+                {
+                  backgroundColor: isDark
+                    ? 'rgba(255,255,255,0.03)'
+                    : 'rgba(0,0,0,0.02)',
+                },
+              ]}
+            >
+              <Ionicons name="checkmark-circle" size={18} color={colors.textSecondary} />
+              <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
+                All caught up!
+              </Text>
+            </View>
+          )}
+
+          {/* Menu Items */}
+          <View style={[styles.drawerSection, { backgroundColor: isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)' }]}>
+            {/* View Toggle */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setShowMenuDrawer(false);
+                toggleViewMode();
+              }}
+            >
+              <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopBlue}15` }]}>
+                <Ionicons
+                  name={viewMode === 'list' ? 'map' : 'list'}
+                  size={22}
+                  color={BrandColors.loopBlue}
+                />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={[Typography.labelLarge, { color: colors.text }]}>
+                  {viewMode === 'list' ? 'View Loop Map' : 'View Calendar List'}
+                </Text>
+                <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                  {viewMode === 'list' ? 'See your day as a connected route' : 'See your Loop as a list'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.icon} />
+            </TouchableOpacity>
+
+            {/* Sync Calendar */}
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setShowMenuDrawer(false);
+                handleSyncCalendar();
+              }}
+              disabled={isSyncing || isLoadingPreview}
+            >
+              <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopGreen}15` }]}>
+                <Ionicons
+                  name={isLoadingPreview ? 'hourglass' : isSyncing ? 'sync' : 'calendar'}
+                  size={22}
+                  color={BrandColors.loopGreen}
+                />
+              </View>
+              <View style={styles.menuItemContent}>
+                <Text style={[Typography.labelLarge, { color: colors.text }]}>
+                  {isLoadingPreview ? 'Loading...' : isSyncing ? 'Syncing...' : 'Sync Device Calendar'}
+                </Text>
+                <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                  Select events to import from your phone
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color={colors.icon} />
+            </TouchableOpacity>
+
+            {/* Free Time (if we have slots) */}
+            {freeTimeSlots.length > 0 && (
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setShowMenuDrawer(false);
+                  setShowFreeTime(!showFreeTime);
+                }}
+              >
+                <View style={[styles.menuItemIcon, { backgroundColor: `${BrandColors.loopOrange}15` }]}>
+                  <Ionicons name="time" size={22} color={BrandColors.loopOrange} />
+                </View>
+                <View style={styles.menuItemContent}>
+                  <Text style={[Typography.labelLarge, { color: colors.text }]}>
+                    View Free Time
+                  </Text>
+                  <Text style={[Typography.bodySmall, { color: colors.icon }]}>
+                    {freeTimeSlots.length} free slots this week
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.icon} />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+      </AnimatedDrawer>
+
+      {/* Feedback Card Stack */}
+      <FeedbackCardStack
+        visible={showFeedbackStack}
+        activities={pendingFeedbackActivities}
+        onClose={() => setShowFeedbackStack(false)}
+        onSubmitFeedback={async (activityId, feedback) => {
+          if (!user) return;
+          try {
+            await submitFeedback({
+              userId: user.id,
+              activityId,
+              rating: feedback.rating,
+              tags: feedback.tags,
+              completedAt: new Date().toISOString(),
+            });
+            setPendingFeedbackActivities(prev => prev.filter(a => (a.activityId || a.eventId) !== activityId));
+            setPendingFeedbackCount(prev => Math.max(0, prev - 1));
+          } catch (error) {
+            console.error('Error submitting feedback:', error);
+          }
+        }}
+      />
 
       {/* Sync Preview Modal - Select events to import */}
       <Modal
@@ -2383,6 +2550,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: `${BrandColors.loopBlue}33`, // 20% opacity
   },
+  backToListButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: `${BrandColors.loopBlue}15`,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   calendar: {
     marginHorizontal: Spacing.md,
     marginBottom: Spacing.md,
@@ -2394,7 +2569,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   eventsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: Spacing.md,
+  },
+  eventsHeaderText: {
+    flex: 1,
   },
   freeTimeBanner: {
     flexDirection: 'row',
@@ -2561,16 +2742,7 @@ const styles = StyleSheet.create({
     borderRadius: BorderRadius.sm,
     marginTop: Spacing.sm,
   },
-  loopViewButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.lg,
-    marginVertical: Spacing.lg,
-    ...Shadows.md,
-  },
+  // loopViewButton removed — MiniLoopPreview near date header serves as toggle
   modalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
@@ -2802,56 +2974,34 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     marginTop: 4,
   },
-  // Menu Drawer Styles
-  menuOverlay: {
+  // Frosted glass drawer styles (AnimatedDrawer provides the glass backdrop)
+  drawerContent: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-start',
+    paddingBottom: Spacing.md,
   },
-  menuDrawer: {
-    marginTop: 100,
-    marginHorizontal: Spacing.lg,
-    borderRadius: BorderRadius.xl,
-    paddingVertical: Spacing.lg,
-    paddingHorizontal: Spacing.md,
-    ...Shadows.lg,
-  },
-  menuHeader: {
+  drawerHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: Spacing.md,
-    paddingBottom: Spacing.md,
+    justifyContent: 'space-between',
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: 'rgba(0, 0, 0, 0.1)',
-    marginBottom: Spacing.md,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
   },
-  menuLoopIcon: {
-    width: 28,
-    height: 28,
-    position: 'relative',
-    marginRight: Spacing.sm,
+  drawerCloseLines: {
+    gap: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  menuLoopCircle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    borderWidth: 3,
-    position: 'absolute',
+  drawerCloseLine: {
+    width: 20,
+    height: 2.5,
+    borderRadius: 2,
   },
-  menuLoopCircleBlue: {
-    borderColor: BrandColors.loopBlue,
-    backgroundColor: 'transparent',
-    top: 0,
-    left: 0,
-  },
-  menuLoopCircleGreen: {
-    borderColor: BrandColors.loopGreen,
-    backgroundColor: 'transparent',
-    bottom: 0,
-    right: 0,
-  },
-  menuItems: {
-    gap: Spacing.xs,
+  drawerSection: {
+    borderRadius: BorderRadius.lg,
+    overflow: 'hidden',
+    margin: Spacing.md,
   },
   menuItem: {
     flexDirection: 'row',
@@ -2871,12 +3021,58 @@ const styles = StyleSheet.create({
   menuItemContent: {
     flex: 1,
   },
-  menuCloseButton: {
+  feedbackCta: {
+    flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: Spacing.md,
-    marginTop: Spacing.md,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: 'rgba(0, 0, 0, 0.1)',
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    borderWidth: 1,
+    marginBottom: Spacing.md,
+    marginHorizontal: Spacing.md,
+  },
+  feedbackCtaIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: BorderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Spacing.md,
+  },
+  feedbackCtaBadge: {
+    minWidth: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: BrandColors.loopOrange,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 6,
+  },
+  feedbackCtaBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  feedbackCtaDone: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Spacing.sm,
+    paddingHorizontal: Spacing.md,
+    borderRadius: BorderRadius.lg,
+    marginBottom: Spacing.md,
+    marginHorizontal: Spacing.md,
+    gap: Spacing.xs,
+  },
+  // Frosted glass add options sheet
+  addOptionsSheetGlass: {
+    position: 'absolute',
+    bottom: 100,
+    left: Spacing.lg,
+    right: Spacing.lg,
+    borderRadius: BorderRadius.xl,
+    paddingVertical: Spacing.lg,
+    paddingHorizontal: Spacing.md,
+    overflow: 'hidden',
   },
   // Sync Preview Modal Styles
   syncPreviewModal: {

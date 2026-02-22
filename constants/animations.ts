@@ -200,6 +200,8 @@ export const MENU_CONTENT_BLUR = {
   contentBorderRadius: 20,
   /** Backdrop opacity behind the drawer (solid black feel) */
   backdropOpacity: 0.85,
+  /** Lighter backdrop for light mode (frosted, not opaque) */
+  backdropOpacityLight: 0.35,
   /** Blur intensity on the drawer panel itself (frosted glass) */
   drawerBlurIntensity: 120,
   /** Starting opacity of drawer dark overlay (panel bg) */

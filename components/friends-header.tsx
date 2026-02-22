@@ -16,6 +16,7 @@ import { BrandColors, Spacing } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
+import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
 
 interface FriendsHeaderProps {
   title?: string;
@@ -33,24 +34,31 @@ export function FriendsHeader({
   chatBadgeCount = 0,
 }: FriendsHeaderProps) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
-
-  const handleAddPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onAddPress?.();
-  };
-
-  const handleChatPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    onChatPress?.();
-  };
+  const iconColor = isDark ? '#FFFFFF' : '#000000';
 
   return (
     <BlurHeaderWrapper style={{ paddingTop: insets.top + Spacing.sm }}>
     <View style={styles.container}>
-      {/* Left Side */}
-      <View style={styles.leftSection} />
+      {/* Left Side - Chat */}
+      <View style={styles.leftSection}>
+        {onChatPress && (
+          <View>
+            <MetallicRingButton onPress={() => onChatPress()} size={36} innerSize={33}>
+              <Ionicons name="chatbubble-outline" size={17} color={iconColor} />
+            </MetallicRingButton>
+            {chatBadgeCount > 0 && (
+              <View style={styles.chatBadge}>
+                <Text style={styles.badgeText}>
+                  {chatBadgeCount > 9 ? '9+' : chatBadgeCount}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+      </View>
 
       {/* Center - Clean "Groops" text (Instagram/Snapchat style) */}
       <View style={styles.titleContainer}>
@@ -64,34 +72,12 @@ export function FriendsHeader({
         )}
       </View>
 
-      {/* Right Side - Chat + Add */}
+      {/* Right Side - Add */}
       <View style={styles.rightSection}>
-        {onChatPress && (
-          <View>
-            <TouchableOpacity
-              onPress={handleChatPress}
-              style={styles.addButton}
-              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-            >
-              <Ionicons name="chatbubble-ellipses-outline" size={24} color={colors.text} />
-            </TouchableOpacity>
-            {chatBadgeCount > 0 && (
-              <View style={styles.chatBadge}>
-                <Text style={styles.badgeText}>
-                  {chatBadgeCount > 9 ? '9+' : chatBadgeCount}
-                </Text>
-              </View>
-            )}
-          </View>
-        )}
         {onAddPress && (
-          <TouchableOpacity
-            onPress={handleAddPress}
-            style={styles.addButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="add-circle-outline" size={26} color={colors.text} />
-          </TouchableOpacity>
+          <MetallicRingButton onPress={() => onAddPress()} size={36} innerSize={33}>
+            <Ionicons name="add" size={18} color={iconColor} />
+          </MetallicRingButton>
         )}
       </View>
     </View>
@@ -108,7 +94,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.sm,
   },
   leftSection: {
-    width: 40,
+    width: 48,
     alignItems: 'flex-start',
   },
   titleContainer: {
@@ -172,20 +158,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   rightSection: {
-    width: 80,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: Spacing.xs,
-  },
-  addButton: {
-    padding: Spacing.xs,
-    marginTop: 1,
+    width: 48,
+    alignItems: 'flex-end',
   },
   chatBadge: {
     position: 'absolute',
     top: 0,
-    right: -2,
+    right: 0,
     backgroundColor: BrandColors.loopBlue,
     borderRadius: 8,
     minWidth: 16,

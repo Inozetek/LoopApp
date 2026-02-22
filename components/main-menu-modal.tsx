@@ -316,7 +316,7 @@ export function MainMenuModal({
         {/* Materialization blur: starts blurred, clears as menu opens */}
         <AnimatedBlurView
           animatedProps={materializeBlurProps}
-          tint="dark"
+          tint={colorScheme === 'dark' ? 'dark' : 'light'}
           experimentalBlurMethod={ANDROID_BLUR_METHOD}
           style={[StyleSheet.absoluteFill, materializeBlurStyle]}
           pointerEvents="none"
@@ -347,14 +347,14 @@ const styles = StyleSheet.create({
     padding: Spacing.xs,
   },
   drawerLines: {
-    gap: 6,
+    gap: 5,
     alignItems: 'center',
     justifyContent: 'center',
   },
   drawerLine: {
-    width: 20,
-    height: 2.5,
-    borderRadius: 2,
+    width: 15.5,
+    height: 1.5,
+    borderRadius: 0.75,
   },
   scrollView: {
     flex: 1,

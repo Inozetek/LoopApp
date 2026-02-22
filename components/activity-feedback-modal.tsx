@@ -79,7 +79,9 @@ export function ActivityFeedbackModal({
       // For thumbs up, show capture prompt if enabled, otherwise submit immediately
       if (enableMomentCapture) {
         setShowCapturePrompt(true);
-        handleSubmit(selectedRating, [], ''); // Submit the feedback
+        // Submit feedback without closing — modal stays open to show capture prompt
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        onSubmit({ rating: selectedRating });
       } else {
         handleSubmit(selectedRating, [], '');
       }

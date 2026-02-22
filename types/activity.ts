@@ -87,6 +87,8 @@ export interface Recommendation {
   businessHours?: any; // Google opening_hours object
   hasEstimatedHours?: boolean; // True if hours are estimated vs from Google
   suggestedTime?: Date; // Recommended visit time when place is open
+  // Date-filtered recommendation context (present when user selects a future date)
+  dateContext?: import('./time-slots').DateContext;
   // Group planning context
   groupContext?: GroupContext;
   // Radar alert metadata (present when cardType === 'radar_alert')

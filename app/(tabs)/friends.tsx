@@ -23,6 +23,8 @@ import { GroupPlanningModal } from '@/components/group-planning-modal';
 import { FriendCardSkeleton } from '@/components/skeleton-loader';
 import { SuccessAnimation } from '@/components/success-animation';
 import SwipeableLayout from '@/components/swipeable-layout';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { FriendsHeader } from '@/components/friends-header';
 import { StoriesGridSection } from '@/components/stories-grid-section';
 import { MomentViewer } from '@/components/moment-viewer';
@@ -68,6 +70,9 @@ export default function FriendsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const safeInsets = useSafeAreaInsets();
+  /** Height of the absolutely-positioned blur header */
+  const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.standard;
 
   const [friends, setFriends] = useState<Friend[]>([]);
   const [friendRequests, setFriendRequests] = useState<FriendRequest[]>([]);
@@ -678,7 +683,7 @@ export default function FriendsScreen() {
 
       <ScrollView
         style={styles.content}
-        contentContainerStyle={{ paddingBottom: 100 }}
+        contentContainerStyle={{ paddingTop: headerOffset, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
       >
         {/* Stories Grid Section */}

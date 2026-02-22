@@ -62,7 +62,7 @@ const FEATURE_DISPLAY: Record<GatedFeature, FeatureDisplay> = {
     title: 'Unlock Calendar Sync',
   },
   ai_explanations: {
-    icon: 'chatbubble-ellipses-outline',
+    icon: 'chatbubble-outline',
     title: 'Unlock AI Insights',
   },
   advanced_filters: {
@@ -228,7 +228,7 @@ describe('UpgradePromptModal', () => {
     it('returns correct display for ai_explanations', () => {
       const display = getDisplayForFeature('ai_explanations');
       expect(display.title).toBe('Unlock AI Insights');
-      expect(display.icon).toBe('chatbubble-ellipses-outline');
+      expect(display.icon).toBe('chatbubble-outline');
     });
 
     it('returns correct display for advanced_filters', () => {

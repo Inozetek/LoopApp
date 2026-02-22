@@ -69,6 +69,82 @@ describe('TabBadge Logic', () => {
     });
   });
 
+  describe('Badge persistence (Instagram-style count→dot)', () => {
+    // Simulates the hasSeen + showAsDot logic from TabBadge and AnimatedTabIcon
+    function computeShowAsDot(
+      showDot: boolean,
+      focused: boolean,
+      hasSeen: boolean,
+      count: number
+    ): boolean {
+      return showDot || ((focused || hasSeen) && count > 0);
+    }
+
+    function computeHasSeen(
+      prevHasSeen: boolean,
+      focused: boolean,
+      count: number
+    ): boolean {
+      // If count dropped to 0, reset
+      if (count <= 0) return false;
+      // If focused with count > 0, mark as seen
+      if (focused && count > 0) return true;
+      return prevHasSeen;
+    }
+
+    it('should show count pill before tab is ever selected', () => {
+      const hasSeen = computeHasSeen(false, false, 3);
+      const showAsDot = computeShowAsDot(false, false, hasSeen, 3);
+      expect(showAsDot).toBe(false); // No dot → shows count pill
+    });
+
+    it('should show dot when tab is focused with badge', () => {
+      const hasSeen = computeHasSeen(false, true, 3);
+      const showAsDot = computeShowAsDot(false, true, hasSeen, 3);
+      expect(showAsDot).toBe(true);
+    });
+
+    it('should persist dot after navigating away (hasSeen stays true)', () => {
+      // First visit sets hasSeen
+      let hasSeen = computeHasSeen(false, true, 3);
+      expect(hasSeen).toBe(true);
+
+      // Navigate away (focused = false), hasSeen persists
+      hasSeen = computeHasSeen(hasSeen, false, 3);
+      expect(hasSeen).toBe(true);
+
+      // Dot still shows even when unfocused
+      const showAsDot = computeShowAsDot(false, false, hasSeen, 3);
+      expect(showAsDot).toBe(true);
+    });
+
+    it('should reset to no badge when count drops to 0', () => {
+      let hasSeen = computeHasSeen(false, true, 3);
+      expect(hasSeen).toBe(true);
+
+      // Count drops to 0
+      hasSeen = computeHasSeen(hasSeen, false, 0);
+      expect(hasSeen).toBe(false);
+
+      const showAsDot = computeShowAsDot(false, false, hasSeen, 0);
+      expect(showAsDot).toBe(false);
+    });
+
+    it('should show count pill again for new notifications after clearing', () => {
+      // Had notifications, visited, cleared
+      let hasSeen = computeHasSeen(false, true, 3);
+      hasSeen = computeHasSeen(hasSeen, false, 0);
+      expect(hasSeen).toBe(false);
+
+      // New notifications arrive (never visited with these)
+      hasSeen = computeHasSeen(hasSeen, false, 2);
+      expect(hasSeen).toBe(false); // Not yet visited
+
+      const showAsDot = computeShowAsDot(false, false, hasSeen, 2);
+      expect(showAsDot).toBe(false); // Shows count pill, not dot
+    });
+  });
+
   describe('Tab notification counts', () => {
     const mockNotifications = {
       calendar: 0,

@@ -191,7 +191,7 @@ describe('Notifications Tray Modal - Helper Functions', () => {
         case 'activity_invite':
           return 'gift-outline';
         case 'feedback_reminder':
-          return 'chatbubble-ellipses-outline';
+          return 'chatbubble-outline';
         default:
           return 'notifications-outline';
       }
@@ -234,7 +234,7 @@ describe('Notifications Tray Modal - Helper Functions', () => {
     });
 
     it('should return chatbubble icon for feedback_reminder', () => {
-      expect(getNotificationIcon('feedback_reminder')).toBe('chatbubble-ellipses-outline');
+      expect(getNotificationIcon('feedback_reminder')).toBe('chatbubble-outline');
     });
 
     it('should return paper-plane icon for activity_share', () => {

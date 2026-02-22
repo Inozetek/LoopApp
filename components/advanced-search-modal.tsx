@@ -14,7 +14,6 @@ import {
   View,
   Text,
   StyleSheet,
-  Modal,
   ScrollView,
   TouchableOpacity,
   TextInput,
@@ -28,10 +27,13 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import Slider from '@react-native-community/slider';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { SharedValue } from 'react-native-reanimated';
 import { BrandColors, CategoryColors, Typography, Spacing, BorderRadius, Shadows } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { LocationAutocomplete } from '@/components/location-autocomplete';
+import { AnimatedDrawer } from '@/components/animated-drawer';
+import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
 
 // Category options for filtering — colors from brand.ts CategoryColors
 const CATEGORIES = [
@@ -73,6 +75,10 @@ interface AdvancedSearchModalProps {
   onApplyFilters: (filters: SearchFilters) => void;
   currentFilters?: Partial<SearchFilters>;
   userLocation?: { latitude: number; longitude: number };
+  /** Shared value for syncing search drawer animation with main content scale */
+  searchProgress?: SharedValue<number>;
+  /** When true, the drawer was opened by a drag gesture — skip the opening spring */
+  gestureControlled?: boolean;
 }
 
 export function AdvancedSearchModal({
@@ -81,6 +87,8 @@ export function AdvancedSearchModal({
   onApplyFilters,
   currentFilters = {},
   userLocation,
+  searchProgress,
+  gestureControlled = false,
 }: AdvancedSearchModalProps) {
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
@@ -267,23 +275,30 @@ export function AdvancedSearchModal({
     return '$'.repeat(value);
   };
 
+  // Semi-transparent card background for frosted glass sections
+  const cardBg = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.03)';
+
   return (
-    <Modal visible={visible} animationType="slide" transparent={false}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Header - Flush with main feed header */}
-        <View style={[styles.header, { borderBottomColor: colors.border, paddingTop: insets.top + Spacing.sm }]}>
-          <TouchableOpacity onPress={onClose} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={28} color={colors.text} />
+    <AnimatedDrawer visible={visible} onClose={onClose} side="right" widthPercentage={0.92} menuProgress={searchProgress} gestureControlled={gestureControlled}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
+        {/* Header */}
+        <View style={[styles.header, { borderBottomColor: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)' }]}>
+          <TouchableOpacity
+            onPress={onClose}
+            style={styles.closeButton}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          >
+            <View style={styles.drawerMenuLines}>
+              <View style={[styles.drawerMenuLine, { backgroundColor: colors.text }]} />
+              <View style={[styles.drawerMenuLine, { backgroundColor: colors.text }]} />
+            </View>
           </TouchableOpacity>
-          <Text style={[Typography.headlineMedium, { color: colors.text }]}>
-            Search & Filters
+          <Text style={[Typography.headlineMedium, { color: colors.text, flex: 1, textAlign: 'right', marginRight: Spacing.sm }]}>
+            Filters
           </Text>
-          <TouchableOpacity onPress={handleReset} style={styles.headerButton}>
-            <Text style={[Typography.labelLarge, { color: BrandColors.loopBlue }]}>Reset</Text>
-          </TouchableOpacity>
         </View>
 
-        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+        <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
           {/* Search Bar */}
           <View style={styles.section}>
             <Text style={[Typography.labelLarge, styles.sectionTitle, { color: colors.text }]}>
@@ -371,9 +386,18 @@ export function AdvancedSearchModal({
 
           {/* Category Filters */}
           <View style={styles.section}>
-            <Text style={[Typography.labelLarge, styles.sectionTitle, { color: colors.text }]}>
-              Categories ({selectedCategories.length} selected)
-            </Text>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={[Typography.labelLarge, styles.sectionTitle, { color: colors.text, marginBottom: 0 }]}>
+                Categories ({selectedCategories.length} selected)
+              </Text>
+              <MetallicRingButton
+                onPress={handleReset}
+                size={30}
+                innerSize={27}
+              >
+                <Ionicons name="refresh" size={14} color={isDark ? '#FFFFFF' : '#000000'} />
+              </MetallicRingButton>
+            </View>
             <View style={styles.categoryGrid}>
               {CATEGORIES.map((category) => {
                 const isSelected = selectedCategories.includes(category.id);
@@ -383,8 +407,8 @@ export function AdvancedSearchModal({
                     style={[
                       styles.categoryChip,
                       {
-                        backgroundColor: isSelected ? category.color : (colors.card),
-                        borderColor: isSelected ? category.color : colors.border,
+                        backgroundColor: isSelected ? category.color : (isDark ? BrandColors.mediumGray : BrandColors.lightBackground),
+                        borderColor: isSelected ? category.color : 'transparent',
                       },
                     ]}
                     onPress={() => toggleCategory(category.id)}
@@ -392,7 +416,7 @@ export function AdvancedSearchModal({
                     <View style={styles.categoryContent}>
                       <Ionicons
                         name={category.icon as any}
-                        size={18}
+                        size={24}
                         color={isSelected ? '#ffffff' : colors.icon}
                       />
                       <Text
@@ -634,7 +658,7 @@ export function AdvancedSearchModal({
           </TouchableOpacity>
         </View>
       </View>
-    </Modal>
+    </AnimatedDrawer>
   );
 }
 
@@ -645,13 +669,9 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    borderBottomWidth: 1,
-  },
-  headerButton: {
-    padding: Spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   scrollView: {
     flex: 1,
@@ -665,6 +685,25 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     marginBottom: Spacing.md,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Spacing.md,
+  },
+  closeButton: {
+    padding: Spacing.xs,
+  },
+  drawerMenuLines: {
+    gap: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  drawerMenuLine: {
+    width: 15.5,
+    height: 1.5,
+    borderRadius: 0.75,
   },
   clearButton: {
     flexDirection: 'row',
@@ -683,12 +722,12 @@ const styles = StyleSheet.create({
     gap: Spacing.sm,
   },
   categoryChip: {
-    width: '31%',
-    aspectRatio: 1.2,
+    width: '23%',
+    aspectRatio: 1,
     borderRadius: BorderRadius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.5,
+    borderWidth: 2,
     padding: Spacing.xs,
   },
   categoryContent: {

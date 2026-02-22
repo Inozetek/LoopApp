@@ -36,6 +36,8 @@ import { getCurrentLocation } from '@/services/location-service';
 import { generateRecommendations, type RecommendationParams, type ScoredRecommendation } from '@/services/recommendations';
 import { SeeDetailsModal } from '@/components/see-details-modal';
 import SwipeableLayout from '@/components/swipeable-layout';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { ExploreHeader } from '@/components/explore-header';
 import { ExploreTile } from '@/components/explore-tile';
 import { SearchSuggestionsPanel } from '@/components/search-suggestions-panel';
@@ -63,6 +65,9 @@ export default function ExploreScreen() {
   const colors = ThemeColors[colorScheme];
   const { user } = useAuth();
   const router = useRouter();
+  const safeInsets = useSafeAreaInsets();
+  /** Height of the absolutely-positioned explore blur header (taller due to search + chips) */
+  const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.explore;
 
   // Radar count state
   const [radarCount, setRadarCount] = useState(0);
@@ -587,6 +592,9 @@ export default function ExploreScreen() {
           onSearchFocus={() => setIsSearchFocused(true)}
           onSearchBlur={() => setIsSearchFocused(false)}
         />
+
+        {/* Spacer to push content below the absolute-positioned blur header */}
+        <View style={{ height: headerOffset }} />
 
         {loading ? (
           <View style={styles.loadingContainer}>

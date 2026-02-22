@@ -875,7 +875,7 @@ export function SeeDetailsModal({
 
                       {reviews.length === 0 && loopComments.length === 0 && (
                         <View style={styles.emptyCommentState}>
-                          <Ionicons name="chatbubble-ellipses-outline" size={36} color={colors.icon} />
+                          <Ionicons name="chatbubble-outline" size={36} color={colors.icon} />
                           <Text style={[styles.emptyCommentTitle, { color: colors.text }]}>
                             No reviews yet
                           </Text>

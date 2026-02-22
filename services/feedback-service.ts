@@ -326,7 +326,22 @@ export async function submitFeedback(feedback: {
       }
     }
 
-    // 1. Insert feedback into database
+    // 1. Check for existing feedback (prevent rating same place twice)
+    if (feedback.activityId) {
+      const { data: existing } = await (supabase
+        .from('feedback') as any)
+        .select('id')
+        .eq('user_id', feedback.userId)
+        .eq('activity_id', feedback.activityId)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        console.log('⏭️  Already rated this activity, skipping duplicate');
+        return { success: true };
+      }
+    }
+
+    // 2. Insert feedback into database
     const feedbackRecord: any = {
       user_id: feedback.userId,
       rating: feedback.rating,

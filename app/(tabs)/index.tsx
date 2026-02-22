@@ -28,15 +28,20 @@ import { NotificationsTrayModal } from '@/components/notifications-tray-modal';
 import { BlockActivityModal } from '@/components/block-activity-modal';
 import { ActivityFeedbackModal } from '@/components/activity-feedback-modal';
 import { ConflictWarningModal } from '@/components/conflict-warning-modal';
-import { FeedFiltersBar, type FeedFilters } from '@/components/feed-filters';
+import { type FeedFilters } from '@/components/feed-filters';
+import { analyzeCalendarSlots, matchActivityToSlots, generateDateContext } from '@/services/time-slot-engine';
+import type { DateFilterSelection, DaySlotAnalysis, CalendarEvent } from '@/types/time-slots';
 import { type FilterSheetFilters } from '@/components/filter-sheet';
 import { MainMenuModal } from '@/components/main-menu-modal';
 import { useMenuAnimation } from '@/contexts/menu-animation-context';
+import { useSearchAnimation } from '@/contexts/search-animation-context';
 import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
 import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
 import { RecommendationHistoryModal } from '@/components/recommendation-history-modal';
 import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
 import { checkDailyLimit, type DailyLimitCheck } from '@/services/subscription-service';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { Recommendation } from '@/types/activity';
 import { generateRecommendations, type RecommendationParams } from '@/services/recommendations';
@@ -216,6 +221,8 @@ interface FeedListProps {
   filters: FeedFilters; // Current filter state (Phase 1.5)
   onExpandDistance: () => void; // Expand distance filter by 10mi (Phase 1.5)
   onRemoveDistanceFilter: () => void; // Remove distance filter (Phase 1.5)
+  headerOffset?: number; // Top padding so content starts below the absolute header
+  listHeaderContent?: React.ReactNode; // Extra content above cards (welcome msg, badges)
 }
 
 const FeedList = memo(
@@ -240,9 +247,15 @@ const FeedList = memo(
     filters,
     onExpandDistance,
     onRemoveDistanceFilter,
+    headerOffset: feedHeaderOffset,
+    listHeaderContent,
   }: FeedListProps) => {
     const colorScheme = useColorScheme();
     const colors = ThemeColors[colorScheme ?? 'light'];
+
+    const mergedContentStyle = feedHeaderOffset
+      ? [styles.listContent, { paddingTop: feedHeaderOffset }]
+      : styles.listContent;
 
     return (
       <Animated.FlatList
@@ -251,7 +264,7 @@ const FeedList = memo(
         renderItem={renderItem}
         keyExtractor={(item, index) => `${item.id}-${index}`}
         extraData={extraData}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={mergedContentStyle}
         showsVerticalScrollIndicator={false}
         onScroll={handleScroll}
         scrollEventThrottle={16}
@@ -265,13 +278,18 @@ const FeedList = memo(
         initialNumToRender={35}
         onEndReached={onEndReached}
         onEndReachedThreshold={0.5} // Trigger only near actual bottom for intentional loading moments
-        ListHeaderComponent={(refreshing && useShimmer) ? (
+        ListHeaderComponent={
           <>
-            <ActivityCardSkeleton />
-            <ActivityCardSkeleton />
-            <ActivityCardSkeleton />
+            {listHeaderContent}
+            {(refreshing && useShimmer) ? (
+              <>
+                <ActivityCardSkeleton />
+                <ActivityCardSkeleton />
+                <ActivityCardSkeleton />
+              </>
+            ) : null}
           </>
-        ) : null}
+        }
         ListFooterComponent={
           feedExhausted ? (
             filters.maxDistance && filters.maxDistance < 100 ? (
@@ -350,7 +368,8 @@ const FeedList = memo(
            prevProps.handleScroll === nextProps.handleScroll &&
            prevProps.extraData === nextProps.extraData &&
            prevProps.useShimmer === nextProps.useShimmer &&
-           prevProps.filters === nextProps.filters;
+           prevProps.filters === nextProps.filters &&
+           prevProps.listHeaderContent === nextProps.listHeaderContent;
   }
 );
 FeedList.displayName = 'FeedList';
@@ -361,30 +380,50 @@ export default function RecommendationFeedScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
+  const safeInsets = useSafeAreaInsets();
+  /** Height of the absolutely-positioned blur header (safe area + header content) */
+  const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.standard;
 
-  // Menu animation: blur + scale main content when drawer opens
+  // Menu + search animation: blur + scale main content when either drawer opens
   const { menuProgress } = useMenuAnimation();
+  const { searchProgress } = useSearchAnimation();
 
-  const menuContentStyle = useAnimatedStyle(() => ({
-    transform: [
-      { scale: interpolate(menuProgress.value, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
-      { translateX: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP) },
-    ],
-    borderRadius: interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
-    overflow: menuProgress.value > 0.01 ? 'hidden' as const : 'visible' as const,
-  }));
+  const menuContentStyle = useAnimatedStyle(() => {
+    'worklet';
+    // Combined progress: whichever drawer is more open drives scale/radius
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    // Menu shifts right, search shifts left
+    const menuTx = interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP);
+    const searchTx = interpolate(searchProgress.value, [0, 1], [0, -MENU_CONTENT_BLUR.contentTranslateX], Extrapolate.CLAMP);
+    return {
+      transform: [
+        { scale: interpolate(combinedP, [0, 1], [1, MENU_CONTENT_BLUR.contentScale], Extrapolate.CLAMP) },
+        { translateX: menuTx + searchTx },
+      ],
+      borderRadius: interpolate(combinedP, [0, 1], [0, MENU_CONTENT_BLUR.contentBorderRadius], Extrapolate.CLAMP),
+      overflow: combinedP > 0.01 ? 'hidden' as const : 'visible' as const,
+    };
+  });
 
-  const menuBlurAnimatedProps = useAnimatedProps(() => ({
-    intensity: SUPPORTS_ANIMATED_BLUR
-      ? interpolate(menuProgress.value, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
-      : MENU_CONTENT_BLUR.backgroundBlurIntensity,
-  }));
+  const menuBlurAnimatedProps = useAnimatedProps(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    return {
+      intensity: SUPPORTS_ANIMATED_BLUR
+        ? interpolate(combinedP, [0, 1], [0, MENU_CONTENT_BLUR.backgroundBlurIntensity], Extrapolate.CLAMP)
+        : MENU_CONTENT_BLUR.backgroundBlurIntensity,
+    };
+  });
 
-  const menuBlurOverlayStyle = useAnimatedStyle(() => ({
-    opacity: SUPPORTS_ANIMATED_BLUR
-      ? (menuProgress.value > 0.01 ? 1 : 0)
-      : interpolate(menuProgress.value, [0, 1], [0, 1], Extrapolate.CLAMP),
-  }));
+  const menuBlurOverlayStyle = useAnimatedStyle(() => {
+    'worklet';
+    const combinedP = Math.max(menuProgress.value, searchProgress.value);
+    return {
+      opacity: SUPPORTS_ANIMATED_BLUR
+        ? (combinedP > 0.01 ? 1 : 0)
+        : interpolate(combinedP, [0, 1], [0, 1], Extrapolate.CLAMP),
+    };
+  });
 
   // Deep link params for scrolling to specific cards (from notifications)
   const { highlightPlanId, scrollToCard } = useLocalSearchParams<{
@@ -427,15 +466,6 @@ export default function RecommendationFeedScreen() {
   } | null>(null);
   const [removingCardId, setRemovingCardId] = useState<string | null>(null); // Track card being removed with animation
   const [pendingFeedbackCount, setPendingFeedbackCount] = useState(0);
-  const [feedbackBannerDismissed, setFeedbackBannerDismissed] = useState(false);
-  // Inline feedback card: first pending activity (one at a time)
-  const [nextFeedbackActivity, setNextFeedbackActivity] = useState<{
-    eventId: string;
-    activityId: string | null;
-    activityName: string;
-    activityCategory: string;
-    completedAt: string;
-  } | null>(null);
 
   // Conflict warning modal state
   const [showConflictModal, setShowConflictModal] = useState(false);
@@ -446,6 +476,7 @@ export default function RecommendationFeedScreen() {
 
   // Advanced search modal state
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const [searchGestureControlled, setSearchGestureControlled] = useState(false);
   const [activeFilters, setActiveFilters] = useState<SearchFilters | null>(null);
   const [userLocation, setUserLocation] = useState<PlaceLocation | null>(null);
 
@@ -510,10 +541,36 @@ export default function RecommendationFeedScreen() {
     handleMenuDragEnd(translationX, velocityX);
   }, [handleMenuDragEnd]);
 
+  // ── Search button drag (swipe left to open search drawer from right) ──
+  const SEARCH_DRAWER_WIDTH = Dimensions.get('window').width * 0.92;
+
+  const handleHeaderSearchDrag = useCallback((absTranslationX: number) => {
+    const progress = Math.min(absTranslationX / SEARCH_DRAWER_WIDTH, 1);
+    searchProgress.value = Math.max(0, progress);
+    if (progress > 0.05 && !showAdvancedSearch) {
+      setSearchGestureControlled(true);
+      setShowAdvancedSearch(true);
+    }
+  }, [SEARCH_DRAWER_WIDTH, searchProgress, showAdvancedSearch]);
+
+  const handleHeaderSearchDragEnd = useCallback((absTranslationX: number, absVelocityX: number) => {
+    if (absTranslationX > 60 || absVelocityX > 600) {
+      searchProgress.value = withSpring(1, MENU_OPEN_SPRING);
+      if (!showAdvancedSearch) {
+        setSearchGestureControlled(true);
+        setShowAdvancedSearch(true);
+      }
+    } else {
+      searchProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
+      setShowAdvancedSearch(false);
+      setSearchGestureControlled(false);
+    }
+  }, [showAdvancedSearch, searchProgress, SEARCH_DRAWER_WIDTH]);
+
   /** Left-edge pan gesture for opening menu */
   const menuEdgeGesture = Gesture.Pan()
     .activeOffsetX([10, 999])
-    .failOffsetY([-15, 15])
+    .failOffsetY([-5, 5])
     .onBegin((event) => {
       // Only activate when touch starts in the left edge zone
       if (event.absoluteX > EDGE_ZONE_MENU) {
@@ -546,8 +603,6 @@ export default function RecommendationFeedScreen() {
     maxDistance: 100, // Any distance
     priceRange: 'any',
   });
-  const [showFilters, setShowFilters] = useState(false);
-
   // Filter sheet state (managed by AdvancedSearchModal)
   const [filterSheetFilters, setFilterSheetFilters] = useState<FilterSheetFilters>({
     mode: 'for_you', // Default to For You mode
@@ -557,6 +612,10 @@ export default function RecommendationFeedScreen() {
     minRating: 0,
     timeOfDay: 'any',
   });
+
+  // Date filter state
+  const [dateFilter, setDateFilter] = useState<DateFilterSelection>({ date: null, quickLabel: null });
+  const [daySlotAnalysis, setDaySlotAnalysis] = useState<DaySlotAnalysis | null>(null);
 
   // History modal state
   const [showHistory, setShowHistory] = useState(false);
@@ -611,7 +670,6 @@ export default function RecommendationFeedScreen() {
   }, [filterSheetFilters]);
 
   const [isFirstCardVisible, setIsFirstCardVisible] = useState(true);
-  const [collapsingFilters, setCollapsingFilters] = useState(false);
 
   // Category filter state
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
@@ -638,8 +696,6 @@ export default function RecommendationFeedScreen() {
   const [hotDrops, setHotDrops] = useState<HotDrop[]>([]);
   const hotDropsFetched = useRef(false);
 
-  // Animated value for filters height
-  const filtersHeight = useSharedValue(0);
   const gestureTranslationY = useSharedValue(0);
 
   const scrollY = useSharedValue(0);
@@ -650,7 +706,6 @@ export default function RecommendationFeedScreen() {
   const feedOpacity = useSharedValue(1); // Feed always visible
   const flatListRef = useRef<FlatList>(null);
   const previousScrollOffset = useRef<number>(0);
-  const lockedScrollPosition = useRef<number>(0); // Lock scroll during filter collapse
   const hasShownWelcome = useRef<boolean>(false); // Track if welcome message already shown this session
   const enableRefreshTimeout = useRef<NodeJS.Timeout | null>(null);
   const isActivelyDragging = useRef<boolean>(false); // Track if user's finger is on screen (not momentum)
@@ -964,12 +1019,6 @@ export default function RecommendationFeedScreen() {
     try {
       if (showRefreshIndicator) {
         setRefreshing(true);
-        // Hide filters when refreshing
-        if (showFilters) {
-          console.log('🔄 Hiding filters during refresh');
-          setShowFilters(false);
-          filtersHeight.value = withTiming(0, { duration: 200, easing: Easing.out(Easing.ease) });
-        }
       } else {
         setLoading(true);
       }
@@ -1760,7 +1809,7 @@ export default function RecommendationFeedScreen() {
     }
   };
 
-  // Check for pending feedback on mount — load first activity for inline card
+  // Check for pending feedback count on mount
   useEffect(() => {
     if (!user) return;
     Promise.all([
@@ -1769,22 +1818,7 @@ export default function RecommendationFeedScreen() {
     ]).then(([completed, past]) => {
       const seenIds = new Set(completed.map(a => a.eventId));
       const uniquePast = past.filter(a => !seenIds.has(a.eventId));
-      const allPending = [...completed, ...uniquePast];
-      setPendingFeedbackCount(allPending.length);
-      setFeedbackBannerDismissed(false);
-      // Set first activity for inline card (one at a time)
-      if (allPending.length > 0) {
-        const first = allPending[0];
-        setNextFeedbackActivity({
-          eventId: first.eventId,
-          activityId: first.activityId,
-          activityName: first.activityName,
-          activityCategory: first.activityCategory,
-          completedAt: first.completedAt,
-        });
-      } else {
-        setNextFeedbackActivity(null);
-      }
+      setPendingFeedbackCount(completed.length + uniquePast.length);
     }).catch(() => {});
   }, [user]);
 
@@ -2094,7 +2128,7 @@ export default function RecommendationFeedScreen() {
     } finally {
       setRefreshing(false);
     }
-  }, [user, recommendations, searchRadiusRef, filters, getCurrentLocation, saveRecommendationsToDB]);
+  }, [user, recommendations, searchRadiusRef, filters, selectedCategories, getCurrentLocation, saveRecommendationsToDB]);
 
   // Memoized onRefresh handler - calls smart merge refresh
   const handleRefresh = useCallback(() => {
@@ -2139,48 +2173,57 @@ export default function RecommendationFeedScreen() {
     }
   }, [recommendations.length]);
 
-  // Track last filter interaction time and collapse delay
-  const [lastFilterInteraction, setLastFilterInteraction] = useState<number>(0);
-  const [collapseDelay, setCollapseDelay] = useState<number>(4000); // 4 seconds by default (initial reveal)
-
-  // Auto-collapse after specified delay (4s on reveal, 2s after interaction)
-  useEffect(() => {
-    if (lastFilterInteraction === 0) {
-      console.log('⏱️ No filter interaction yet, skipping timer');
-      return;
-    }
-
-    console.log(`⏱️ Setting up auto-collapse timer for ${collapseDelay}ms at:`, lastFilterInteraction);
-
-    const timerId = setTimeout(() => {
-      console.log('⏱️ ✨ TIMER FIRED! Collapsing filters now');
-      setShowFilters(false);
-      filtersHeight.value = withTiming(0, { duration: 350, easing: Easing.inOut(Easing.quad) });
-    }, collapseDelay);
-
-    console.log('⏱️ Timer ID:', timerId);
-
-    return () => {
-      console.log('⏱️ Cleanup - clearing timer:', timerId);
-      clearTimeout(timerId);
-    };
-  }, [lastFilterInteraction]); // Only depend on lastFilterInteraction, not showFilters
-
-  // Reset timer on any filter interaction (touch, scroll, or change)
-  const handleFilterInteraction = () => {
-    console.log('🎛️ Filter interaction detected, resetting timer');
-    setCollapseDelay(3000); // 3 seconds after any interaction
-    setLastFilterInteraction(Date.now());
-  };
-
   // Handle filter change (user selection)
   const handleFiltersChange = (newFilters: FeedFilters) => {
     console.log('🎛️ Filter changed:', newFilters);
     setFilters(newFilters);
-    handleFilterInteraction(); // Reset timer
     // Refetch recommendations with new filters
     fetchRecommendations(true);
   };
+
+  // Date filter change handler — analyzes calendar slots for the selected date
+  const handleDateFilterChange = useCallback(async (selection: DateFilterSelection) => {
+    console.log('📅 Date filter changed:', selection.quickLabel || selection.date || 'Today');
+    setDateFilter(selection);
+
+    if (selection.date === null) {
+      // Reset to today — clear analysis
+      setDaySlotAnalysis(null);
+      return;
+    }
+
+    // Analyze calendar for the target date
+    // TODO: Fetch real calendar events from calendar-service
+    // For now, use an empty array (shows "Open day" in banner)
+    const mockEvents: CalendarEvent[] = [];
+    const analysis = analyzeCalendarSlots(mockEvents, selection.date);
+    setDaySlotAnalysis(analysis);
+
+    // Enrich recommendations with date context
+    if (recommendations.length > 0 && analysis.freeSlots.length > 0) {
+      const enriched = recommendations.map((rec) => {
+        const activityLocation = rec.activity?.location
+          ? { latitude: rec.activity.location.latitude, longitude: rec.activity.location.longitude }
+          : undefined;
+
+        const slotMatch = matchActivityToSlots(
+          rec.category,
+          analysis.freeSlots,
+          activityLocation,
+          rec.activity?.openingHoursPeriods
+        );
+
+        if (slotMatch) {
+          return {
+            ...rec,
+            dateContext: generateDateContext(slotMatch, selection.date!),
+          };
+        }
+        return { ...rec, dateContext: undefined };
+      });
+      setRecommendations(enriched);
+    }
+  }, [recommendations]);
 
   // Phase 1.5: Expand distance filter by 10 miles
   const handleExpandDistance = useCallback(() => {
@@ -2451,66 +2494,9 @@ export default function RecommendationFeedScreen() {
     const prevOffset = previousScrollOffset.current;
     scrollY.value = offsetY;
 
-    // If currently collapsing filters, lock scroll at the locked position
-    if (collapsingFilters) {
-      flatListRef.current?.scrollToOffset({
-        offset: lockedScrollPosition.current,
-        animated: false
-      });
-      return; // Don't process any other scroll logic during collapse
-    }
-
-    // Reveal filters when pulling down - ONLY if user is actively dragging (not momentum)
-    // This prevents triggering filters when momentum scrolling back to top
-    const shouldRevealFilters =
-      isFirstCardVisible && // First card must be visible
-      isActivelyDragging.current && // CRITICAL: User must be actively dragging (finger on screen)
-      offsetY < -20 && // Pulled down at least 20px
-      prevOffset >= -20 && // Just crossed the threshold
-      prevOffset <= 0 && // Started from the top
-      !showFilters && // Not already showing
-      !refreshing; // Not refreshing
-
-    if (shouldRevealFilters) {
-      console.log('🎯 Revealing filters (active drag detected, crossed -20 threshold)');
-      setShowFilters(true);
-      filtersHeight.value = withTiming(90, { duration: 300, easing: Easing.out(Easing.cubic) });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      setCollapseDelay(4000);
-      setLastFilterInteraction(Date.now());
-    }
-
-    // PRIORITY: Collapse filters FIRST when user scrolls INTO content while filters are open
-    // Cards stay locked in place during collapse animation
-    // Only trigger when crossing from top zone (<=0) into content (>0) to avoid bounce-back triggering
-    const isScrollingDown = offsetY > 0 && prevOffset <= 0;
-
-    if (isScrollingDown && showFilters && !collapsingFilters) {
-      console.log('📜 Detected downward scroll, locking feed and collapsing filters');
-
-      // Lock current scroll position
-      lockedScrollPosition.current = prevOffset;
-      setCollapsingFilters(true);
-
-      // Collapse filters
-      setShowFilters(false);
-      filtersHeight.value = withTiming(0, {
-        duration: 350,
-        easing: Easing.inOut(Easing.quad)
-      });
-
-      // Unlock scroll after collapse animation completes
-      setTimeout(() => {
-        setCollapsingFilters(false);
-        console.log('✅ Filters collapsed, unlocking feed scroll');
-      }, 350);
-
-      return; // Don't update scroll offset during collapse
-    }
-
     // Update previous scroll offset
     previousScrollOffset.current = offsetY;
-  }, [collapsingFilters, isFirstCardVisible, showFilters, refreshing, scrollY, filtersHeight]);
+  }, [refreshing, scrollY]);
 
   // Track when user starts dragging (finger on screen)
   const handleScrollBeginDrag = useCallback(() => {
@@ -2524,53 +2510,9 @@ export default function RecommendationFeedScreen() {
     isActivelyDragging.current = false;
   }, []);
 
-  // Pan gesture to reveal filters (only works when first card is visible)
+  // Pan gesture (placeholder — filter pull-down removed, search drawer replaces it)
   const panGesture = Gesture.Pan()
-    .enabled(isFirstCardVisible) // Only allow when first card is visible
-    .activeOffsetY(15) // Require 15px downward movement to activate
-    .failOffsetY(-10) // Fail if swiping up
-    .failOffsetX([-20, 20]) // Fail if swiping horizontally
-    .maxPointers(1)
-    .simultaneousWithExternalGesture(flatListRef as any)
-    .onBegin(() => {
-      'worklet';
-      console.log('🎯 Pan gesture begin, firstCardVisible:', isFirstCardVisible);
-    })
-    .onStart(() => {
-      'worklet';
-      console.log('🎯 Pan gesture started - pulling to reveal filters');
-      runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-    })
-    .onUpdate((event) => {
-      'worklet';
-      // Only process when scrolled to top and pulling down
-      if (scrollY.value <= 0 && event.translationY > 0) {
-        gestureTranslationY.value = event.translationY;
-        // Smooth mapping: 0-90px swipe = 0-90px filter height
-        const progress = Math.min(event.translationY / 90, 1);
-        // Use easing for smoother feel
-        const easedProgress = progress * progress; // Quadratic easing
-        filtersHeight.value = easedProgress * 90;
-      }
-    })
-    .onEnd((event) => {
-      'worklet';
-      console.log('✋ Gesture ended, translationY:', event.translationY);
-      // If swiped down more than 20px, reveal filters
-      if (event.translationY > 20 && scrollY.value <= 0) {
-        filtersHeight.value = withTiming(90, { duration: 300, easing: Easing.out(Easing.cubic) });
-        runOnJS(setShowFilters)(true);
-        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
-        // Start auto-collapse timer with 4-second delay (initial reveal)
-        runOnJS(setCollapseDelay)(4000);
-        runOnJS(setLastFilterInteraction)(Date.now());
-      } else {
-        // Snap back to hidden with smooth animation
-        filtersHeight.value = withTiming(0, { duration: 300, easing: Easing.out(Easing.cubic) });
-        runOnJS(setShowFilters)(false);
-      }
-      gestureTranslationY.value = 0;
-    });
+    .enabled(false);
 
   // Refresh tab bar badges from notification data
   const refreshTabBadges = async () => {
@@ -2738,20 +2680,12 @@ export default function RecommendationFeedScreen() {
     };
   });
 
-  const filtersStyle = useAnimatedStyle(() => {
-    return {
-      height: filtersHeight.value,
-      opacity: interpolate(filtersHeight.value, [0, 90], [0, 1], Extrapolate.CLAMP),
-      overflow: 'hidden',
-    };
-  });
-
   // Render loading state
   if (loading) {
     return (
       <SwipeableLayout disableLeftEdgeSwipe>
         <GestureDetector gesture={menuEdgeGesture}>
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
           <LoopHeader
             showProfileAvatar={true}
@@ -2762,8 +2696,13 @@ export default function RecommendationFeedScreen() {
 
             onMenuDrag={handleHeaderMenuDrag}
             onMenuDragEnd={handleHeaderMenuDragEnd}
+            onSearchDrag={handleHeaderSearchDrag}
+            onSearchDragEnd={handleHeaderSearchDragEnd}
             menuProgress={menuProgress}
+            searchProgress={searchProgress}
           />
+          {/* Spacer to push content below the absolute-positioned blur header */}
+          <View style={{ height: headerOffset }} />
           {seedingCity ? (
             <View style={[styles.seedingContainer, { backgroundColor: colors.background }]}>
               <ActivityIndicator size="large" color={BrandColors.loopBlue} style={{ marginBottom: Spacing.lg }} />
@@ -2803,7 +2742,7 @@ export default function RecommendationFeedScreen() {
     return (
       <SwipeableLayout disableLeftEdgeSwipe>
         <GestureDetector gesture={menuEdgeGesture}>
-        <View style={{ flex: 1, backgroundColor: '#000' }}>
+        <View style={{ flex: 1, backgroundColor: colors.background }}>
         <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
           <LoopHeader
             showProfileAvatar={true}
@@ -2814,8 +2753,13 @@ export default function RecommendationFeedScreen() {
 
             onMenuDrag={handleHeaderMenuDrag}
             onMenuDragEnd={handleHeaderMenuDragEnd}
+            onSearchDrag={handleHeaderSearchDrag}
+            onSearchDragEnd={handleHeaderSearchDragEnd}
             menuProgress={menuProgress}
+            searchProgress={searchProgress}
           />
+          {/* Spacer to push content below the absolute-positioned blur header */}
+          <View style={{ height: headerOffset }} />
           <EmptyState
             icon="sparkles"
             title="No recommendations yet"
@@ -2840,7 +2784,7 @@ export default function RecommendationFeedScreen() {
   return (
     <SwipeableLayout disableLeftEdgeSwipe>
       <GestureDetector gesture={menuEdgeGesture}>
-      <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
         <LoopHeader
           showProfileAvatar={true}
@@ -2851,7 +2795,10 @@ export default function RecommendationFeedScreen() {
 
           onMenuDrag={handleHeaderMenuDrag}
           onMenuDragEnd={handleHeaderMenuDragEnd}
+          onSearchDrag={handleHeaderSearchDrag}
+          onSearchDragEnd={handleHeaderSearchDragEnd}
           menuProgress={menuProgress}
+          searchProgress={searchProgress}
           onLogoPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
@@ -2859,113 +2806,7 @@ export default function RecommendationFeedScreen() {
           isLoading={USE_SHIMMER_FOR_REFRESH && refreshing}
         />
 
-        {/* Trial Badge (for trialing users) */}
-        {dailyLimitInfo?.trialStatus?.isTrialing && (
-          <TouchableOpacity
-            style={styles.trialBadge}
-            onPress={() => router.push('/(tabs)/settings')}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.trialBadgeGradient}
-            >
-              <Ionicons name="star" size={12} color="#FFFFFF" />
-              <Text style={styles.trialBadgeText}>
-                Plus Trial: {dailyLimitInfo.trialStatus.daysLeft} day{dailyLimitInfo.trialStatus.daysLeft === 1 ? '' : 's'} left
-              </Text>
-            </LinearGradient>
-          </TouchableOpacity>
-        )}
-
-        {/* Welcome Message */}
-        <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
-          <Text style={[
-            styles.welcomeText,
-            { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.65)' }
-          ]}>
-            {welcomeMessage}
-          </Text>
-        </Animated.View>
-
-        {/* Inline feedback card — one activity at a time (replaces old batch banner) */}
-        {nextFeedbackActivity && !feedbackBannerDismissed && (
-          <View style={[styles.feedbackCard, { backgroundColor: colors.card }]}>
-            <View style={styles.feedbackCardHeader}>
-              <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>
-                How was your visit?
-              </Text>
-              <TouchableOpacity
-                onPress={() => {
-                  setNextFeedbackActivity(null);
-                  setFeedbackBannerDismissed(true);
-                }}
-                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-              >
-                <Text style={[Typography.bodySmall, { color: colors.textSecondary }]}>Skip</Text>
-              </TouchableOpacity>
-            </View>
-            <Text style={[Typography.titleMedium, { color: colors.text, marginBottom: 4 }]} numberOfLines={1}>
-              {nextFeedbackActivity.activityName}
-            </Text>
-            <Text style={[Typography.bodySmall, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
-              {nextFeedbackActivity.activityCategory}
-              {nextFeedbackActivity.completedAt ? ` \u00B7 ${new Date(nextFeedbackActivity.completedAt).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}` : ''}
-            </Text>
-            <View style={styles.feedbackCardActions}>
-              <TouchableOpacity
-                style={[styles.feedbackThumbBtn, { backgroundColor: BrandColors.loopGreen + '15' }]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  // Set the activity and open feedback modal for full feedback flow
-                  setFeedbackActivity({
-                    activityId: nextFeedbackActivity.activityId || '',
-                    activityName: nextFeedbackActivity.activityName,
-                    completedAt: nextFeedbackActivity.completedAt,
-                  });
-                  setShowFeedbackModal(true);
-                  setNextFeedbackActivity(null);
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="thumbs-up" size={22} color={BrandColors.loopGreen} />
-                <Text style={[Typography.labelMedium, { color: BrandColors.loopGreen, marginLeft: 6 }]}>Loved it</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.feedbackThumbBtn, { backgroundColor: '#FF6B6B15' }]}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  setFeedbackActivity({
-                    activityId: nextFeedbackActivity.activityId || '',
-                    activityName: nextFeedbackActivity.activityName,
-                    completedAt: nextFeedbackActivity.completedAt,
-                  });
-                  setShowFeedbackModal(true);
-                  setNextFeedbackActivity(null);
-                }}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="thumbs-down" size={22} color="#FF6B6B" />
-                <Text style={[Typography.labelMedium, { color: '#FF6B6B', marginLeft: 6 }]}>Not great</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        )}
-
-        {/* Collapsible Filters (push cards down when visible) */}
-        <Animated.View style={filtersStyle}>
-          <FeedFiltersBar
-            filters={filters}
-            onFiltersChange={handleFiltersChange}
-            onInteraction={handleFilterInteraction}
-          />
-        </Animated.View>
-
-        {/* Feed with gesture to reveal filters */}
-        <GestureDetector gesture={panGesture}>
-          <Animated.View style={{ flex: 1 }}>
+        {/* Feed — FlatList spans full height, content scrolls behind header */}
             <FeedList
               data={blendedFeed}
               renderItem={renderItem}
@@ -2984,12 +2825,47 @@ export default function RecommendationFeedScreen() {
               searchRadius={searchRadius}
               extraData={`${refreshKey}`}
               useShimmer={USE_SHIMMER_FOR_REFRESH}
+              headerOffset={headerOffset}
+              listHeaderContent={
+                <>
+                  {/* Trial Badge (for trialing users) */}
+                  {dailyLimitInfo?.trialStatus?.isTrialing && (
+                    <TouchableOpacity
+                      style={styles.trialBadge}
+                      onPress={() => router.push('/(tabs)/settings')}
+                      activeOpacity={0.7}
+                    >
+                      <LinearGradient
+                        colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.trialBadgeGradient}
+                      >
+                        <Ionicons name="star" size={12} color="#FFFFFF" />
+                        <Text style={styles.trialBadgeText}>
+                          Plus Trial: {dailyLimitInfo.trialStatus.daysLeft} day{dailyLimitInfo.trialStatus.daysLeft === 1 ? '' : 's'} left
+                        </Text>
+                      </LinearGradient>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Welcome Message */}
+                  <Animated.View style={[styles.welcomeContainer, welcomeMessageStyle]}>
+                    <Text style={[
+                      styles.welcomeText,
+                      { color: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.65)' }
+                    ]}>
+                      {welcomeMessage}
+                    </Text>
+                  </Animated.View>
+
+                  {/* Feedback card removed — now in FeedbackCardStack via menu */}
+                </>
+              }
               filters={filters}
               onExpandDistance={handleExpandDistance}
               onRemoveDistanceFilter={handleRemoveDistanceFilter}
             />
-          </Animated.View>
-        </GestureDetector>
 
         {/* Schedule Modal */}
         {selectedRecommendation && (
@@ -3079,9 +2955,10 @@ export default function RecommendationFeedScreen() {
         {/* Advanced Search Modal */}
         <AdvancedSearchModal
           visible={showAdvancedSearch}
-          onClose={() => setShowAdvancedSearch(false)}
+          onClose={() => { setShowAdvancedSearch(false); setSearchGestureControlled(false); }}
           onApplyFilters={handleApplyAdvancedFilters}
           currentFilters={activeFilters ? { ...activeFilters, discoveryMode: 'for_you' } : { discoveryMode: 'for_you' }}
+          gestureControlled={searchGestureControlled}
           userLocation={
             user
               ? {
@@ -3090,6 +2967,7 @@ export default function RecommendationFeedScreen() {
                 }
               : undefined
           }
+          searchProgress={searchProgress}
         />
 
         {/* Notifications Tray Modal */}
@@ -3103,7 +2981,6 @@ export default function RecommendationFeedScreen() {
         <MainMenuModal
           visible={showMainMenu}
           onClose={handleCloseMenu}
-
           onOpenDashboard={() => setShowDashboard(true)}
           onOpenHistory={() => setShowHistory(true)}
           gestureControlled={menuGestureControlled}
@@ -3205,30 +3082,6 @@ const styles = StyleSheet.create({
     ...Typography.labelSmall,
     color: '#FFFFFF',
     fontFamily: 'Urbanist-SemiBold',
-  },
-  feedbackCard: {
-    marginHorizontal: Spacing.lg,
-    marginBottom: Spacing.md,
-    padding: Spacing.md,
-    borderRadius: 14,
-  },
-  feedbackCardHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  feedbackCardActions: {
-    flexDirection: 'row',
-    gap: Spacing.sm,
-  },
-  feedbackThumbBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Spacing.sm,
-    borderRadius: 10,
   },
   feedbackBannerLegacy: {
     flexDirection: 'row',

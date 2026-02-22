@@ -763,7 +763,7 @@ function ActivityCardIntelligentComponent({
               if (badges.length < 2 && hasFriendActivity && !isEvent) {
                 badges.push(
                   <View key="friends" style={styles.loopPickBadge}>
-                    <Ionicons name="people" size={11} color="#FFFFFF" />
+                    <Ionicons name="people" size={11} color="rgba(255, 255, 255, 0.85)" />
                     <Text style={styles.loopPickText}>Friends Visited</Text>
                   </View>
                 );
@@ -771,7 +771,7 @@ function ActivityCardIntelligentComponent({
               if (badges.length < 2 && isTrending && !isEvent) {
                 badges.push(
                   <View key="trending" style={styles.trendingBadge}>
-                    <Ionicons name="flame" size={12} color="#FFFFFF" />
+                    <Ionicons name="flame" size={12} color="rgba(255, 255, 255, 0.85)" />
                     <Text style={styles.trendingText}>Trending</Text>
                   </View>
                 );
@@ -779,7 +779,7 @@ function ActivityCardIntelligentComponent({
               if (badges.length < 2 && isCurated && !isEvent && showInsights) {
                 badges.push(
                   <View key="pick" style={styles.loopPickBadge}>
-                    <Ionicons name="star" size={11} color="#FFFFFF" />
+                    <Ionicons name="star" size={11} color="rgba(255, 255, 255, 0.85)" />
                     <Text style={styles.loopPickText}>Loop Pick</Text>
                   </View>
                 );
@@ -882,6 +882,36 @@ function ActivityCardIntelligentComponent({
               </>
             )}
           </View>
+
+          {/* Date Context Row — shown when date-filtered recommendations have time context */}
+          {recommendation.dateContext && showInsights && (
+            <View style={styles.dateContextRow}>
+              <View style={styles.dateContextTime}>
+                <Ionicons name="time-outline" size={14} color={colors.primary} />
+                <Text style={[styles.dateContextTimeText, { color: colors.text }]}>
+                  {recommendation.dateContext.suggestedTimeLabel}
+                </Text>
+                <View style={[
+                  styles.confidenceDot,
+                  {
+                    backgroundColor: recommendation.dateContext.confidenceTier === 'high'
+                      ? BrandColors.loopGreen
+                      : recommendation.dateContext.confidenceTier === 'medium'
+                        ? BrandColors.loopOrange
+                        : colors.textSecondary,
+                  },
+                ]} />
+              </View>
+              {recommendation.dateContext.travelContextLabel && (
+                <Text style={[styles.dateContextTravel, { color: colors.textSecondary }]}>
+                  {recommendation.dateContext.travelContextLabel}
+                </Text>
+              )}
+              <Text style={[styles.dateContextLabel, { color: colors.textSecondary }]} numberOfLines={1}>
+                {recommendation.dateContext.timeContextLabel}
+              </Text>
+            </View>
+          )}
 
           {/* Friend Activity Row (Phase 2) */}
           {hasFriendActivity && friendActivity && (
@@ -1208,41 +1238,41 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     gap: Spacing.xs,
   },
-  // Loop Pick Badge (curated recommendations)
+  // Loop Pick Badge — frosted glass minimal style
   loopPickBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: BrandColors.loopGreen,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
     gap: 4,
   },
   loopPickText: {
-    color: '#FFFFFF',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     letterSpacing: 0.3,
   },
-  // Trending Badge (replaces Top Match badge)
+  // Trending Badge — frosted glass minimal style
   trendingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: BrandColors.loopOrange,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
     gap: 4,
   },
   trendingText: {
-    color: '#FFFFFF',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
   },
   openNowBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: BrandColors.loopGreen,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     paddingHorizontal: Spacing.sm,
     paddingVertical: 4,
     borderRadius: BorderRadius.full,
@@ -1252,12 +1282,12 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
   },
   openNowText: {
-    color: '#FFFFFF',
+    color: 'rgba(255, 255, 255, 0.9)',
     fontSize: 11,
-    fontWeight: '600',
+    fontWeight: '500',
     letterSpacing: 0.5,
   },
   // Insight tag badge (replaces gradient match %)
@@ -1440,6 +1470,38 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 166, 217, 0.1)', // loopBlue at 10%
     borderRadius: BorderRadius.full,
     paddingHorizontal: 12,
+  },
+
+  // Date Context Row (date-filtered recommendations)
+  dateContextRow: {
+    marginBottom: Spacing.sm,
+    gap: 3,
+  },
+  dateContextTime: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  dateContextTimeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'Urbanist-SemiBold',
+  },
+  confidenceDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
+  dateContextTravel: {
+    fontSize: 12,
+    fontWeight: '400',
+    marginLeft: 20, // Align with text after icon
+  },
+  dateContextLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    fontStyle: 'italic',
+    marginLeft: 20,
   },
 
   // PHASE 2: Friend Activity Row

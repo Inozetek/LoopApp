@@ -29,41 +29,61 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { ProfileHeader } from '@/components/profile-header';
 import ProfileStatsBar, { TraitPills, type FeedbackStats } from '@/components/profile-stats-bar';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '@/contexts/auth-context';
 import { supabase } from '@/lib/supabase';
 import { getUserFeedbackStats } from '@/services/feedback-service';
 import SwipeableLayout from '@/components/swipeable-layout';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors, Spacing, BorderRadius, BrandColors } from '@/constants/brand';
+import { ThemeColors, Spacing, BorderRadius, BrandColors, CategoryColors } from '@/constants/brand';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 import { generatePersonalitySummary, type PersonalityInput } from '@/utils/personality-generator';
 
-// Spotify-style tile gradients per category (matches onboarding.tsx)
-const TILE_GRADIENTS: Record<string, [string, string]> = {
-  'Dining': ['#C62828', '#6D1B1B'],
-  'Coffee & Cafes': ['#795548', '#3E2723'],
-  'Bars & Nightlife': ['#6A1B9A', '#311B92'],
-  'Live Music': ['#E65100', '#BF360C'],
-  'Entertainment': ['#AD1457', '#880E4F'],
-  'Fitness & Gym': ['#2E7D32', '#1B5E20'],
-  'Outdoor Sports': ['#2E7D32', '#1B5E20'],
-  'Yoga & Mindfulness': ['#00796B', '#004D40'],
-  'Arts & Culture': ['#4527A0', '#283593'],
-  'Museums & Art': ['#4527A0', '#283593'],
-  'Photography': ['#37474F', '#263238'],
-  'Shopping': ['#C2185B', '#880E4F'],
-  'Beauty & Spa': ['#AD1457', '#880E4F'],
-  'Parks & Nature': ['#00796B', '#004D40'],
-  'Hiking & Trails': ['#2E7D32', '#1B5E20'],
-  'Movies & Cinema': ['#37474F', '#263238'],
-  'Comedy & Theater': ['#E65100', '#BF360C'],
-  'Gaming': ['#6A1B9A', '#311B92'],
-  'Desserts & Treats': ['#C62828', '#6D1B1B'],
-  'Sports': ['#1565C0', '#0D47A1'],
-  'Wellness': ['#00838F', '#006064'],
+// Ionicons for interest tiles (matches search modal style — no emojis)
+const TILE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Dining': 'restaurant',
+  'Coffee & Cafes': 'cafe',
+  'Bars & Nightlife': 'wine',
+  'Live Music': 'musical-notes',
+  'Entertainment': 'film',
+  'Sports': 'basketball',
+  'Fitness': 'fitness',
+  'Wellness': 'heart',
+  'Arts & Culture': 'color-palette',
+  'Outdoor Activities': 'leaf',
+  'Shopping': 'cart',
+  'Movies': 'videocam',
+  'Gaming': 'game-controller',
+  'Photography': 'camera',
+  'Food & Cooking': 'flame',
+  'Technology': 'laptop-outline',
+  'Reading': 'book',
+  'Travel': 'airplane',
+};
+
+// Map interest names to CategoryColors for selected tile borders/badges
+const TILE_CATEGORY_COLORS: Record<string, string> = {
+  'Dining': CategoryColors.dining,
+  'Coffee & Cafes': CategoryColors.coffee,
+  'Bars & Nightlife': CategoryColors.nightlife,
+  'Live Music': CategoryColors.music,
+  'Entertainment': CategoryColors.entertainment,
+  'Sports': CategoryColors.sports,
+  'Fitness': CategoryColors.fitness,
+  'Wellness': CategoryColors.wellness,
+  'Arts & Culture': CategoryColors.arts,
+  'Outdoor Activities': CategoryColors.outdoors,
+  'Shopping': CategoryColors.shopping,
+  'Movies': CategoryColors.entertainment,
+  'Gaming': CategoryColors.entertainment,
+  'Photography': CategoryColors.arts,
+  'Food & Cooking': CategoryColors.dining,
+  'Technology': CategoryColors.work,
+  'Reading': CategoryColors.arts,
+  'Travel': CategoryColors.travel,
 };
 
 const SCREEN_W = Dimensions.get('window').width;
@@ -76,6 +96,9 @@ export default function ProfileScreen() {
   const colorScheme = useColorScheme();
   const colors = ThemeColors[colorScheme ?? 'light'];
   const { user, updateUserProfile } = useAuth();
+  const safeInsets = useSafeAreaInsets();
+  /** Height of the absolutely-positioned blur header */
+  const headerOffset = safeInsets.top + BLUR_HEADER_HEIGHT.standard;
 
   // Form state
   const [name, setName] = useState(user?.name || '');
@@ -267,7 +290,7 @@ export default function ProfileScreen() {
 
         <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: headerOffset + Spacing.lg }]}
         showsVerticalScrollIndicator={false}
       >
         {/* Avatar */}
@@ -398,8 +421,7 @@ export default function ProfileScreen() {
           <View style={styles.profileTileGrid}>
             {ONBOARDING_INTERESTS.map((interest) => {
               const isSelected = selectedInterests.includes(interest);
-              const group = INTEREST_GROUPS[interest];
-              const gradientColors = TILE_GRADIENTS[interest] || ['#333', '#111'];
+              const categoryColor = TILE_CATEGORY_COLORS[interest] || BrandColors.loopBlue;
 
               return (
                 <TouchableOpacity
@@ -407,35 +429,30 @@ export default function ProfileScreen() {
                   style={[
                     styles.profileTile,
                     {
+                      backgroundColor: colors.card,
                       opacity: isSelected ? 1 : 0.7,
-                      borderWidth: isSelected ? 2 : 1,
-                      borderColor: isSelected ? BrandColors.loopBlue : 'rgba(255,255,255,0.12)',
+                      borderWidth: isSelected ? 1.5 : StyleSheet.hairlineWidth,
+                      borderColor: isSelected ? categoryColor : colors.border,
                     },
                   ]}
                   onPress={() => toggleInterest(interest)}
                   activeOpacity={0.7}
                 >
-                  <LinearGradient
-                    colors={gradientColors}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.profileTileGradient}
-                  >
-                    <Text style={styles.profileTileIcon}>{group?.icon}</Text>
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.6)']}
-                      style={styles.profileTileOverlay}
-                    >
-                      <Text style={styles.profileTileName} numberOfLines={2}>
-                        {interest}
-                      </Text>
-                    </LinearGradient>
-                    {isSelected && (
-                      <View style={[styles.profileTileCheck, { backgroundColor: BrandColors.loopBlue }]}>
-                        <Ionicons name="checkmark" size={14} color="#fff" />
-                      </View>
-                    )}
-                  </LinearGradient>
+                  <View style={[styles.profileTileIconCircle, { backgroundColor: categoryColor + '1A' }]}>
+                    <Ionicons
+                      name={TILE_ICONS[interest] || 'ellipse'}
+                      size={22}
+                      color={categoryColor}
+                    />
+                  </View>
+                  <Text style={[styles.profileTileName, { color: colors.text }]} numberOfLines={2}>
+                    {interest}
+                  </Text>
+                  {isSelected && (
+                    <View style={[styles.profileTileCheck, { backgroundColor: categoryColor }]}>
+                      <Ionicons name="checkmark" size={14} color="#fff" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -574,7 +591,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     marginTop: 2,
   },
-  // Spotify-Style Interest Tiles (matches onboarding)
+  // Card + circular icon interest tiles (matches onboarding)
   profileTileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -584,34 +601,23 @@ const styles = StyleSheet.create({
     width: PROFILE_TILE_SIZE,
     height: PROFILE_TILE_SIZE,
     borderRadius: BorderRadius.md,
-    overflow: 'hidden',
-  },
-  profileTileGradient: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: Spacing.sm,
   },
-  profileTileIcon: {
-    fontSize: 24,
-    marginBottom: 4,
-  },
-  profileTileOverlay: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: 6,
-    paddingBottom: 6,
-    paddingTop: 16,
+  profileTileIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   profileTileName: {
-    color: '#fff',
     fontSize: 11,
     fontWeight: '600',
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    paddingHorizontal: 4,
   },
   profileTileCheck: {
     position: 'absolute',

@@ -544,7 +544,7 @@ function getNotificationIcon(type: string): any {
     case 'activity_invite':
       return 'gift-outline';
     case 'feedback_reminder':
-      return 'chatbubble-ellipses-outline';
+      return 'chatbubble-outline';
     case 'friend_request':
       return 'person-add-outline';
     case 'radar_alert':

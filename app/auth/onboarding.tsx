@@ -32,8 +32,8 @@ import { geocodeAddress, reverseGeocode } from '@/services/geocoding';
 import * as Location from 'expo-location';
 import { requestCalendarPermissions } from '@/services/calendar-service';
 import { requestNotificationPermissions } from '@/services/notification-service';
-import { LinearGradient } from 'expo-linear-gradient';
 import { INTEREST_GROUPS } from '@/constants/activity-categories';
+import { CategoryColors, BrandColors } from '@/constants/brand';
 import { LoopLogoVariant } from '@/components/loop-logo-variant';
 import { OnboardingLoopAnimation } from '@/components/onboarding-loop-animation';
 import { GROK_SPRING } from '@/constants/animations';
@@ -46,21 +46,38 @@ const QUICK_INTERESTS = [
   'Shopping', 'Sports', 'Movies', 'Wellness',
 ];
 
-// Spotify-style tile gradients per category (muted tones for cohesive grid)
-const TILE_GRADIENTS: Record<string, [string, string]> = {
-  'Dining': ['#C62828', '#6D1B1B'],
-  'Coffee & Cafes': ['#795548', '#3E2723'],
-  'Bars & Nightlife': ['#6A1B9A', '#311B92'],
-  'Live Music': ['#E65100', '#BF360C'],
-  'Entertainment': ['#AD1457', '#880E4F'],
-  'Fitness': ['#2E7D32', '#1B5E20'],
-  'Outdoor Activities': ['#00796B', '#004D40'],
-  'Arts & Culture': ['#4527A0', '#283593'],
-  'Shopping': ['#C2185B', '#880E4F'],
-  'Sports': ['#1565C0', '#0D47A1'],
-  'Movies': ['#37474F', '#263238'],
-  'Wellness': ['#00838F', '#006064'],
+// Map interest names to CategoryColors for tile accent colors
+const TILE_CATEGORY_COLORS: Record<string, string> = {
+  'Dining': CategoryColors.dining,
+  'Coffee & Cafes': CategoryColors.coffee,
+  'Bars & Nightlife': CategoryColors.nightlife,
+  'Live Music': CategoryColors.music,
+  'Entertainment': CategoryColors.entertainment,
+  'Fitness': CategoryColors.fitness,
+  'Outdoor Activities': CategoryColors.outdoors,
+  'Arts & Culture': CategoryColors.arts,
+  'Shopping': CategoryColors.shopping,
+  'Sports': CategoryColors.sports,
+  'Movies': CategoryColors.entertainment,
+  'Wellness': CategoryColors.wellness,
 };
+
+// Filled vector icons per category (matches search modal style)
+const TILE_ICONS: Record<string, keyof typeof Ionicons.glyphMap> = {
+  'Dining': 'restaurant',
+  'Coffee & Cafes': 'cafe',
+  'Bars & Nightlife': 'wine',
+  'Live Music': 'musical-notes',
+  'Entertainment': 'film',
+  'Fitness': 'fitness',
+  'Outdoor Activities': 'leaf',
+  'Arts & Culture': 'color-palette',
+  'Shopping': 'cart',
+  'Sports': 'basketball',
+  'Movies': 'videocam',
+  'Wellness': 'heart',
+};
+
 
 const SCREEN_W = Dimensions.get('window').width;
 const TILE_GAP = 4;
@@ -643,12 +660,12 @@ export default function OnboardingScreen() {
           {interestError ? 'pick at least one to continue' : "pick a few \u2014 we'll refine as you use loop"}
         </Text>
 
-        {/* Spotify-style image tiles — 3-column grid */}
+        {/* Interest tiles — 3-column grid with card + circular icon */}
         <View style={styles.tileGrid}>
           {QUICK_INTERESTS.map((interest, index) => {
             const isSelected = selectedInterests.includes(interest);
-            const group = INTEREST_GROUPS[interest];
-            const gradientColors = TILE_GRADIENTS[interest] || ['#333', '#111'];
+            const iconName = TILE_ICONS[interest] || 'ellipse-outline';
+            const categoryColor = TILE_CATEGORY_COLORS[interest] || BrandColors.loopBlue;
 
             return (
               <Animated.View
@@ -659,40 +676,33 @@ export default function OnboardingScreen() {
                   style={[
                     styles.tile,
                     {
-                      opacity: isSelected ? 1 : 0.85,
-                      borderWidth: isSelected ? 2 : 1,
-                      borderColor: isSelected ? theme.accent : 'rgba(255,255,255,0.12)',
+                      backgroundColor: theme.card,
+                      opacity: isSelected ? 1 : 0.7,
+                      borderWidth: isSelected ? 1.5 : StyleSheet.hairlineWidth,
+                      borderColor: isSelected ? categoryColor : theme.border,
                     },
                   ]}
                   onPress={() => toggleInterest(interest)}
                   activeOpacity={0.7}
                 >
-                  <LinearGradient
-                    colors={gradientColors}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.tileGradient}
-                  >
-                    {/* Category icon */}
-                    <Text style={styles.tileIcon}>{group?.icon}</Text>
-
-                    {/* Dark bottom gradient for text legibility */}
-                    <LinearGradient
-                      colors={['transparent', 'rgba(0,0,0,0.6)']}
-                      style={styles.tileTextOverlay}
-                    >
-                      <Text style={styles.tileName} numberOfLines={2}>
-                        {interest}
-                      </Text>
-                    </LinearGradient>
-
-                    {/* Selected checkmark badge */}
-                    {isSelected && (
-                      <View style={[styles.tileCheckmark, { backgroundColor: theme.accent }]}>
-                        <Ionicons name="checkmark" size={14} color="#fff" />
-                      </View>
-                    )}
-                  </LinearGradient>
+                  <View style={[styles.tileIconCircle, { backgroundColor: categoryColor + '1A' }]}>
+                    <Ionicons
+                      name={iconName as any}
+                      size={24}
+                      color={categoryColor}
+                    />
+                  </View>
+                  <Text style={[
+                    styles.tileName,
+                    { color: isSelected ? theme.text : theme.textMuted },
+                  ]} numberOfLines={2}>
+                    {interest}
+                  </Text>
+                  {isSelected && (
+                    <View style={[styles.tileCheckmark, { backgroundColor: categoryColor }]}>
+                      <Ionicons name="checkmark" size={13} color="#fff" />
+                    </View>
+                  )}
                 </TouchableOpacity>
               </Animated.View>
             );
@@ -1490,7 +1500,7 @@ const styles = StyleSheet.create({
     bottom: 14,
   },
 
-  // ── Interest tiles (Spotify-style 3-column grid) ──
+  // ── Interest tiles (card + circular icon 3-column grid) ──
   tileGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1500,44 +1510,33 @@ const styles = StyleSheet.create({
   tile: {
     width: TILE_SIZE,
     height: TILE_SIZE,
-    borderRadius: 12,
-    overflow: 'hidden',
-  },
-  tileGradient: {
-    flex: 1,
-    justifyContent: 'center',
+    borderRadius: 14,
     alignItems: 'center',
-    position: 'relative',
+    justifyContent: 'center',
+    paddingVertical: 8,
   },
-  tileIcon: {
-    fontSize: 32,
-    marginBottom: 14,
-  },
-  tileTextOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    paddingTop: 20,
+  tileIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 6,
   },
   tileName: {
-    color: '#FFFFFF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
     textAlign: 'center',
-    textShadowColor: 'rgba(0,0,0,0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+    letterSpacing: 0.2,
+    paddingHorizontal: 4,
   },
   tileCheckmark: {
     position: 'absolute',
     top: 6,
     right: 6,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
   },

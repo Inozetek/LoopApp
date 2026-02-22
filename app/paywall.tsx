@@ -31,7 +31,7 @@ type BillingCycle = 'monthly' | 'annual';
 const FEATURES = [
   { label: 'Personalized picks per session', free: '8', plus: 'Unlimited', icon: 'sparkles' as const },
   { label: 'Fresh Google Places discoveries', free: false, plus: true, icon: 'compass' as const },
-  { label: 'AI match explanations', free: false, plus: true, icon: 'chatbubble-ellipses' as const },
+  { label: 'AI match explanations', free: false, plus: true, icon: 'chatbubble' as const },
   { label: 'Group planning', free: false, plus: true, icon: 'people' as const },
   { label: 'Calendar sync', free: false, plus: true, icon: 'calendar' as const },
   { label: 'Advanced filters', free: false, plus: true, icon: 'options' as const },

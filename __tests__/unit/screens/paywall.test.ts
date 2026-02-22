@@ -20,7 +20,7 @@ function getSavingsPercent(monthlyPrice: number, annualPrice: number): number {
 const FEATURES = [
   { label: 'Personalized picks per session', free: '8', plus: 'Unlimited', icon: 'sparkles' },
   { label: 'Fresh Google Places discoveries', free: false, plus: true, icon: 'compass' },
-  { label: 'AI match explanations', free: false, plus: true, icon: 'chatbubble-ellipses' },
+  { label: 'AI match explanations', free: false, plus: true, icon: 'chatbubble' },
   { label: 'Group planning', free: false, plus: true, icon: 'people' },
   { label: 'Calendar sync', free: false, plus: true, icon: 'calendar' },
   { label: 'Advanced filters', free: false, plus: true, icon: 'options' },

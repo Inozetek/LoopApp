@@ -13,7 +13,7 @@
  *   </AnimatedDrawer>
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import {
   View,
   StyleSheet,
@@ -35,6 +35,7 @@ import Animated, {
   SharedValue,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BlurView } from 'expo-blur';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { GROK_SPRING, MENU_OPEN_SPRING, TIMING, MENU_DIMENSIONS, MENU_CONTENT_BLUR } from '@/constants/animations';
 import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
@@ -63,7 +64,13 @@ export function AnimatedDrawer({
   gestureControlled = false,
 }: AnimatedDrawerProps) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const drawerWidth = SCREEN_WIDTH * widthPercentage;
+
+  // Theme-aware backdrop opacity
+  const targetBackdropOpacity = isDark
+    ? MENU_CONTENT_BLUR.backdropOpacity
+    : MENU_CONTENT_BLUR.backdropOpacityLight;
 
   // Off-screen position depends on side
   const offscreenX = side === 'left' ? -drawerWidth : drawerWidth;
@@ -78,7 +85,7 @@ export function AnimatedDrawer({
       if (!gestureControlled) {
         // Programmatic open (icon press) — use slower, premium spring
         translateX.value = withSpring(0, MENU_OPEN_SPRING);
-        backdropOpacity.value = withTiming(MENU_CONTENT_BLUR.backdropOpacity, TIMING.backdropFadeIn);
+        backdropOpacity.value = withTiming(targetBackdropOpacity, TIMING.backdropFadeIn);
         if (menuProgress) {
           menuProgress.value = withSpring(1, MENU_OPEN_SPRING);
         }
@@ -97,7 +104,7 @@ export function AnimatedDrawer({
     if (gestureControlled && visible) {
       const progress = menuProgress ? menuProgress.value : 0;
       translateX.value = interpolate(progress, [0, 1], [offscreenX, 0], Extrapolate.CLAMP);
-      backdropOpacity.value = interpolate(progress, [0, 1], [0, MENU_CONTENT_BLUR.backdropOpacity], Extrapolate.CLAMP);
+      backdropOpacity.value = interpolate(progress, [0, 1], [0, targetBackdropOpacity], Extrapolate.CLAMP);
     }
   });
 
@@ -112,7 +119,7 @@ export function AnimatedDrawer({
           const clampedX = Math.max(-drawerWidth, tx);
           translateX.value = clampedX;
           const progress = 1 + clampedX / drawerWidth;
-          backdropOpacity.value = interpolate(progress, [0, 1], [0, MENU_CONTENT_BLUR.backdropOpacity], Extrapolate.CLAMP);
+          backdropOpacity.value = interpolate(progress, [0, 1], [0, targetBackdropOpacity], Extrapolate.CLAMP);
           if (menuProgress) {
             menuProgress.value = progress;
           }
@@ -123,7 +130,7 @@ export function AnimatedDrawer({
           const clampedX = Math.min(drawerWidth, tx);
           translateX.value = clampedX;
           const progress = 1 - clampedX / drawerWidth;
-          backdropOpacity.value = interpolate(progress, [0, 1], [0, MENU_CONTENT_BLUR.backdropOpacity], Extrapolate.CLAMP);
+          backdropOpacity.value = interpolate(progress, [0, 1], [0, targetBackdropOpacity], Extrapolate.CLAMP);
           if (menuProgress) {
             menuProgress.value = progress;
           }
@@ -152,7 +159,7 @@ export function AnimatedDrawer({
         runOnJS(onClose)();
       } else {
         translateX.value = withSpring(0, GROK_SPRING);
-        backdropOpacity.value = withTiming(MENU_CONTENT_BLUR.backdropOpacity, TIMING.backdropFadeIn);
+        backdropOpacity.value = withTiming(targetBackdropOpacity, TIMING.backdropFadeIn);
         if (menuProgress) {
           menuProgress.value = withSpring(1, GROK_SPRING);
         }
@@ -201,6 +208,11 @@ export function AnimatedDrawer({
     };
   });
 
+  // Theme-aware colors
+  const blurTint = isDark ? 'dark' : 'light';
+  const overlayColor = isDark ? '#0A0A0A' : '#F2F2F7';
+  const backdropBg = isDark ? '#000' : 'rgba(0,0,0,0.25)';
+
   if (!visible) return null;
 
   return (
@@ -212,9 +224,17 @@ export function AnimatedDrawer({
       onRequestClose={onClose}
     >
       <GestureHandlerRootView style={styles.gestureRoot}>
-        {/* Backdrop - tap to close */}
+        {/* Backdrop - frosted blur + dark overlay, tap to close */}
         <TouchableWithoutFeedback onPress={onClose}>
-          <Animated.View style={[styles.backdrop, backdropStyle]} />
+          <Animated.View style={[styles.backdrop, backdropStyle]}>
+            <BlurView
+              intensity={35}
+              tint={blurTint}
+              experimentalBlurMethod={ANDROID_BLUR_METHOD}
+              style={StyleSheet.absoluteFill}
+            />
+            <View style={[StyleSheet.absoluteFillObject, { backgroundColor: backdropBg }]} />
+          </Animated.View>
         </TouchableWithoutFeedback>
 
         {/* Drawer panel */}
@@ -232,21 +252,16 @@ export function AnimatedDrawer({
             {/* Frosted glass blur on top for subtle texture during transition */}
             <AnimatedBlurView
               animatedProps={drawerBlurProps}
-              tint="dark"
+              tint={blurTint}
               experimentalBlurMethod={ANDROID_BLUR_METHOD}
               style={[StyleSheet.absoluteFill, drawerBlurStyle]}
             />
-            {/* Dark overlay on top of blur */}
+            {/* Overlay on top of blur */}
             <Animated.View
               style={[
                 styles.drawerOverlay,
                 drawerOverlayStyle,
-                {
-                  backgroundColor:
-                    colorScheme === 'dark'
-                      ? '#0A0A0A'
-                      : '#111111',
-                },
+                { backgroundColor: overlayColor },
               ]}
             />
 
@@ -264,7 +279,6 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#000',
   },
   drawer: {
     position: 'absolute',

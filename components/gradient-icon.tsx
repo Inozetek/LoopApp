@@ -92,7 +92,7 @@ export function GradientIcon({ name, size, focused, customIcon, showBadge = fals
     // Sparkles: use SVG on all platforms so we can style individual stars
     if (name === 'sparkles' && colorScheme !== 'dark') {
       return (
-        <TabBadge showDot={showBadge} count={badgeCount}>
+        <TabBadge showDot={showBadge} count={badgeCount} focused={focused}>
           <RNAnimated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <SparklesIcon size={size} color={unfocusedColor} mediumStarColor="#000000" />
           </RNAnimated.View>
@@ -101,7 +101,7 @@ export function GradientIcon({ name, size, focused, customIcon, showBadge = fals
     }
 
     return (
-      <TabBadge showDot={showBadge} count={badgeCount}>
+      <TabBadge showDot={showBadge} count={badgeCount} focused={focused}>
         <RNAnimated.View style={{ transform: [{ scale: scaleAnim }] }}>
           {renderIcon(unfocusedColor)}
         </RNAnimated.View>
@@ -110,7 +110,7 @@ export function GradientIcon({ name, size, focused, customIcon, showBadge = fals
   }
 
   return (
-    <TabBadge showDot={showBadge} count={badgeCount}>
+    <TabBadge showDot={showBadge} count={badgeCount} focused={focused}>
       <RNAnimated.View style={{ transform: [{ scale: scaleAnim }] }}>
         <MaskedView
           maskElement={

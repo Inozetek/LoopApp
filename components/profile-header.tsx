@@ -13,12 +13,12 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import Entypo from '@expo/vector-icons/Entypo';
 import * as Haptics from 'expo-haptics';
 import { Spacing, Typography } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
+import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
 
 interface ProfileHeaderProps {
   username: string;
@@ -34,6 +34,7 @@ export function ProfileHeader({
   onUsernamePress,
 }: ProfileHeaderProps) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
 
@@ -83,16 +84,12 @@ export function ProfileHeader({
         )}
       </TouchableOpacity>
 
-      {/* Right Side - Hamburger Menu */}
+      {/* Right Side - Settings */}
       <View style={styles.rightSection}>
         {onMenuPress && (
-          <TouchableOpacity
-            onPress={handleMenuPress}
-            style={styles.iconButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Entypo name="cog" size={24} color={colors.text} />
-          </TouchableOpacity>
+          <MetallicRingButton onPress={handleMenuPress} size={36} innerSize={33}>
+            <Ionicons name="settings-outline" size={16} color={isDark ? '#FFFFFF' : '#000000'} />
+          </MetallicRingButton>
         )}
       </View>
     </View>

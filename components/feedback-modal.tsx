@@ -34,6 +34,13 @@ interface FeedbackModalProps {
   activityCategory: string;
   userId: string;
   recommendationId?: string;
+  /** Called when user wants to share a positive experience as a Moment */
+  onShareToLoop?: (context: {
+    activityName: string;
+    activityCategory: string;
+    eventId: string;
+    activityId: string | null;
+  }) => void;
 }
 
 const FEEDBACK_TAGS = [
@@ -56,6 +63,7 @@ export function FeedbackModal({
   activityCategory,
   userId,
   recommendationId,
+  onShareToLoop,
 }: FeedbackModalProps) {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
@@ -65,12 +73,14 @@ export function FeedbackModal({
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [showSharePrompt, setShowSharePrompt] = useState(false);
 
   // Reset submission states when modal closes
   useEffect(() => {
     if (!visible) {
       setSubmitting(false);
       setHasSubmitted(false);
+      setShowSharePrompt(false);
     }
   }, [visible]);
 
@@ -173,8 +183,14 @@ export function FeedbackModal({
       setHasSubmitted(true); // Prevent any future submissions
       console.log('✅ Feedback submission complete');
 
+      // If thumbs up and share callback exists, show share prompt instead of closing
+      if (rating === 'thumbs_up' && onShareToLoop) {
+        setShowSharePrompt(true);
+        return;
+      }
+
       Alert.alert(
-        'Thanks for your feedback! 🎯',
+        'Thanks for your feedback!',
         'Your feedback helps us suggest better activities for you.'
       );
 
@@ -192,6 +208,7 @@ export function FeedbackModal({
     setRating(null);
     setSelectedTags([]);
     setNotes('');
+    setShowSharePrompt(false);
   };
 
   const handleClose = () => {
@@ -357,22 +374,63 @@ export function FeedbackModal({
             )}
           </ScrollView>
 
-          {/* Submit button */}
-          <TouchableOpacity
-            onPress={handleSubmit}
-            disabled={!rating || submitting || hasSubmitted}
-            style={[
-              styles.submitButton,
-              {
-                backgroundColor: rating ? colors.tint : colors.border,
-                opacity: rating && !submitting && !hasSubmitted ? 1 : 0.5,
-              },
-            ]}
-          >
-            <Text style={styles.submitButtonText}>
-              {submitting ? 'Submitting...' : hasSubmitted ? 'Submitted!' : 'Submit Feedback'}
-            </Text>
-          </TouchableOpacity>
+          {/* Share to Loop prompt — shown after positive feedback */}
+          {showSharePrompt ? (
+            <View style={styles.sharePrompt}>
+              <View style={styles.sharePromptIcon}>
+                <Ionicons name="checkmark-circle" size={48} color={BrandColors.success} />
+              </View>
+              <Text style={[styles.sharePromptTitle, { color: colors.text }]}>
+                Thanks for the feedback!
+              </Text>
+              <Text style={[styles.sharePromptSubtitle, { color: colors.icon }]}>
+                Share your experience with friends?
+              </Text>
+              <TouchableOpacity
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  onShareToLoop?.({
+                    activityName,
+                    activityCategory,
+                    eventId,
+                    activityId,
+                  });
+                  onClose();
+                  resetForm();
+                }}
+                style={[styles.shareButton, { backgroundColor: BrandColors.loopBlue }]}
+              >
+                <Ionicons name="share-outline" size={20} color="#ffffff" />
+                <Text style={styles.shareButtonText}>Share to Loop</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => {
+                  onClose();
+                  resetForm();
+                }}
+                style={styles.skipShareButton}
+              >
+                <Text style={[styles.skipShareText, { color: colors.icon }]}>Maybe later</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            /* Submit button */
+            <TouchableOpacity
+              onPress={handleSubmit}
+              disabled={!rating || submitting || hasSubmitted}
+              style={[
+                styles.submitButton,
+                {
+                  backgroundColor: rating ? colors.tint : colors.border,
+                  opacity: rating && !submitting && !hasSubmitted ? 1 : 0.5,
+                },
+              ]}
+            >
+              <Text style={styles.submitButtonText}>
+                {submitting ? 'Submitting...' : hasSubmitted ? 'Submitted!' : 'Submit Feedback'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     </Modal>
@@ -586,5 +644,43 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 17,
     fontWeight: '600',
+  },
+  sharePrompt: {
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  sharePromptIcon: {
+    marginBottom: 12,
+  },
+  sharePromptTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  sharePromptSubtitle: {
+    fontSize: 15,
+    marginBottom: 20,
+  },
+  shareButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    width: '100%',
+    marginBottom: 12,
+  },
+  shareButtonText: {
+    color: '#ffffff',
+    fontSize: 17,
+    fontWeight: '600',
+  },
+  skipShareButton: {
+    paddingVertical: 10,
+  },
+  skipShareText: {
+    fontSize: 15,
   },
 });

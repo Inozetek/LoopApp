@@ -71,6 +71,16 @@ export function SchedulePlanModal({
     if (visible && activity) {
       // Phase 1.6b: Calculate smart default time based on travel from previous task
       const calculateSmartDefaultTime = async () => {
+        // Priority 0: Use dateContext from date-filtered recommendations (highest priority)
+        if (recommendation?.dateContext?.suggestedStartTime) {
+          const defaultTime = recommendation.dateContext.suggestedStartTime instanceof Date
+            ? recommendation.dateContext.suggestedStartTime
+            : new Date(recommendation.dateContext.suggestedStartTime);
+          console.log('📅 Using date-filtered slot time:', defaultTime, '|', recommendation.dateContext.timeContextLabel);
+          setSelectedDate(defaultTime);
+          return;
+        }
+
         // Priority 1: Use recommendation context time (Phase 1.6a)
         if (recommendation?.suggestedTime || recommendation?.recommendedFor) {
           const timeValue = recommendation.suggestedTime || recommendation.recommendedFor!;

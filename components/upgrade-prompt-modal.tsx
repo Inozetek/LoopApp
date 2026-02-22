@@ -70,7 +70,7 @@ const FEATURE_DISPLAY: Record<GatedFeature, FeatureDisplay> = {
     title: 'Unlock Calendar Sync',
   },
   ai_explanations: {
-    icon: 'chatbubble-ellipses-outline',
+    icon: 'chatbubble-outline',
     title: 'Unlock AI Insights',
   },
   advanced_filters: {

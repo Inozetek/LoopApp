@@ -13,10 +13,11 @@ import { View, Text, StyleSheet, TouchableOpacity, Platform } from 'react-native
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Spacing, Typography } from '@/constants/brand';
+import { Spacing, Typography, BrandColors } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { BlurHeaderWrapper } from '@/components/blur-header-wrapper';
+import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
 
 interface CalendarHeaderProps {
   title?: string;
@@ -25,6 +26,8 @@ interface CalendarHeaderProps {
   onMenuPress?: () => void;
   onTitlePress?: () => void;
   showLoopIcon?: boolean;
+  /** Badge count to show on the hamburger menu button (e.g. pending feedback) */
+  menuBadgeCount?: number;
 }
 
 export function CalendarHeader({
@@ -34,8 +37,10 @@ export function CalendarHeader({
   onMenuPress,
   onTitlePress,
   showLoopIcon = true,
+  menuBadgeCount = 0,
 }: CalendarHeaderProps) {
   const colorScheme = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
 
@@ -60,13 +65,17 @@ export function CalendarHeader({
       {/* Left Side - Menu Button */}
       <View style={styles.leftSection}>
         {onMenuPress && (
-          <TouchableOpacity
-            onPress={handleMenuPress}
-            style={styles.iconButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="menu" size={26} color={colors.text} />
-          </TouchableOpacity>
+          <View style={{ position: 'relative' }}>
+            <MetallicRingButton onPress={handleMenuPress} size={36} innerSize={33}>
+              <View style={calMenuStyles.lines}>
+                <View style={[calMenuStyles.line, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
+                <View style={[calMenuStyles.line, { backgroundColor: isDark ? '#FFFFFF' : '#000000' }]} />
+              </View>
+            </MetallicRingButton>
+            {menuBadgeCount > 0 && (
+              <View style={styles.menuBadgeDot} />
+            )}
+          </View>
         )}
       </View>
 
@@ -86,13 +95,9 @@ export function CalendarHeader({
       {/* Right Side - Add Button */}
       <View style={styles.rightSection}>
         {onAddPress && (
-          <TouchableOpacity
-            onPress={handleAddPress}
-            style={styles.iconButton}
-            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-          >
-            <Ionicons name="add-circle-outline" size={28} color={colors.text} />
-          </TouchableOpacity>
+          <MetallicRingButton onPress={handleAddPress} size={36} innerSize={33}>
+            <Ionicons name="add" size={18} color={isDark ? '#FFFFFF' : '#000000'} />
+          </MetallicRingButton>
         )}
       </View>
     </View>
@@ -170,5 +175,28 @@ const styles = StyleSheet.create({
   },
   iconButton: {
     padding: Spacing.xs,
+  },
+  menuBadgeDot: {
+    position: 'absolute',
+    bottom: 5,
+    right: 5.5,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: BrandColors.error,
+    zIndex: 1,
+  },
+});
+
+const calMenuStyles = StyleSheet.create({
+  lines: {
+    gap: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  line: {
+    width: 15.5,
+    height: 1.5,
+    borderRadius: 0.75,
   },
 });

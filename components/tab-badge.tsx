@@ -8,7 +8,7 @@
  * - No harsh floating badges
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { BrandColors } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -17,12 +17,30 @@ interface TabBadgeProps {
   children: React.ReactNode;
   count?: number;
   showDot?: boolean; // Show just a dot instead of count
+  focused?: boolean; // When focused, count badge transitions to a simple dot (Instagram pattern)
 }
 
-export function TabBadge({ children, count = 0, showDot = false }: TabBadgeProps) {
+export function TabBadge({ children, count = 0, showDot = false, focused = false }: TabBadgeProps) {
   const colorScheme = useColorScheme();
   const shouldShow = showDot || count > 0;
   const borderColor = colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF';
+
+  // Badge persistence: once tab is visited while having a count, keep showing dot
+  const [hasSeen, setHasSeen] = useState(false);
+
+  useEffect(() => {
+    if (focused && count > 0) {
+      setHasSeen(true);
+    }
+  }, [focused, count]);
+
+  useEffect(() => {
+    if (count <= 0) {
+      setHasSeen(false);
+    }
+  }, [count]);
+
+  const showAsDot = showDot || ((focused || hasSeen) && count > 0);
 
   return (
     <View style={styles.container}>
@@ -35,9 +53,9 @@ export function TabBadge({ children, count = 0, showDot = false }: TabBadgeProps
           <View style={[
             styles.badge,
             { borderColor },
-            count > 0 && !showDot && styles.countBadge
+            count > 0 && !showAsDot && styles.countBadge
           ]}>
-            {count > 0 && !showDot && (
+            {count > 0 && !showAsDot && (
               <Text style={styles.badgeText}>
                 {count > 9 ? '9+' : count}
               </Text>
@@ -55,10 +73,9 @@ const styles = StyleSheet.create({
   },
   badgeContainer: {
     position: 'absolute',
-    top: -2,
-    right: -2,
+    bottom: -2,
+    right: -5,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   badgeGlow: {
     position: 'absolute',
@@ -69,24 +86,24 @@ const styles = StyleSheet.create({
     opacity: 0.3,
   },
   badge: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
     backgroundColor: BrandColors.loopBlue,
     borderWidth: 1.5,
   },
   countBadge: {
     width: 'auto',
-    minWidth: 16,
-    height: 16,
-    borderRadius: 8,
-    paddingHorizontal: 4,
+    minWidth: 14,
+    height: 14,
+    borderRadius: 7,
+    paddingHorizontal: 3,
     alignItems: 'center',
     justifyContent: 'center',
   },
   badgeText: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: '700',
   },
 });
