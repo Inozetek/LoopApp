@@ -1761,21 +1761,18 @@ export default function CalendarScreen() {
                 new Date(event.end_time) < new Date() &&
                 eventsNeedingFeedback.has(event.id) && (
                   <TouchableOpacity
-                    style={[styles.completeButton, { borderColor: BrandColors.loopGreen, backgroundColor: BrandColors.loopGreen + '10' }]}
+                    style={[styles.completeButton, { borderColor: BrandColors.loopGreenDark, backgroundColor: BrandColors.loopGreenDark + '08' }]}
                     onPress={() => handleMarkAsComplete(event)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Rate ${event.title}`}
-                    accessibilityHint="Provide feedback on this activity"
                   >
                     <Ionicons
                       name="chatbubble-outline"
                       size={18}
-                      color={BrandColors.loopGreen}
+                      color={BrandColors.loopGreenDark}
                     />
                     <Text
                       style={[
                         Typography.labelMedium,
-                        { color: BrandColors.loopGreen, marginLeft: 6 },
+                        { color: BrandColors.loopGreenDark, marginLeft: 6 },
                       ]}
                     >
                       How was it?
@@ -1787,21 +1784,18 @@ export default function CalendarScreen() {
                 new Date(event.end_time) < new Date() &&
                 !eventsNeedingFeedback.has(event.id) && (
                   <TouchableOpacity
-                    style={[styles.completeButton, { borderColor: BrandColors.loopGreen }]}
+                    style={[styles.completeButton, { borderColor: Colors[colorScheme ?? 'light'].border }]}
                     onPress={() => handleMarkAsComplete(event)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Rate ${event.title}`}
-                    accessibilityHint="Provide feedback on this activity"
                   >
                     <Ionicons
                       name="checkmark-circle-outline"
                       size={20}
-                      color={BrandColors.loopGreen}
+                      color={BrandColors.loopBlue}
                     />
                     <Text
                       style={[
                         Typography.labelMedium,
-                        { color: BrandColors.loopGreen, marginLeft: 6 },
+                        { color: BrandColors.loopBlue, marginLeft: 6 },
                       ]}
                     >
                       Rate Activity
