@@ -10,7 +10,6 @@ import {
   TextInput,
   Alert,
   Platform,
-  Keyboard,
   TouchableWithoutFeedback,
   KeyboardAvoidingView,
   Dimensions,
@@ -70,14 +69,12 @@ import { BLUR_HEADER_HEIGHT } from '@/components/blur-header-wrapper';
 import { CalendarDayCell } from '@/components/calendar-day-cell';
 import { TaskDetailsModal } from '@/components/task-details-modal';
 import { createMarkedDates } from '@/utils/calendar';
-import { DELAYS, GROK_SPRING, QUICK_SPRING, BOTTOM_SHEET_BLUR, MENU_CONTENT_BLUR, MENU_OPEN_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
+import { DELAYS, GROK_SPRING, MENU_CONTENT_BLUR, MENU_OPEN_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
 import { useMenuAnimation } from '@/contexts/menu-animation-context';
 import { useSearchAnimation } from '@/contexts/search-animation-context';
 import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
-import { MainMenuModal } from '@/components/main-menu-modal';
 import { AnimatedDrawer } from '@/components/animated-drawer';
 import { BlurView } from 'expo-blur';
-import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
 import { ScreenErrorBoundary } from '@/components/error-boundary';
 import { EmptyState } from '@/components/empty-state';
 import { LoopRouteIcon } from '@/components/ui/loop-route-icon';
@@ -90,17 +87,14 @@ import {
   getPendingFeedbackActivities,
   getPastEventsNeedingFeedback,
   markEventAsCompleted,
-  shouldPromptForFeedback,
   submitFeedback,
   CompletedActivity,
 } from '@/services/feedback-service';
 import { TIER_PRICING } from '@/types/subscription';
 import {
-  syncCalendarToDatabase,
   getUpcomingFreeTime,
   checkCalendarPermissions,
   fetchCalendarEventsForPreview,
-  syncSelectedEventsToDatabase,
   syncSelectedEventsWithProgress,
   CalendarEventPreview,
   SyncProgressInfo,
@@ -243,7 +237,7 @@ function ViewModeToggle({
     setVisualMode(viewMode);
     slide.value = withSpring(viewMode === 'loop' ? 1 : 0, TOGGLE_SLIDE_SPRING);
     currentSide.value = viewMode === 'loop' ? 1 : 0;
-  }, [viewMode]);
+  }, [viewMode, currentSide, slide]);
 
   const lensStyle = useAnimatedStyle(() => ({
     transform: [
@@ -270,7 +264,7 @@ function ViewModeToggle({
       lensScale.value = withSpring(1, TOGGLE_SCALE_SPRING);
     }, 200);
     pendingTimerRef.current = setTimeout(onToggle, TOGGLE_ANIM_DELAY);
-  }, [visualMode, onToggle]);
+  }, [visualMode, onToggle, lensScale, slide]);
 
   // ── Drag callbacks (invoked from worklets via runOnJS) ──
   const onDragStartJS = useCallback(() => {
@@ -510,7 +504,7 @@ export default function CalendarScreen() {
       setShowMainMenu(false);
       setMenuGestureControlled(false);
     }
-  }, [showMainMenu, menuProgress, DRAWER_WIDTH]);
+  }, [showMainMenu, menuProgress]);
 
   // Reset gestureControlled when menu closes
   const handleCloseMenu = useCallback(() => {
@@ -577,7 +571,7 @@ export default function CalendarScreen() {
   // Sync pending feedback count to the tab badge so it clears when all feedback is submitted
   useEffect(() => {
     setTabNotification('calendar', pendingFeedbackCount);
-  }, [pendingFeedbackCount]);
+  }, [pendingFeedbackCount, setTabNotification]);
 
   // Task details modal state (opened from loop map "View Details")
   const [showTaskDetailsModal, setShowTaskDetailsModal] = useState(false);
@@ -624,19 +618,19 @@ export default function CalendarScreen() {
     //
     // Auto-prompting based on time alone is problematic because we can't verify
     // the user actually went to the location.
-  }, [selectedDate]);
+  }, [loadEvents]);
 
   // Load month events for calendar dots on mount
   useEffect(() => {
     if (selectedDate && user) {
       loadMonthEvents(selectedDate.slice(0, 7));
     }
-  }, [user]);
+  }, [user, loadMonthEvents, selectedDate]);
 
   // Load free time slots on mount so they're available before a sync
   useEffect(() => {
     loadFreeTime();
-  }, [user]);
+  }, [loadFreeTime]);
 
   // Smart default end time based on category
   useEffect(() => {
@@ -731,24 +725,6 @@ export default function CalendarScreen() {
 
   // Event list entry animations are now handled by Reanimated FadeInDown
   // via the eventListKey that resets on day selection changes.
-
-  /**
-   * Check for pending feedback activities.
-   *
-   * NOTE: This is now only called AFTER a user explicitly marks a task as complete.
-   * We do NOT auto-prompt on app load or date change because:
-   * 1. We can't verify the user actually visited the location
-   * 2. Auto-prompts for unattended events are annoying and inaccurate
-   *
-   * Future: Use geofencing to detect when user actually arrives at a task location,
-   * then prompt for feedback after they leave.
-   */
-  const checkForPendingFeedback = async () => {
-    // This function is intentionally a no-op now.
-    // Feedback prompts are triggered directly when user taps "Rate Activity"
-    // via the handleMarkAsComplete function.
-    return;
-  };
 
   // Open sync preview modal - shows device calendar events for selection
   const handleSyncCalendar = async () => {
@@ -850,7 +826,7 @@ export default function CalendarScreen() {
   };
 
   // Load upcoming free time slots
-  const loadFreeTime = async () => {
+  const loadFreeTime = useCallback(async () => {
     if (!user) return;
 
     try {
@@ -862,9 +838,9 @@ export default function CalendarScreen() {
     } catch (error) {
       console.error('❌ Error loading free time:', error);
     }
-  };
+  }, [user]);
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
     if (!user) return;
 
     setLoading(true);
@@ -920,9 +896,9 @@ export default function CalendarScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [user, selectedDate]);
 
-  const loadMonthEvents = async (yearMonth: string) => {
+  const loadMonthEvents = useCallback(async (yearMonth: string) => {
     if (!user || user.id === 'demo-user-123') return;
 
     try {
@@ -942,7 +918,7 @@ export default function CalendarScreen() {
     } catch (error) {
       console.error('Error loading month events:', error);
     }
-  };
+  }, [user]);
 
   // Reload day events + month dots after a mutation (create/edit/delete)
   const reloadAfterMutation = () => {
@@ -957,7 +933,7 @@ export default function CalendarScreen() {
     setEventListKey(prev => prev + 1);
   };
 
-  const openCreateModal = () => {
+  const openCreateModal = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     // Pre-fill date with the currently selected calendar day
     if (selectedDate) {
@@ -966,7 +942,7 @@ export default function CalendarScreen() {
       setNewTaskDate(selected);
     }
     setShowCreateModal(true);
-  };
+  }, [selectedDate]);
 
   const closeCreateModal = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -995,7 +971,7 @@ export default function CalendarScreen() {
     if (progress > 0.05 && !showCreateModal) {
       openCreateModal();
     }
-  }, [CREATE_DRAWER_WIDTH, searchProgress, showCreateModal]);
+  }, [CREATE_DRAWER_WIDTH, searchProgress, showCreateModal, openCreateModal]);
 
   const handleHeaderAddDragEnd = useCallback((absTranslationX: number, absVelocityX: number) => {
     if (absTranslationX > 60 || absVelocityX > 600) {
@@ -1007,7 +983,7 @@ export default function CalendarScreen() {
       searchProgress.value = withSpring(0, { ...GROK_SPRING, duration: 250 });
       closeCreateModal();
     }
-  }, [showCreateModal, searchProgress]);
+  }, [showCreateModal, searchProgress, openCreateModal]);
 
   const createEvent = async () => {
     if (!user) return;
@@ -1127,8 +1103,6 @@ export default function CalendarScreen() {
     eventId: string;
     activityId: string | null;
   }) => {
-    // Find the event to get location/place info for moment capture
-    const event = events.find((e) => e.id === context.eventId);
     setMomentCaptureContext({
       activityName: context.activityName,
       activityCategory: context.activityCategory,
