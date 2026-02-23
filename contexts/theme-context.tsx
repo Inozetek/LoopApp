@@ -4,8 +4,8 @@
  * Persists to AsyncStorage and syncs to Supabase user profile
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Appearance, ColorSchemeName } from 'react-native';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { Appearance, ColorSchemeName, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const THEME_STORAGE_KEY = '@loop/theme-preference';
@@ -26,25 +26,39 @@ const ThemeContext = createContext<ThemeContextValue>({
 
 export function ThemeContextProvider({ children }: { children: React.ReactNode }) {
   const [themePreference, setThemePreferenceState] = useState<ThemePreference>('system');
-  const [osScheme, setOsScheme] = useState<ColorSchemeName>(Appearance.getColorScheme());
-  const [loaded, setLoaded] = useState(false);
-
-  // Load stored preference on mount
+  // Capture OS scheme once at mount — Android emulators can rapid-fire
+  // Appearance change events causing infinite white/black flashing.
+  const initialScheme = useRef<ColorSchemeName>(Appearance.getColorScheme()).current;
+  const [osScheme, setOsScheme] = useState<ColorSchemeName>(initialScheme);
+  // Load stored preference on mount (children render immediately with OS default)
   useEffect(() => {
     AsyncStorage.getItem(THEME_STORAGE_KEY).then((stored) => {
       if (stored === 'light' || stored === 'dark' || stored === 'system') {
         setThemePreferenceState(stored);
       }
-      setLoaded(true);
     });
   }, []);
 
   // Listen for OS theme changes
+  // On Android: heavily debounced (500ms) + ignore duplicate values to prevent flicker loop
+  // On iOS: standard 100ms debounce
   useEffect(() => {
+    let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    const delay = Platform.OS === 'android' ? 500 : 100;
+
     const sub = Appearance.addChangeListener(({ colorScheme }) => {
-      setOsScheme(colorScheme);
+      if (debounceTimer) clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        setOsScheme((prev) => {
+          if (prev === colorScheme) return prev;
+          return colorScheme;
+        });
+      }, delay);
     });
-    return () => sub.remove();
+    return () => {
+      if (debounceTimer) clearTimeout(debounceTimer);
+      sub.remove();
+    };
   }, []);
 
   const effectiveColorScheme: 'light' | 'dark' =
@@ -57,10 +71,9 @@ export function ThemeContextProvider({ children }: { children: React.ReactNode }
     AsyncStorage.setItem(THEME_STORAGE_KEY, pref);
   }, []);
 
-  // Don't render children until we've loaded the stored preference
-  // to avoid a flash of wrong theme
-  if (!loaded) return null;
-
+  // Always render children — use OS scheme as default until AsyncStorage
+  // resolves. A brief theme mismatch is far less disruptive than a black
+  // screen (returning null blocks the entire app tree on Android).
   return (
     <ThemeContext.Provider value={{ themePreference, effectiveColorScheme, setThemePreference }}>
       {children}

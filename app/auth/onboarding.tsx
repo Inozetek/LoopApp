@@ -506,7 +506,11 @@ export default function OnboardingScreen() {
       <View style={styles.stepInner}>
         <View style={styles.welcomeTop}>
           <LoopLogoVariant size={32} style={{ alignSelf: 'center' }} />
-          <Text style={[styles.convoTitle, { color: theme.text }]}>
+          <Text
+            style={[styles.convoTitle, { color: theme.text }]}
+            accessibilityRole="header"
+            accessibilityLabel="Welcome to Loop"
+          >
             welcome to loop
           </Text>
           <Text style={[styles.convoSub, { color: theme.textMuted, textAlign: 'center', marginBottom: 0 }]}>
@@ -530,6 +534,8 @@ export default function OnboardingScreen() {
             onValueChange={setSmartLearning}
             trackColor={{ false: 'rgba(255,255,255,0.12)', true: 'rgba(16,163,127,0.4)' }}
             thumbColor={smartLearning ? '#10a37f' : '#555'}
+            accessibilityLabel="Smart learning"
+            accessibilityHint="Toggle to improve suggestions based on your activity"
           />
         </View>
 
@@ -557,6 +563,9 @@ export default function OnboardingScreen() {
               onPress={handleConnectCalendar}
               disabled={isSyncingCalendar}
               style={[styles.connectBtn, { borderColor: theme.border }]}
+              accessibilityRole="button"
+              accessibilityLabel="Connect calendar"
+              accessibilityHint="Import your calendar for better suggestions"
             >
               {isSyncingCalendar ? (
                 <ActivityIndicator size="small" color={theme.accent} />
@@ -581,7 +590,11 @@ export default function OnboardingScreen() {
 
     return (
       <View style={styles.stepInner}>
-        <Text style={[styles.convoTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.convoTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="What should we call you?"
+        >
           what should we call you?
         </Text>
 
@@ -597,6 +610,8 @@ export default function OnboardingScreen() {
               autoCapitalize="words"
               maxLength={100}
               editable={!isLoading}
+              accessibilityLabel="First name"
+              accessibilityHint="Enter your first name"
             />
             {isGoogleUser && firstName ? (
               <Text style={[styles.hintText, { color: theme.textSubtle }]}>(from google)</Text>
@@ -612,6 +627,8 @@ export default function OnboardingScreen() {
               autoCapitalize="words"
               maxLength={100}
               editable={!isLoading}
+              accessibilityLabel="Last name"
+              accessibilityHint="Enter your last name"
             />
             {isGoogleUser && lastName ? (
               <Text style={[styles.hintText, { color: theme.textSubtle }]}>(from google)</Text>
@@ -634,6 +651,8 @@ export default function OnboardingScreen() {
               keyboardType="number-pad"
               maxLength={4}
               editable={!isLoading}
+              accessibilityLabel="Birth year"
+              accessibilityHint="Optional, helps personalize your experience"
             />
             <Text style={[styles.hintText, { color: theme.textSubtle }]}>
               helps personalize your experience
@@ -651,7 +670,11 @@ export default function OnboardingScreen() {
 
     return (
       <View style={styles.stepInner}>
-        <Text style={[styles.convoTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.convoTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="What gets you excited?"
+        >
           what gets you excited?
         </Text>
         <Text style={[styles.convoSub, {
@@ -684,6 +707,10 @@ export default function OnboardingScreen() {
                   ]}
                   onPress={() => toggleInterest(interest)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${interest}${isSelected ? ', selected' : ''}`}
+                  accessibilityHint={isSelected ? `Tap to deselect ${interest}` : `Tap to select ${interest}`}
+                  accessibilityState={{ selected: isSelected }}
                 >
                   <View style={[styles.tileIconCircle, { backgroundColor: categoryColor + '1A' }]}>
                     <Ionicons
@@ -725,7 +752,11 @@ export default function OnboardingScreen() {
 
     return (
       <View style={styles.stepInner}>
-        <Text style={[styles.convoTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.convoTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="How do you discover?"
+        >
           how do you discover?
         </Text>
         <Text style={[styles.convoSub, { color: theme.textMuted, marginBottom: 20 }]}>
@@ -749,6 +780,10 @@ export default function OnboardingScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               }}
               activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel={`${opt.title}${selected ? ', selected' : ''}`}
+              accessibilityHint={opt.desc}
+              accessibilityState={{ selected }}
             >
               <Ionicons
                 name={opt.icon as any}
@@ -772,7 +807,11 @@ export default function OnboardingScreen() {
   function renderPersonalStep4() {
     return (
       <View style={styles.stepInner}>
-        <Text style={[styles.convoTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.convoTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="Where are you based?"
+        >
           where are you based?
         </Text>
 
@@ -784,6 +823,9 @@ export default function OnboardingScreen() {
           onPress={handleUseLocation}
           disabled={isFetchingLocation || locationGranted}
           activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel={locationGranted ? 'Location enabled' : 'Enable location'}
+          accessibilityHint="Grant location permission for nearby suggestions"
         >
           {isFetchingLocation ? (
             <ActivityIndicator size="small" color={theme.accent} />
@@ -807,6 +849,8 @@ export default function OnboardingScreen() {
           <TouchableOpacity
             onPress={() => setShowAddressFields(true)}
             style={styles.orLink}
+            accessibilityRole="button"
+            accessibilityLabel="Enter your address manually"
           >
             <Text style={[styles.orLinkText, { color: theme.textMuted }]}>
               or enter your address
@@ -824,6 +868,8 @@ export default function OnboardingScreen() {
               onChangeText={setHomeAddress}
               maxLength={500}
               editable={!isLoading}
+              accessibilityLabel="Home address"
+              accessibilityHint="Enter your home address for nearby suggestions"
             />
             <TextInput
               style={[styles.underlineInput, { color: theme.text, borderBottomColor: theme.border }]}
@@ -833,6 +879,8 @@ export default function OnboardingScreen() {
               onChangeText={setWorkAddress}
               maxLength={500}
               editable={!isLoading}
+              accessibilityLabel="Work address"
+              accessibilityHint="Optional, used for commute suggestions"
             />
             <Text style={[styles.helperText, { color: theme.textSubtle }]}>
               used for commute suggestions
@@ -854,7 +902,11 @@ export default function OnboardingScreen() {
 
     return (
       <View style={[styles.stepInner, styles.centeredStep]}>
-        <Text style={[styles.convoTitle, { color: theme.text, textAlign: 'center' }]}>
+        <Text
+          style={[styles.convoTitle, { color: theme.text, textAlign: 'center' }]}
+          accessibilityRole="header"
+          accessibilityLabel="One last thing"
+        >
           one last thing
         </Text>
 
@@ -866,6 +918,9 @@ export default function OnboardingScreen() {
           onPress={handleEnableNotifications}
           disabled={isRequestingNotifications || notificationsEnabled}
           activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel={notificationsEnabled ? 'Notifications enabled' : 'Enable notifications'}
+          accessibilityHint="Grant notification permission for activity reminders"
         >
           {isRequestingNotifications ? (
             <ActivityIndicator size="small" color={theme.accent} />
@@ -932,7 +987,11 @@ export default function OnboardingScreen() {
   function renderBusinessStep0() {
     return (
       <View style={styles.bizStepContent}>
-        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.bizStepTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="Tell us about your business"
+        >
           Tell us about your business
         </Text>
         <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
@@ -949,6 +1008,8 @@ export default function OnboardingScreen() {
             autoCapitalize="words"
             maxLength={200}
             editable={!isLoading}
+            accessibilityLabel="Business name"
+            accessibilityHint="Enter the name of your business"
           />
           <TextInput
             style={[styles.bizInput, { borderColor: theme.border, color: theme.text }]}
@@ -959,6 +1020,8 @@ export default function OnboardingScreen() {
             autoCapitalize="words"
             maxLength={100}
             editable={!isLoading}
+            accessibilityLabel="Contact name"
+            accessibilityHint="Enter your name as the business contact"
           />
         </View>
       </View>
@@ -968,7 +1031,11 @@ export default function OnboardingScreen() {
   function renderBusinessStep1() {
     return (
       <View style={styles.bizStepContent}>
-        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.bizStepTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="Business category"
+        >
           Business category
         </Text>
         <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
@@ -990,6 +1057,9 @@ export default function OnboardingScreen() {
                 ]}
                 onPress={() => setBusinessCategory(cat)}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${cat}${isSelected ? ', selected' : ''}`}
+                accessibilityState={{ selected: isSelected }}
               >
                 <Text style={[
                   styles.bizInterestLabel,
@@ -1015,6 +1085,8 @@ export default function OnboardingScreen() {
           multiline
           maxLength={500}
           editable={!isLoading}
+          accessibilityLabel="Business description"
+          accessibilityHint="Optional, describe what your business offers"
         />
       </View>
     );
@@ -1023,7 +1095,11 @@ export default function OnboardingScreen() {
   function renderBusinessStep2() {
     return (
       <View style={styles.bizStepContent}>
-        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.bizStepTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="Business location"
+        >
           Business location
         </Text>
         <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
@@ -1038,6 +1114,9 @@ export default function OnboardingScreen() {
           onPress={handleUseLocation}
           disabled={isFetchingLocation || locationGranted}
           activeOpacity={0.6}
+          accessibilityRole="button"
+          accessibilityLabel={locationGranted ? 'Location detected' : 'Use current location'}
+          accessibilityHint="Detect your business location automatically"
         >
           {isFetchingLocation ? (
             <ActivityIndicator size="small" color={theme.accent} />
@@ -1071,6 +1150,8 @@ export default function OnboardingScreen() {
           onChangeText={setHomeAddress}
           maxLength={500}
           editable={!isLoading && !isFetchingLocation}
+          accessibilityLabel="Business address"
+          accessibilityHint="Enter the street address of your business"
         />
       </View>
     );
@@ -1079,7 +1160,11 @@ export default function OnboardingScreen() {
   function renderBusinessStep3() {
     return (
       <View style={styles.bizStepContent}>
-        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.bizStepTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="Contact details"
+        >
           Contact details
         </Text>
         <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
@@ -1096,6 +1181,8 @@ export default function OnboardingScreen() {
             keyboardType="phone-pad"
             maxLength={20}
             editable={!isLoading}
+            accessibilityLabel="Phone number"
+            accessibilityHint="Optional, enter your business phone number"
           />
           <TextInput
             style={[styles.bizInput, { borderColor: theme.border, color: theme.text }]}
@@ -1107,6 +1194,8 @@ export default function OnboardingScreen() {
             autoCapitalize="none"
             maxLength={500}
             editable={!isLoading}
+            accessibilityLabel="Website URL"
+            accessibilityHint="Optional, enter your business website"
           />
         </View>
       </View>
@@ -1137,7 +1226,11 @@ export default function OnboardingScreen() {
   function renderBusinessStep4() {
     return (
       <View style={styles.bizStepContent}>
-        <Text style={[styles.bizStepTitle, { color: theme.text }]}>
+        <Text
+          style={[styles.bizStepTitle, { color: theme.text }]}
+          accessibilityRole="header"
+          accessibilityLabel="Choose your plan"
+        >
           Choose your plan
         </Text>
         <Text style={[styles.bizStepSubtitle, { color: theme.textMuted }]}>
@@ -1162,6 +1255,10 @@ export default function OnboardingScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={`${option.name} plan, ${option.price}${isSelected ? ', selected' : ''}`}
+                accessibilityHint={`Select the ${option.name} plan`}
+                accessibilityState={{ selected: isSelected }}
               >
                 <View style={styles.bizTierHeader}>
                   <Text style={[styles.bizTierName, { color: isSelected ? theme.accent : theme.text }]}>
@@ -1188,7 +1285,11 @@ export default function OnboardingScreen() {
     const tierLabel = businessTier === 'organic' ? '' : ` (${businessTier === 'boosted' ? 'Boosted' : 'Premium'} — 30-day trial)`;
     return (
       <View style={[styles.bizStepContent, styles.centeredStep]}>
-        <Text style={[styles.bizStepTitle, { color: theme.text, textAlign: 'center' }]}>
+        <Text
+          style={[styles.bizStepTitle, { color: theme.text, textAlign: 'center' }]}
+          accessibilityRole="header"
+          accessibilityLabel={`You're all set${tierLabel ? '!' : ''}`}
+        >
           You&apos;re all set{tierLabel ? '!' : ''}
         </Text>
         {tierLabel ? (
@@ -1302,6 +1403,9 @@ export default function OnboardingScreen() {
               onPress={() => setStep(step - 1)}
               disabled={isLoading}
               style={styles.backTouchable}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              accessibilityHint="Return to the previous step"
             >
               <Text style={[styles.backText, { color: theme.textMuted }]}>back</Text>
             </TouchableOpacity>
@@ -1314,6 +1418,9 @@ export default function OnboardingScreen() {
             onPress={handleNext}
             disabled={isLoading}
             activeOpacity={0.8}
+            accessibilityRole="button"
+            accessibilityLabel={getButtonText()}
+            accessibilityHint={step === TOTAL_STEPS ? 'Complete setup and start using Loop' : 'Proceed to the next step'}
           >
             {isLoading ? (
               <ActivityIndicator color="#fff" size="small" />
@@ -1327,6 +1434,8 @@ export default function OnboardingScreen() {
               onPress={handleSkip}
               disabled={isLoading}
               style={styles.skipTouchable}
+              accessibilityRole="button"
+              accessibilityLabel="Skip this step"
             >
               <Text style={[styles.skipText, { color: theme.textSubtle }]}>skip</Text>
             </TouchableOpacity>

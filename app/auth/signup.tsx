@@ -132,7 +132,11 @@ export default function SignupScreen() {
               </View>
 
               {/* Welcome text */}
-              <Text style={[styles.welcomeText, { color: theme.text }]}>
+              <Text
+                style={[styles.welcomeText, { color: theme.text }]}
+                accessibilityRole="header"
+                accessibilityLabel="Create your account"
+              >
                 create your account
               </Text>
 
@@ -144,6 +148,9 @@ export default function SignupScreen() {
                   onPress={handleGoogleSignUp}
                   disabled={isLoading}
                   activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue with Google"
+                  accessibilityHint="Sign up using your Google account"
                 >
                   <View style={styles.buttonInner}>
                     <View style={[styles.iconCircle, { backgroundColor: '#4285F4' }]}>
@@ -161,6 +168,9 @@ export default function SignupScreen() {
                   onPress={handleFacebookSignUp}
                   disabled={isLoading}
                   activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Continue with Facebook"
+                  accessibilityHint="Sign up using your Facebook account"
                 >
                   <View style={styles.buttonInner}>
                     <View style={[styles.iconCircle, { backgroundColor: '#1877F2' }]}>
@@ -179,6 +189,9 @@ export default function SignupScreen() {
                     onPress={handleAppleSignUp}
                     disabled={isLoading}
                     activeOpacity={0.6}
+                    accessibilityRole="button"
+                    accessibilityLabel="Continue with Apple"
+                    accessibilityHint="Sign up using your Apple account"
                   >
                     <View style={styles.buttonInner}>
                       <View style={[styles.iconCircle, { backgroundColor: '#ffffff' }]}>
@@ -198,6 +211,8 @@ export default function SignupScreen() {
                 <TouchableOpacity
                   onPress={() => setShowEmailForm(!showEmailForm)}
                   hitSlop={{ top: 12, bottom: 12, left: 20, right: 20 }}
+                  accessibilityRole="button"
+                  accessibilityLabel={showEmailForm ? 'Hide email form' : 'Show email sign up options'}
                 >
                   <Text style={[styles.dividerText, { color: theme.textSubtle }]}>
                     {showEmailForm ? 'hide' : 'or'}
@@ -219,6 +234,8 @@ export default function SignupScreen() {
                     keyboardType="email-address"
                     maxLength={254}
                     editable={!isLoading}
+                    accessibilityLabel="Email address"
+                    accessibilityHint="Enter your email address to create an account"
                   />
                   <TextInput
                     style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
@@ -229,6 +246,8 @@ export default function SignupScreen() {
                     secureTextEntry
                     maxLength={128}
                     editable={!isLoading}
+                    accessibilityLabel="Password"
+                    accessibilityHint="Create a password with at least 6 characters"
                   />
                   <TextInput
                     style={[styles.input, { borderBottomColor: theme.border, color: theme.text }]}
@@ -239,12 +258,17 @@ export default function SignupScreen() {
                     secureTextEntry
                     maxLength={128}
                     editable={!isLoading}
+                    accessibilityLabel="Confirm password"
+                    accessibilityHint="Re-enter your password to confirm"
                   />
                   <TouchableOpacity
                     style={[styles.primaryButton, { backgroundColor: theme.accent }]}
                     onPress={handleSignUp}
                     disabled={isLoading}
                     activeOpacity={0.8}
+                    accessibilityRole="button"
+                    accessibilityLabel="Create account"
+                    accessibilityHint="Submit your details to create a new account"
                   >
                     {isLoading ? (
                       <ActivityIndicator color="#fff" size="small" />
@@ -258,6 +282,9 @@ export default function SignupScreen() {
                   style={[styles.ghostButton, { borderColor: theme.border }]}
                   onPress={() => setShowEmailForm(true)}
                   activeOpacity={0.6}
+                  accessibilityRole="button"
+                  accessibilityLabel="Sign up with email"
+                  accessibilityHint="Show email and password sign up form"
                 >
                   <Text style={[styles.buttonText, { color: theme.text }]}>
                     sign up with email
@@ -271,7 +298,11 @@ export default function SignupScreen() {
                   already have an account?{' '}
                 </Text>
                 <Link href="/auth/login" asChild>
-                  <TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityRole="link"
+                    accessibilityLabel="Sign in"
+                    accessibilityHint="Navigate to the sign in screen"
+                  >
                     <Text style={[styles.footerLink, { color: theme.accent }]}>sign in</Text>
                   </TouchableOpacity>
                 </Link>
@@ -281,9 +312,9 @@ export default function SignupScreen() {
             {/* Terms - Bottom */}
             <Text style={[styles.terms, { color: theme.textSubtle }]}>
               by continuing, you agree to our{' '}
-              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/terms')}>terms</Text>
+              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/terms')} accessibilityRole="link" accessibilityLabel="Terms of service">terms</Text>
               {' '}and{' '}
-              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/privacy')}>privacy policy</Text>
+              <Text style={{ color: theme.accent }} onPress={() => Linking.openURL('https://loopapp.com/privacy')} accessibilityRole="link" accessibilityLabel="Privacy policy">privacy policy</Text>
             </Text>
           </ScrollView>
         </KeyboardAvoidingView>

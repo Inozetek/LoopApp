@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-typecheck-test:
+    name: Lint, Typecheck & Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint -- --max-warnings 0
+        continue-on-error: true  # TODO: remove once warnings are cleaned up
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Test
+        run: npx jest --ci --passWithNoTests --forceExit
+        env:
+          # Minimal env vars for tests to load without crashing.
+          # Integration tests that hit real APIs are skipped in CI.
+          EXPO_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: placeholder
+          EXPO_PUBLIC_GOOGLE_PLACES_API_KEY: placeholder
+          EXPO_PUBLIC_TICKETMASTER_API_KEY: placeholder
+          EXPO_PUBLIC_ENABLE_TICKETMASTER: 'true'
+          EXPO_PUBLIC_ENABLE_MIXED_FEED: 'true'
+          EXPO_PUBLIC_ENABLE_EVENTBRITE: 'false'
+          EXPO_PUBLIC_ENABLE_YELP: 'false'
+          EXPO_PUBLIC_ENABLE_BOTTOM_SHEETS: 'false'

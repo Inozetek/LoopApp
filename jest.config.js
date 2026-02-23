@@ -13,6 +13,7 @@ module.exports = {
     '^expo-calendar$': '<rootDir>/__mocks__/expo-calendar.js',
     '^expo-constants$': '<rootDir>/__mocks__/expo-constants.js',
     '^react-native-maps$': '<rootDir>/__mocks__/react-native-maps.js',
+    '^posthog-react-native$': '<rootDir>/__mocks__/posthog-react-native.js',
   },
 
   // Setup files

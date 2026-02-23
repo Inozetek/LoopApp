@@ -1,6 +1,9 @@
 // Test Setup File
 // Environment variables are loaded via dotenv-cli in package.json test scripts
 
+// Define React Native globals
+global.__DEV__ = true;
+
 // Extend Jest timeout globally (30 seconds for API calls)
 jest.setTimeout(30000);
 

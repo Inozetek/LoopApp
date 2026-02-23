@@ -9,10 +9,12 @@
  */
 
 // Minimum milliseconds between API calls
-const MIN_REQUEST_SPACING_MS = 200;
+// 1000ms = max 60 requests/min, matching Google Places API default quota
+const MIN_REQUEST_SPACING_MS = 1000;
 
 // Maximum queue size before rejecting new requests
-const MAX_QUEUE_SIZE = 10;
+// Needs headroom for searchNearby + enrichment + autocomplete calls
+const MAX_QUEUE_SIZE = 25;
 
 // Request queue
 interface QueuedRequest<T> {

@@ -35,6 +35,7 @@ import {
 } from '@/services/chat-service';
 import { MessageThread } from '@/components/message-thread';
 import SwipeableLayout from '@/components/swipeable-layout';
+import { ScreenErrorBoundary } from '@/components/error-boundary';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -196,6 +197,9 @@ export default function MessagesScreen() {
         style={[styles.conversationRow, { borderBottomColor: colors.border }]}
         onPress={() => openThread(item)}
         activeOpacity={0.7}
+        accessibilityRole="button"
+        accessibilityLabel={`Conversation with ${item.other_user_name || 'Unknown'}${hasUnread ? `, ${item.unread_count} unread` : ''}`}
+        accessibilityHint="Opens message thread"
       >
         {/* Avatar */}
         {renderAvatar(item)}
@@ -300,6 +304,7 @@ export default function MessagesScreen() {
   // -------------------------------------------------------------------------
 
   return (
+    <ScreenErrorBoundary screen="Messages">
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         {renderHeader()}
@@ -340,6 +345,7 @@ export default function MessagesScreen() {
         </Modal>
       </View>
     </SwipeableLayout>
+    </ScreenErrorBoundary>
   );
 }
 

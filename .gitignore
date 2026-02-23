@@ -45,6 +45,7 @@ app-example
 # Environment variables (DO NOT COMMIT)
 .env
 .env.local
+.env.test
 .env*.local
 *.env
 

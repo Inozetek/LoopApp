@@ -18,7 +18,7 @@ interface DateFilterBarProps {
 }
 
 /** Generate the quick-pick date options */
-function getDatePills(): Array<{ label: string; getDate: () => Date }> {
+function getDatePills(): { label: string; getDate: () => Date }[] {
   return [
     {
       label: 'Today',

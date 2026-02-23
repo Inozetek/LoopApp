@@ -189,7 +189,7 @@ export function OnboardingLoopAnimation({
   const centerRadius = size * 0.04;
 
   // Create animated props for each node
-  const createNodeProps = (nodeValue: SharedValue<number>, index: number) => {
+  const useNodeProps = (nodeValue: SharedValue<number>, index: number) => {
     return useAnimatedProps(() => {
       const scale = index === 0 ? centerPulse.value : 1;
       return {
@@ -200,7 +200,7 @@ export function OnboardingLoopAnimation({
   };
 
   // Create animated props for each edge
-  const createEdgeProps = (edgeValue: SharedValue<number>, edgeIndex: number) => {
+  const useEdgeProps = (edgeValue: SharedValue<number>, edgeIndex: number) => {
     const [fromIdx, toIdx] = EDGES[edgeIndex];
     const from = NODES[fromIdx];
     const to = NODES[toIdx];
@@ -225,20 +225,20 @@ export function OnboardingLoopAnimation({
   }));
 
   // Create animated props arrays (must call hooks at top level)
-  const nodeProps0 = createNodeProps(node0, 0);
-  const nodeProps1 = createNodeProps(node1, 1);
-  const nodeProps2 = createNodeProps(node2, 2);
-  const nodeProps3 = createNodeProps(node3, 3);
-  const nodeProps4 = createNodeProps(node4, 4);
-  const nodeProps5 = createNodeProps(node5, 5);
+  const nodeProps0 = useNodeProps(node0, 0);
+  const nodeProps1 = useNodeProps(node1, 1);
+  const nodeProps2 = useNodeProps(node2, 2);
+  const nodeProps3 = useNodeProps(node3, 3);
+  const nodeProps4 = useNodeProps(node4, 4);
+  const nodeProps5 = useNodeProps(node5, 5);
   const allNodeProps = [nodeProps0, nodeProps1, nodeProps2, nodeProps3, nodeProps4, nodeProps5];
 
-  const edgeProps0 = createEdgeProps(edge0, 0);
-  const edgeProps1 = createEdgeProps(edge1, 1);
-  const edgeProps2 = createEdgeProps(edge2, 2);
-  const edgeProps3 = createEdgeProps(edge3, 3);
-  const edgeProps4 = createEdgeProps(edge4, 4);
-  const edgeProps5 = createEdgeProps(edge5, 5);
+  const edgeProps0 = useEdgeProps(edge0, 0);
+  const edgeProps1 = useEdgeProps(edge1, 1);
+  const edgeProps2 = useEdgeProps(edge2, 2);
+  const edgeProps3 = useEdgeProps(edge3, 3);
+  const edgeProps4 = useEdgeProps(edge4, 4);
+  const edgeProps5 = useEdgeProps(edge5, 5);
   const allEdgeProps = [edgeProps0, edgeProps1, edgeProps2, edgeProps3, edgeProps4, edgeProps5];
 
   return (

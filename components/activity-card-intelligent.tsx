@@ -689,6 +689,8 @@ function ActivityCardIntelligentComponent({
               onPress={onSeeDetails}
               onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
               style={styles.imagePressable}
+              accessibilityLabel={`View details for ${recommendation.title}`}
+              accessibilityRole="button"
             >
               <Image
                 source={{ uri: recommendation.imageUrl }}
@@ -703,6 +705,8 @@ function ActivityCardIntelligentComponent({
               onPress={onSeeDetails}
               onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
               style={styles.imagePressable}
+              accessibilityLabel={`View details for ${recommendation.title}`}
+              accessibilityRole="button"
             >
               <LinearGradient
                 colors={[BrandColors.loopBlue, BrandColors.loopGreen]}
@@ -736,6 +740,8 @@ function ActivityCardIntelligentComponent({
                   onNotInterested?.();
                 }
               }}
+              accessibilityLabel={`More options for ${recommendation.title}`}
+              accessibilityRole="button"
             >
               <IconSymbol name="ellipsis.circle.fill" size={28} color="rgba(255, 255, 255, 0.9)" />
             </Pressable>
@@ -842,6 +848,9 @@ function ActivityCardIntelligentComponent({
           onPress={onSeeDetails}
           onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}
           pointerEvents="box-none"
+          accessibilityLabel={`${recommendation.title}, ${recommendation.category || 'Activity'}, ${getPriceDisplay(recommendation.priceRange)}, ${recommendation.rating > 0 ? `${recommendation.rating.toFixed(1)} stars` : ''}`}
+          accessibilityRole="button"
+          accessibilityHint="Opens activity details"
         >
           {/* Title */}
           <Text style={[styles.title, Typography.titleLarge, { color: colors.text }]} numberOfLines={2}>
@@ -973,6 +982,8 @@ function ActivityCardIntelligentComponent({
               style={styles.likedByContainer}
               onPress={handleOpenLikersList}
               disabled={likeState.totalLikes === 0}
+              accessibilityLabel={`${formatCount(displayLikes)} likes. View who liked ${recommendation.title}`}
+              accessibilityRole="button"
             >
               {likeState.friendsWhoLiked.length > 0 ? (
                 <View style={styles.likedByRow}>
@@ -1025,6 +1036,8 @@ function ActivityCardIntelligentComponent({
           <Pressable
             style={styles.actionButton}
             onPress={handleLikeToggle}
+            accessibilityLabel={likeState.isLiked ? `Unlike ${recommendation.title}` : `Like ${recommendation.title}`}
+            accessibilityRole="button"
           >
             <Ionicons
               name={likeState.isLiked ? 'heart' : 'heart-outline'}
@@ -1043,6 +1056,8 @@ function ActivityCardIntelligentComponent({
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onComment?.();
             }}
+            accessibilityLabel={`Comment on ${recommendation.title}`}
+            accessibilityRole="button"
           >
             <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
             <Text style={[styles.actionCount, { color: colors.textSecondary }]}>
@@ -1057,6 +1072,8 @@ function ActivityCardIntelligentComponent({
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               onShare?.();
             }}
+            accessibilityLabel={`Share ${recommendation.title}`}
+            accessibilityRole="button"
           >
             <Ionicons name="paper-plane-outline" size={22} color={colors.text} />
             <Text style={[styles.actionLabel, { color: colors.textSecondary }]}>
@@ -1074,6 +1091,8 @@ function ActivityCardIntelligentComponent({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   onAcceptRSVP?.();
                 }}
+                accessibilityLabel={`Accept invitation for ${recommendation.title}`}
+                accessibilityRole="button"
               >
                 <Ionicons name="checkmark-circle" size={24} color={BrandColors.success} />
                 <Text style={[styles.actionLabel, { color: BrandColors.success, fontWeight: '600' }]}>
@@ -1094,6 +1113,9 @@ function ActivityCardIntelligentComponent({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   onDeclineRSVP?.();
                 }}
+                accessibilityLabel="More RSVP options"
+                accessibilityRole="button"
+                accessibilityHint="Tap for maybe, long press to decline"
               >
                 <Ionicons name="ellipsis-horizontal" size={20} color={colors.textSecondary} />
               </Pressable>
@@ -1107,6 +1129,8 @@ function ActivityCardIntelligentComponent({
                 onAddToCalendar();
               }}
               disabled={isRemoving || userHasAccepted}
+              accessibilityLabel={userHasAccepted ? `Already added ${recommendation.title} to calendar` : `Add ${recommendation.title} to calendar`}
+              accessibilityRole="button"
             >
               <Ionicons
                 name={userHasAccepted ? 'checkmark-circle' : 'add-circle'}

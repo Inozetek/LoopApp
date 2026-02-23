@@ -245,6 +245,8 @@ export function LoopHeader({
               }
             }}
             style={styles.iconButton}
+            accessibilityLabel="Go back"
+            accessibilityRole="button"
           >
             <Ionicons name="arrow-back" size={24} color={colors.text} />
           </TouchableOpacity>
@@ -268,7 +270,10 @@ export function LoopHeader({
 
             return (
               <GestureDetector gesture={menuPan}>
-                <View>
+                <View
+                  accessibilityLabel="Open menu"
+                  accessibilityRole="button"
+                >
                   <MetallicRingButton
                     onPress={() => onProfilePress?.()}
                     size={36}
@@ -291,6 +296,8 @@ export function LoopHeader({
               onMenuPress?.();
             }}
             style={styles.iconButton}
+            accessibilityLabel={isMenuOpen ? 'Close menu' : 'Open menu'}
+            accessibilityRole="button"
           >
             <Ionicons name={isMenuOpen ? 'close' : 'menu'} size={26} color={colors.text} />
           </TouchableOpacity>
@@ -301,15 +308,13 @@ export function LoopHeader({
               onNotificationPress?.();
             }}
             style={styles.iconButton}
+            accessibilityLabel={notificationCount > 0 ? `Notifications, ${notificationCount} unread` : 'Notifications'}
+            accessibilityRole="button"
           >
             <View>
               <Ionicons name="notifications-outline" size={24} color={colors.text} />
               {notificationCount > 0 && (
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>
-                    {notificationCount > 9 ? '9+' : notificationCount}
-                  </Text>
-                </View>
+                <View style={styles.bellDot} />
               )}
             </View>
           </TouchableOpacity>
@@ -320,6 +325,8 @@ export function LoopHeader({
               onProfilePress?.();
             }}
             style={styles.iconButton}
+            accessibilityLabel="Open profile"
+            accessibilityRole="button"
           >
             <Ionicons name="person-circle-outline" size={24} color={colors.text} />
           </TouchableOpacity>
@@ -332,6 +339,9 @@ export function LoopHeader({
           onPress={handleLogoPress}
           activeOpacity={0.7}
           style={styles.logoTouchable}
+          accessibilityLabel="Loop home"
+          accessibilityRole="button"
+          accessibilityHint="Scroll to top or refresh"
         >
           {/* Dark mode: subtle dark glow behind logo for contrast */}
           {isDark && (
@@ -368,7 +378,11 @@ export function LoopHeader({
 
               return (
                 <GestureDetector gesture={searchPan}>
-                  <View style={{ position: 'relative' }}>
+                  <View
+                    style={{ position: 'relative' }}
+                    accessibilityLabel={hasActiveFilters ? 'Search and filter, filters active' : 'Search and filter'}
+                    accessibilityRole="button"
+                  >
                     <MetallicRingButton
                       onPress={() => {
                         console.log('🔍 Filter button pressed, onSearchPress:', !!onSearchPress);
@@ -395,15 +409,13 @@ export function LoopHeader({
                   onChatPress?.();
                 }}
                 style={styles.iconButton}
+                accessibilityLabel={chatBadgeCount > 0 ? `Messages, ${chatBadgeCount} unread` : 'Messages'}
+                accessibilityRole="button"
               >
                 <View>
                   <Ionicons name="chatbubble-outline" size={22} color={colors.text} />
                   {chatBadgeCount > 0 && (
-                    <View style={styles.chatBadge}>
-                      <Text style={styles.chatBadgeText}>
-                        {chatBadgeCount > 9 ? '9+' : chatBadgeCount}
-                      </Text>
-                    </View>
+                    <View style={styles.chatDot} />
                   )}
                 </View>
               </TouchableOpacity>
@@ -416,6 +428,8 @@ export function LoopHeader({
               onFilterPress?.({ x: SCREEN_WIDTH - 40, y: 100 });
             }}
             style={styles.filterButton}
+            accessibilityLabel="Search and filter"
+            accessibilityRole="button"
           >
             <View style={[styles.filterCircle, {
               backgroundColor: colorScheme === 'dark'
@@ -435,6 +449,8 @@ export function LoopHeader({
               onAddPress?.();
             }}
             style={styles.iconButton}
+            accessibilityLabel="Add new item"
+            accessibilityRole="button"
           >
             <Ionicons name="add-circle-outline" size={26} color={colors.text} />
           </TouchableOpacity>
@@ -445,6 +461,8 @@ export function LoopHeader({
               onSettingsPress?.();
             }}
             style={styles.iconButton}
+            accessibilityLabel="Settings"
+            accessibilityRole="button"
           >
             <Ionicons name="settings-outline" size={24} color={colors.text} />
           </TouchableOpacity>
@@ -521,23 +539,14 @@ const styles = StyleSheet.create({
   iconButton: {
     padding: Spacing.sm,
   },
-  chatBadge: {
+  chatDot: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: BrandColors.error,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  chatBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 9,
-    fontWeight: '700',
-    includeFontPadding: false,
   },
   // Profile avatar button
   avatarButton: {
@@ -581,24 +590,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     includeFontPadding: false,
   },
-  // Bell icon badge
-  bellBadge: {
+  // Bell icon dot (small red indicator, no count)
+  bellDot: {
     position: 'absolute',
-    top: -4,
-    right: -4,
+    top: -2,
+    right: -2,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
     backgroundColor: BrandColors.error,
-    borderRadius: 8,
-    minWidth: 16,
-    height: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 4,
-  },
-  bellBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: '700',
-    includeFontPadding: false,
   },
   // Menu button — metallic gradient ring (matches calendar selected-day ring)
   menuGradientRing: {
@@ -648,8 +648,6 @@ const styles = StyleSheet.create({
     height: 8,
     borderRadius: 4,
     backgroundColor: BrandColors.loopBlue,
-    borderWidth: 1.5,
-    borderColor: '#FFFFFF',
   },
   // Shimmer glow effect
   shimmerContainer: {

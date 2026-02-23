@@ -8,6 +8,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Keyboard,
+  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { BrandColors, Spacing, BorderRadius, Typography } from '@/constants/brand';
@@ -78,7 +79,7 @@ export function filterRecentLocations(
 
 /** Dedupe locations by normalized address, keeping the most recent */
 export function dedupeByAddress(
-  rows: Array<{ address: string; lastUsed: string; [key: string]: any }>,
+  rows: { address: string; lastUsed: string; [key: string]: any }[],
 ): typeof rows {
   const seen = new Map<string, (typeof rows)[number]>();
   for (const row of rows) {
@@ -280,16 +281,20 @@ export function LocationAutocomplete({
     setIsFocused(false);
 
     try {
-      const response = await fetch(
-        `https://places.googleapis.com/v1/places/${prediction.place_id}`,
-        {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Goog-Api-Key': process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY!,
-            'X-Goog-FieldMask': 'id,displayName,location,formattedAddress,types',
-          },
-        }
+      const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
+
+      const response = await rateLimitedPlacesRequest(() =>
+        fetch(
+          `https://places.googleapis.com/v1/places/${prediction.place_id}`,
+          {
+            method: 'GET',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Goog-Api-Key': process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY!,
+              'X-Goog-FieldMask': 'id,displayName,location,formattedAddress,types',
+            },
+          }
+        )
       );
 
       if (!response.ok) {
@@ -308,6 +313,14 @@ export function LocationAutocomplete({
       }
     } catch (error) {
       console.error('Place details error:', error);
+      // Reset UI state so user can try again, and show error
+      setJustSelected(false);
+      onChangeText(prediction.description);
+      Alert.alert(
+        'Location Error',
+        'Could not load location details. Please try selecting again.',
+        [{ text: 'OK' }]
+      );
     }
   };
 

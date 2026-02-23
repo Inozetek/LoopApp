@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Terms of Service - Loop</title>
+  <style>
+    :root {
+      --brand-cyan: #00A6D9;
+      --brand-cyan-dark: #007DA3;
+      --brand-green: #09DB98;
+      --text-primary: #1a1a2e;
+      --text-secondary: #4a4a68;
+      --text-muted: #6b7280;
+      --bg-primary: #ffffff;
+      --bg-section: #f8f9fc;
+      --border-color: #e5e7eb;
+      --radius: 12px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      color: var(--text-primary);
+      background-color: var(--bg-primary);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--brand-cyan), var(--brand-cyan-dark));
+      color: #ffffff;
+      padding: 48px 24px 40px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+
+    .header .subtitle {
+      font-size: 16px;
+      opacity: 0.9;
+      font-weight: 400;
+    }
+
+    .header .last-updated {
+      margin-top: 16px;
+      font-size: 14px;
+      opacity: 0.75;
+    }
+
+    .container {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 20px 64px;
+    }
+
+    .intro {
+      background-color: var(--bg-section);
+      border-left: 4px solid var(--brand-cyan);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 36px;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    .intro strong {
+      color: var(--text-primary);
+    }
+
+    .section {
+      margin-bottom: 36px;
+    }
+
+    .section h2 {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--brand-cyan);
+      display: inline-block;
+    }
+
+    .section h3 {
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+
+    .section p {
+      font-size: 15px;
+      color: var(--text-secondary);
+      margin-bottom: 14px;
+    }
+
+    .section ul, .section ol {
+      margin: 12px 0 16px 24px;
+      font-size: 15px;
+      color: var(--text-secondary);
+    }
+
+    .section li {
+      margin-bottom: 8px;
+      padding-left: 4px;
+    }
+
+    .section li::marker {
+      color: var(--brand-cyan);
+    }
+
+    .highlight-box {
+      background-color: var(--bg-section);
+      border-radius: var(--radius);
+      padding: 18px 22px;
+      margin: 16px 0;
+      border: 1px solid var(--border-color);
+    }
+
+    .highlight-box p {
+      margin-bottom: 8px;
+    }
+
+    .highlight-box p:last-child {
+      margin-bottom: 0;
+    }
+
+    .warning-box {
+      background-color: #fef3c7;
+      border-left: 4px solid #f59e0b;
+      border-radius: var(--radius);
+      padding: 16px 20px;
+      margin: 16px 0;
+      font-size: 14px;
+      color: #92400e;
+    }
+
+    .contact-box {
+      background: linear-gradient(135deg, #f0f9ff, #ecfdf5);
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-top: 40px;
+      text-align: center;
+      border: 1px solid var(--border-color);
+    }
+
+    .contact-box h2 {
+      border-bottom: none;
+      display: block;
+      margin-bottom: 12px;
+    }
+
+    .contact-box a {
+      color: var(--brand-cyan);
+      text-decoration: none;
+      font-weight: 600;
+    }
+
+    .contact-box a:hover {
+      text-decoration: underline;
+    }
+
+    a {
+      color: var(--brand-cyan-dark);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    .toc {
+      background-color: var(--bg-section);
+      border-radius: var(--radius);
+      padding: 24px 28px;
+      margin-bottom: 40px;
+      border: 1px solid var(--border-color);
+    }
+
+    .toc h3 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-primary);
+      margin-bottom: 14px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .toc ol {
+      margin: 0;
+      padding-left: 20px;
+    }
+
+    .toc li {
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+
+    .toc a {
+      color: var(--brand-cyan-dark);
+      font-weight: 500;
+    }
+
+    .footer {
+      text-align: center;
+      padding: 24px 20px;
+      font-size: 13px;
+      color: var(--text-muted);
+      border-top: 1px solid var(--border-color);
+    }
+
+    @media (max-width: 480px) {
+      .header {
+        padding: 36px 16px 32px;
+      }
+
+      .header h1 {
+        font-size: 26px;
+      }
+
+      .container {
+        padding: 24px 16px 48px;
+      }
+
+      .section h2 {
+        font-size: 20px;
+      }
+
+      .toc {
+        padding: 20px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>Terms of Service</h1>
+    <p class="subtitle">Loop - AI-Powered Activity Discovery</p>
+    <p class="last-updated">Last Updated: February 22, 2026</p>
+  </div>
+
+  <div class="container">
+
+    <div class="intro">
+      <strong>Please read these Terms of Service carefully before using Loop.</strong> By creating an account or using the Loop application, you agree to be bound by these terms. If you do not agree, do not use the app.
+    </div>
+
+    <nav class="toc">
+      <h3>Table of Contents</h3>
+      <ol>
+        <li><a href="#acceptance">Acceptance of Terms</a></li>
+        <li><a href="#eligibility">Eligibility</a></li>
+        <li><a href="#accounts">Account Terms</a></li>
+        <li><a href="#subscriptions">Subscriptions &amp; Billing</a></li>
+        <li><a href="#free-tier">Free Tier &amp; Usage Limits</a></li>
+        <li><a href="#user-conduct">User Conduct</a></li>
+        <li><a href="#user-content">User-Generated Content</a></li>
+        <li><a href="#intellectual-property">Intellectual Property</a></li>
+        <li><a href="#third-party">Third-Party Services</a></li>
+        <li><a href="#business-accounts">Business Accounts</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+        <li><a href="#disclaimers">Disclaimers</a></li>
+        <li><a href="#limitation">Limitation of Liability</a></li>
+        <li><a href="#indemnification">Indemnification</a></li>
+        <li><a href="#termination">Termination</a></li>
+        <li><a href="#disputes">Dispute Resolution &amp; Governing Law</a></li>
+        <li><a href="#changes">Changes to These Terms</a></li>
+        <li><a href="#contact">Contact Information</a></li>
+      </ol>
+    </nav>
+
+    <!-- 1. Acceptance of Terms -->
+    <div class="section" id="acceptance">
+      <h2>1. Acceptance of Terms</h2>
+      <p>These Terms of Service ("Terms") constitute a legally binding agreement between you ("you," "your," or "User") and Nick Casey, doing business as Loop ("Loop," "we," "us," or "our"). These Terms govern your access to and use of the Loop mobile application (the "App"), website, and all related services (collectively, the "Service").</p>
+      <p>By accessing or using the Service, creating an account, or tapping "I Agree" during registration, you acknowledge that you have read, understood, and agree to be bound by these Terms. If you are using the Service on behalf of an organization, you represent and warrant that you have the authority to bind that organization to these Terms.</p>
+    </div>
+
+    <!-- 2. Eligibility -->
+    <div class="section" id="eligibility">
+      <h2>2. Eligibility</h2>
+      <p>You must meet the following requirements to use the Service:</p>
+      <ul>
+        <li><strong>Age:</strong> You must be at least 18 years of age. By creating an account, you represent and warrant that you are 18 or older.</li>
+        <li><strong>Legal capacity:</strong> You must have the legal capacity to enter into a binding agreement.</li>
+        <li><strong>Jurisdiction:</strong> The Service is currently available in the United States. You must be located in the United States to use the Service.</li>
+        <li><strong>Account limits:</strong> You may only maintain one personal account. Creating multiple accounts to circumvent usage limits or bans is prohibited.</li>
+      </ul>
+      <div class="warning-box">
+        We do not knowingly collect information from or direct the Service to individuals under 18. If we learn that a user is under 18, we will promptly terminate their account and delete their data.
+      </div>
+    </div>
+
+    <!-- 3. Account Terms -->
+    <div class="section" id="accounts">
+      <h2>3. Account Terms</h2>
+      <h3>3.1 Account Creation</h3>
+      <p>To access most features of the Service, you must create an account. You may register using your email address and password, or through supported third-party authentication providers (such as Google or Apple Sign-In). You agree to provide accurate, current, and complete information during registration.</p>
+
+      <h3>3.2 Account Security</h3>
+      <p>You are responsible for maintaining the confidentiality of your account credentials and for all activities that occur under your account. You agree to:</p>
+      <ul>
+        <li>Use a strong, unique password for your Loop account</li>
+        <li>Not share your account credentials with any third party</li>
+        <li>Notify us immediately at <a href="mailto:nick@loopapp.com">nick@loopapp.com</a> if you suspect unauthorized access to your account</li>
+      </ul>
+      <p>We are not liable for any loss or damage arising from your failure to protect your account credentials.</p>
+
+      <h3>3.3 Account Information</h3>
+      <p>You agree to keep your account information up to date, including your email address and any location data you provide (such as home and work addresses). Inaccurate information may degrade the quality of recommendations you receive.</p>
+    </div>
+
+    <!-- 4. Subscriptions & Billing -->
+    <div class="section" id="subscriptions">
+      <h2>4. Subscriptions &amp; Billing</h2>
+
+      <h3>4.1 Subscription Plans</h3>
+      <p>Loop offers the following user subscription plans:</p>
+      <div class="highlight-box">
+        <p><strong>Free Tier:</strong> Access to core features with daily recommendation limits. No payment required.</p>
+        <p><strong>Loop Plus (Monthly):</strong> $5.99 per month. Unlimited recommendations, group planning, advanced filters, calendar integration, and an ad-free experience.</p>
+        <p><strong>Loop Plus (Annual):</strong> $49.99 per year (approximately $4.17/month). Same features as the monthly plan at a discounted rate.</p>
+      </div>
+      <p>Feature availability and pricing are subject to change. We will notify you of any pricing changes before they affect your next billing cycle.</p>
+
+      <h3>4.2 Payment Processing</h3>
+      <p>All payments are processed securely through <strong>Stripe</strong>. By subscribing to a paid plan, you authorize us to charge your payment method on a recurring basis (monthly or annually, depending on your selected plan) until you cancel. Loop does not store your full credit card number on our servers.</p>
+
+      <h3>4.3 Billing Cycle</h3>
+      <p>Your subscription begins on the date you subscribe and renews automatically at the end of each billing cycle. Monthly subscriptions renew every 30 days. Annual subscriptions renew every 365 days.</p>
+
+      <h3>4.4 Cancellation</h3>
+      <p>You may cancel your subscription at any time through the App's settings or by contacting us. Upon cancellation:</p>
+      <ul>
+        <li>Your subscription will remain active until the end of the current billing period.</li>
+        <li>You will not be charged for the next billing cycle.</li>
+        <li>Your account will revert to the Free tier at the end of the paid period.</li>
+        <li>No partial refunds are issued for unused time within a billing cycle.</li>
+      </ul>
+
+      <h3>4.5 Refunds</h3>
+      <p>Refund requests are handled on a case-by-case basis. If you believe you have been charged in error, please contact us at <a href="mailto:nick@loopapp.com">nick@loopapp.com</a> within 14 days of the charge. We reserve the right to grant or deny refund requests at our sole discretion.</p>
+
+      <h3>4.6 Price Changes</h3>
+      <p>We reserve the right to adjust subscription pricing. If we change the price of your subscription, we will provide at least 30 days' notice before the change takes effect. Continued use of the Service after the price change constitutes acceptance of the new pricing.</p>
+    </div>
+
+    <!-- 5. Free Tier & Usage Limits -->
+    <div class="section" id="free-tier">
+      <h2>5. Free Tier &amp; Usage Limits</h2>
+      <p>Free tier users are subject to the following limitations:</p>
+      <ul>
+        <li>A limited number of AI-powered recommendations per day</li>
+        <li>Solo activity suggestions only (no group planning)</li>
+        <li>Basic filtering options</li>
+        <li>Sponsored content may appear in recommendations, clearly labeled as "Sponsored"</li>
+      </ul>
+      <p>We reserve the right to modify free tier limitations at any time. Attempting to circumvent usage limits through automated tools, multiple accounts, or other means is a violation of these Terms.</p>
+    </div>
+
+    <!-- 6. User Conduct -->
+    <div class="section" id="user-conduct">
+      <h2>6. User Conduct</h2>
+      <p>You agree to use the Service in a lawful and respectful manner. You shall not:</p>
+      <ul>
+        <li><strong>Abuse the platform:</strong> Use the Service for any illegal, fraudulent, or harmful purpose</li>
+        <li><strong>Harass others:</strong> Bully, threaten, stalk, or harass other users through comments, messages, or group plans</li>
+        <li><strong>Spam or mislead:</strong> Post spam, phishing links, misleading content, or unsolicited commercial messages</li>
+        <li><strong>Impersonate:</strong> Impersonate any person or entity, or falsely claim an affiliation</li>
+        <li><strong>Reverse engineer:</strong> Decompile, disassemble, reverse engineer, or attempt to derive the source code of the App</li>
+        <li><strong>Scrape or harvest:</strong> Use bots, scrapers, or automated tools to access, collect, or extract data from the Service</li>
+        <li><strong>Interfere with the Service:</strong> Introduce viruses, malware, or any code designed to disrupt or damage the Service</li>
+        <li><strong>Circumvent security:</strong> Attempt to bypass authentication, rate limiting, or other security measures</li>
+        <li><strong>Manipulate ratings:</strong> Submit false feedback, ratings, or reviews to manipulate recommendation rankings</li>
+        <li><strong>Share accounts:</strong> Share, sell, or transfer your account to another person</li>
+      </ul>
+      <p>Violation of these rules may result in immediate account suspension or termination, at our sole discretion.</p>
+    </div>
+
+    <!-- 7. User-Generated Content -->
+    <div class="section" id="user-content">
+      <h2>7. User-Generated Content</h2>
+
+      <h3>7.1 Your Content</h3>
+      <p>The Service allows you to submit content including comments, ratings, feedback, profile information, and activity reviews ("User Content"). You retain ownership of the User Content you create.</p>
+
+      <h3>7.2 License Grant</h3>
+      <p>By submitting User Content through the Service, you grant Loop a worldwide, non-exclusive, royalty-free, transferable, sublicensable license to use, reproduce, modify, display, distribute, and create derivative works from your User Content in connection with operating and improving the Service. This license continues even if you stop using the Service, but only for content already submitted.</p>
+
+      <h3>7.3 Content Standards</h3>
+      <p>You represent and warrant that your User Content:</p>
+      <ul>
+        <li>Is accurate and not misleading</li>
+        <li>Does not violate any law or regulation</li>
+        <li>Does not infringe the intellectual property or privacy rights of any third party</li>
+        <li>Does not contain hate speech, explicit material, threats, or harassment</li>
+        <li>Is not spam or primarily commercial in nature</li>
+      </ul>
+
+      <h3>7.4 Content Moderation</h3>
+      <p>We reserve the right, but have no obligation, to monitor, review, edit, or remove any User Content at our sole discretion. We may remove content that violates these Terms or that we find objectionable, without prior notice.</p>
+    </div>
+
+    <!-- 8. Intellectual Property -->
+    <div class="section" id="intellectual-property">
+      <h2>8. Intellectual Property</h2>
+
+      <h3>8.1 Our Property</h3>
+      <p>The Service, including its design, code, algorithms, graphics, logos, trademarks, and all related content (excluding User Content), is owned by Loop and protected by United States and international intellectual property laws. The "Loop" name, logo, and associated branding are trademarks of Nick Casey.</p>
+
+      <h3>8.2 Limited License</h3>
+      <p>We grant you a limited, non-exclusive, non-transferable, revocable license to use the App on your personal mobile device solely for your personal, non-commercial use in accordance with these Terms. This license does not include the right to:</p>
+      <ul>
+        <li>Modify or create derivative works based on the Service</li>
+        <li>Use any data mining, robots, or similar data gathering methods</li>
+        <li>Download or copy any portion of the Service (other than page caching) for commercial purposes</li>
+        <li>Use the Service or any content on the Service for any commercial purpose without our written consent</li>
+      </ul>
+
+      <h3>8.3 Feedback</h3>
+      <p>If you provide suggestions, ideas, or feedback about the Service ("Feedback"), you grant us the right to use that Feedback without restriction or compensation. Feedback does not create any confidential relationship or obligation on our part.</p>
+    </div>
+
+    <!-- 9. Third-Party Services -->
+    <div class="section" id="third-party">
+      <h2>9. Third-Party Services</h2>
+      <p>The Service integrates with and relies on third-party services, including but not limited to:</p>
+      <ul>
+        <li><strong>Google Places API:</strong> For activity and location data. Subject to <a href="https://policies.google.com/terms" target="_blank" rel="noopener">Google's Terms of Service</a>.</li>
+        <li><strong>Stripe:</strong> For payment processing. Subject to <a href="https://stripe.com/legal" target="_blank" rel="noopener">Stripe's Terms of Service</a>.</li>
+        <li><strong>Supabase:</strong> For authentication and data storage.</li>
+        <li><strong>Sentry:</strong> For error monitoring and application performance.</li>
+        <li><strong>PostHog:</strong> For product analytics.</li>
+      </ul>
+      <p>We are not responsible for the availability, accuracy, or content of third-party services. Your use of third-party services is subject to their respective terms and privacy policies. Activity information (such as ratings, hours, and photos) sourced from third parties may not always be current or accurate.</p>
+    </div>
+
+    <!-- 10. Business Accounts -->
+    <div class="section" id="business-accounts">
+      <h2>10. Business Accounts</h2>
+
+      <h3>10.1 Business Subscriptions</h3>
+      <p>Businesses may create accounts to promote their venues and activities on Loop. Business subscription tiers include:</p>
+      <div class="highlight-box">
+        <p><strong>Boosted ($49/month):</strong> Algorithmic score boost, "Sponsored" labeling, targeted reach, and basic analytics.</p>
+        <p><strong>Premium ($149/month):</strong> Higher algorithmic boost, top placement, "Featured" labeling, full analytics dashboard, and priority support.</p>
+      </div>
+      <p>Business subscriptions are billed monthly through Stripe. A 30-day free trial may be offered at our discretion.</p>
+
+      <h3>10.2 Sponsored Content Transparency</h3>
+      <p>All sponsored or boosted content shown to users will be clearly labeled with a "Sponsored" or "Featured" badge. We maintain editorial control over the recommendation algorithm and reserve the right to limit or remove sponsored content that receives consistently negative user feedback.</p>
+
+      <h3>10.3 Business Representations</h3>
+      <p>Business account holders represent and warrant that:</p>
+      <ul>
+        <li>They are authorized to act on behalf of the business they register</li>
+        <li>All information provided (hours, location, description, photos) is accurate and current</li>
+        <li>Their business complies with all applicable local, state, and federal laws</li>
+        <li>They will not use the platform to advertise illegal goods or services</li>
+      </ul>
+
+      <h3>10.4 Analytics &amp; Performance Data</h3>
+      <p>Analytics data provided through the business dashboard (impressions, clicks, conversions, demographics) are estimates and should not be relied upon as exact figures. We do not guarantee any specific level of visibility, engagement, or revenue from a business subscription.</p>
+    </div>
+
+    <!-- 11. Privacy -->
+    <div class="section" id="privacy">
+      <h2>11. Privacy</h2>
+      <p>Your privacy is important to us. Our collection, use, and sharing of your personal information is governed by our Privacy Policy, which is incorporated into these Terms by reference. By using the Service, you consent to the data practices described in the Privacy Policy.</p>
+      <p>Key data we collect includes:</p>
+      <ul>
+        <li>Account information (name, email, profile photo)</li>
+        <li>Location data (home/work addresses, current location for recommendations)</li>
+        <li>Calendar data (for free time detection and scheduling)</li>
+        <li>Usage data (interactions, feedback, preferences)</li>
+        <li>Device information (for analytics and error reporting)</li>
+      </ul>
+    </div>
+
+    <!-- 12. Disclaimers -->
+    <div class="section" id="disclaimers">
+      <h2>12. Disclaimers</h2>
+
+      <h3>12.1 "As Is" Basis</h3>
+      <p>THE SERVICE IS PROVIDED ON AN "AS IS" AND "AS AVAILABLE" BASIS WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE. TO THE FULLEST EXTENT PERMITTED BY LAW, WE DISCLAIM ALL WARRANTIES, INCLUDING BUT NOT LIMITED TO IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, AND NON-INFRINGEMENT.</p>
+
+      <h3>12.2 No Guarantee of Recommendations</h3>
+      <p>We do not guarantee the accuracy, quality, safety, or suitability of any activity, venue, or business recommended through the Service. Recommendations are generated by an AI algorithm based on available data and your preferences. You acknowledge that:</p>
+      <ul>
+        <li>Recommended activities may not meet your expectations</li>
+        <li>Business information (hours, pricing, availability) may be outdated or inaccurate</li>
+        <li>We do not endorse, vet, or certify any business or activity displayed in the App</li>
+        <li>You are solely responsible for evaluating the suitability and safety of any activity you choose to attend</li>
+      </ul>
+
+      <h3>12.3 Service Availability</h3>
+      <p>We do not guarantee that the Service will be uninterrupted, error-free, or available at all times. We may modify, suspend, or discontinue any part of the Service at any time without notice or liability.</p>
+    </div>
+
+    <!-- 13. Limitation of Liability -->
+    <div class="section" id="limitation">
+      <h2>13. Limitation of Liability</h2>
+      <p>TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW:</p>
+      <ul>
+        <li><strong>No consequential damages:</strong> In no event shall Loop, its developer, affiliates, or service providers be liable for any indirect, incidental, special, consequential, or punitive damages, including but not limited to loss of profits, data, goodwill, or other intangible losses, arising out of or related to your use of the Service.</li>
+        <li><strong>Liability cap:</strong> Our total aggregate liability for all claims arising out of or relating to these Terms or the Service shall not exceed the greater of (a) the amount you paid to Loop in the twelve (12) months preceding the claim, or (b) fifty dollars ($50.00 USD).</li>
+        <li><strong>Activity-related liability:</strong> Loop is not responsible for any injury, loss, damage, or harm that may occur during or as a result of any activity you discover, plan, or attend through the Service.</li>
+      </ul>
+      <p>Some jurisdictions do not allow the exclusion or limitation of certain damages. In such jurisdictions, the limitations above shall apply to the maximum extent permitted by law.</p>
+    </div>
+
+    <!-- 14. Indemnification -->
+    <div class="section" id="indemnification">
+      <h2>14. Indemnification</h2>
+      <p>You agree to indemnify, defend, and hold harmless Loop, Nick Casey, and any affiliated parties from and against any claims, liabilities, damages, losses, costs, and expenses (including reasonable attorneys' fees) arising out of or related to:</p>
+      <ul>
+        <li>Your use of the Service</li>
+        <li>Your violation of these Terms</li>
+        <li>Your User Content</li>
+        <li>Your violation of any rights of a third party</li>
+        <li>Any activity or event you attend based on information provided through the Service</li>
+      </ul>
+    </div>
+
+    <!-- 15. Termination -->
+    <div class="section" id="termination">
+      <h2>15. Termination</h2>
+
+      <h3>15.1 Termination by You</h3>
+      <p>You may terminate your account at any time by contacting us at <a href="mailto:nick@loopapp.com">nick@loopapp.com</a> or through the account settings in the App. Upon termination:</p>
+      <ul>
+        <li>Any active paid subscription will continue until the end of the current billing period</li>
+        <li>Your profile and personal data will be deleted in accordance with our Privacy Policy</li>
+        <li>User Content you have submitted may remain on the platform in anonymized form</li>
+      </ul>
+
+      <h3>15.2 Termination by Us</h3>
+      <p>We may suspend or terminate your account at any time, with or without cause, and with or without notice. Grounds for termination include, but are not limited to:</p>
+      <ul>
+        <li>Violation of these Terms or any applicable law</li>
+        <li>Conduct that is harmful to other users, businesses, or the Service</li>
+        <li>Fraudulent or deceptive activity</li>
+        <li>Extended period of inactivity (12 months or more)</li>
+        <li>At our sole discretion for any reason</li>
+      </ul>
+
+      <h3>15.3 Effect of Termination</h3>
+      <p>Upon termination, your right to use the Service ceases immediately. Sections of these Terms that by their nature should survive termination (including but not limited to Intellectual Property, Disclaimers, Limitation of Liability, Indemnification, and Dispute Resolution) shall survive.</p>
+    </div>
+
+    <!-- 16. Dispute Resolution & Governing Law -->
+    <div class="section" id="disputes">
+      <h2>16. Dispute Resolution &amp; Governing Law</h2>
+
+      <h3>16.1 Governing Law</h3>
+      <p>These Terms shall be governed by and construed in accordance with the laws of the State of Texas, United States, without regard to its conflict of law provisions.</p>
+
+      <h3>16.2 Informal Resolution</h3>
+      <p>Before filing any formal legal action, you agree to first contact us at <a href="mailto:nick@loopapp.com">nick@loopapp.com</a> and attempt to resolve the dispute informally for at least 30 days.</p>
+
+      <h3>16.3 Arbitration</h3>
+      <p>If informal resolution is unsuccessful, any dispute, controversy, or claim arising out of or relating to these Terms or the Service shall be settled by binding arbitration in accordance with the rules of the American Arbitration Association (AAA). The arbitration shall be conducted in Dallas, Texas. The arbitrator's decision shall be final and binding.</p>
+
+      <h3>16.4 Class Action Waiver</h3>
+      <p>YOU AGREE THAT ANY DISPUTE RESOLUTION PROCEEDINGS WILL BE CONDUCTED ONLY ON AN INDIVIDUAL BASIS AND NOT IN A CLASS, CONSOLIDATED, OR REPRESENTATIVE ACTION. You waive any right to participate in a class action lawsuit or class-wide arbitration against Loop.</p>
+
+      <h3>16.5 Exceptions</h3>
+      <p>Notwithstanding the above, either party may seek injunctive or equitable relief in any court of competent jurisdiction to prevent the actual or threatened infringement of intellectual property rights.</p>
+    </div>
+
+    <!-- 17. Changes to These Terms -->
+    <div class="section" id="changes">
+      <h2>17. Changes to These Terms</h2>
+      <p>We reserve the right to modify these Terms at any time. When we make changes:</p>
+      <ul>
+        <li>We will update the "Last Updated" date at the top of this page</li>
+        <li>For material changes, we will notify you via email or an in-app notification at least 14 days before the changes take effect</li>
+        <li>Your continued use of the Service after changes become effective constitutes your acceptance of the revised Terms</li>
+        <li>If you do not agree with the revised Terms, you must stop using the Service and close your account</li>
+      </ul>
+    </div>
+
+    <!-- 18. General Provisions -->
+    <div class="section">
+      <h2>18. General Provisions</h2>
+
+      <h3>18.1 Entire Agreement</h3>
+      <p>These Terms, together with our Privacy Policy, constitute the entire agreement between you and Loop regarding the Service and supersede all prior agreements, understandings, and communications.</p>
+
+      <h3>18.2 Severability</h3>
+      <p>If any provision of these Terms is found to be unenforceable or invalid, that provision shall be modified to the minimum extent necessary to make it enforceable, and the remaining provisions shall continue in full force and effect.</p>
+
+      <h3>18.3 Waiver</h3>
+      <p>Our failure to enforce any right or provision of these Terms shall not be considered a waiver of that right or provision. A waiver of any term shall only be effective if in writing and signed by Loop.</p>
+
+      <h3>18.4 Assignment</h3>
+      <p>You may not assign or transfer these Terms or your rights under them without our prior written consent. We may assign these Terms without restriction, including in connection with a merger, acquisition, or sale of assets.</p>
+
+      <h3>18.5 Force Majeure</h3>
+      <p>We shall not be liable for any failure or delay in performing our obligations under these Terms due to causes beyond our reasonable control, including natural disasters, war, terrorism, pandemics, government actions, or failures of third-party services.</p>
+    </div>
+
+    <!-- Contact -->
+    <div class="contact-box" id="contact">
+      <h2>Contact Us</h2>
+      <p style="color: var(--text-secondary); font-size: 15px; margin-bottom: 16px;">If you have any questions about these Terms of Service, please contact us:</p>
+      <p style="font-size: 15px;">
+        <strong>Email:</strong> <a href="mailto:nick@loopapp.com">nick@loopapp.com</a>
+      </p>
+      <p style="font-size: 14px; color: var(--text-muted); margin-top: 12px;">
+        Nick Casey<br>
+        Loop App<br>
+        United States
+      </p>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    &copy; 2026 Loop. All rights reserved.
+  </div>
+
+</body>
+</html>

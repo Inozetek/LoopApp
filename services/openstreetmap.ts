@@ -1,4 +1,3 @@
-// @ts-nocheck - Minor type mismatches with Activity interface
 /**
  * OpenStreetMap Service - 100% Free POI Data
  *
@@ -11,6 +10,19 @@
  */
 
 import { Activity } from '@/types/activity';
+
+/** Shape of an OSM node returned by the Overpass API */
+interface OSMElement {
+  id: number;
+  lat?: number;
+  lon?: number;
+  tags?: Record<string, string>;
+}
+
+/** Shape of the Overpass API JSON response */
+interface OverpassResponse {
+  elements: OSMElement[];
+}
 
 const OVERPASS_API_URL = 'https://overpass-api.de/api/interpreter';
 
@@ -44,7 +56,7 @@ export async function searchOSMActivities(
       throw new Error(`Overpass API error: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json();
+    const data: OverpassResponse = await response.json();
 
     // Convert OSM elements to Activity objects
     const activities = convertOSMToActivities(data.elements, location);
@@ -110,7 +122,7 @@ function buildOverpassQuery(lat: number, lng: number, radius: number): string {
  * Convert OSM elements to Activity objects
  */
 function convertOSMToActivities(
-  elements: any[],
+  elements: OSMElement[],
   userLocation: { latitude: number; longitude: number }
 ): Activity[] {
   const activities: Activity[] = [];
@@ -167,7 +179,6 @@ function convertOSMToActivities(
       phone: element.tags.phone || element.tags['contact:phone'],
       website: element.tags.website || element.tags['contact:website'],
       photoUrl: getPlaceholderImage(category), // OSM doesn't have photos
-      openStreetMapId: element.id,
       isSponsored: false,
       sponsorTier: 'organic',
     };
@@ -373,7 +384,7 @@ export async function getOSMActivitiesByCategory(
       body: `data=${encodeURIComponent(query)}`,
     });
 
-    const data = await response.json();
+    const data: OverpassResponse = await response.json();
     return convertOSMToActivities(data.elements, location);
   } catch (error) {
     console.error(`Error fetching ${category} from OSM:`, error);

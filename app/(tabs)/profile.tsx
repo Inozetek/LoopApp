@@ -55,6 +55,7 @@ import { useMenuAnimation } from '@/contexts/menu-animation-context';
 import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@/components/ui/animated-blur-view';
 import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
 import { MainMenuModal } from '@/components/main-menu-modal';
+import { ScreenErrorBoundary } from '@/components/error-boundary';
 
 // Ionicons for interest icons — filled (selected) and outline (unselected)
 const TILE_ICONS_FILLED: Record<string, keyof typeof Ionicons.glyphMap> = {
@@ -258,7 +259,14 @@ function InterestIcon({
     : (TILE_ICONS_OUTLINE[interest] || 'ellipse-outline');
 
   return (
-    <Pressable onPress={handlePress} style={styles.interestIconWrapper}>
+    <Pressable
+      onPress={handlePress}
+      style={styles.interestIconWrapper}
+      accessibilityRole="button"
+      accessibilityLabel={`${interest}${isSelected ? ', selected' : ''}`}
+      accessibilityState={{ selected: isSelected }}
+      accessibilityHint={isSelected ? 'Tap to remove interest' : 'Tap to add interest'}
+    >
       {/* Base dark circle behind all icons (like navbar bar background) */}
       <View style={[styles.interestIconBase, { backgroundColor: baseBg }]} />
 
@@ -371,6 +379,8 @@ function InlineSaveIndicator({ hasChanges, saveState, onSave, showPencil = false
         onPress={onSave}
         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         style={{ marginLeft: Spacing.sm }}
+        accessibilityRole="button"
+        accessibilityLabel="Save changes"
       >
         <Text style={indicatorStyles.saveLink}>Save</Text>
       </TouchableOpacity>
@@ -384,7 +394,12 @@ function InlineSaveIndicator({ hasChanges, saveState, onSave, showPencil = false
     const brightColor = isDark ? '#CCCCCC' : '#555555';
     return (
       <Animated.View style={[{ marginLeft: 6, marginBottom: 1 }, pencilContainerStyle]}>
-        <Pressable onPressIn={handlePencilPress} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+        <Pressable
+          onPressIn={handlePencilPress}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel="Edit"
+        >
           <View style={{ width: 15, height: 15 }}>
             {/* Muted pencil — default visible */}
             <Animated.View style={[{ position: 'absolute' }, mutedStyle]}>
@@ -518,7 +533,9 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     if (user?.id) {
-      getUserFeedbackStats(user.id).then(setFeedbackStats).catch(() => {});
+      getUserFeedbackStats(user.id).then(setFeedbackStats).catch((err) => {
+        console.warn('[profile] Feedback stats fetch failed:', err?.message);
+      });
     }
   }, [user?.id]);
 
@@ -673,7 +690,9 @@ export default function ProfileScreen() {
         phone: phone.trim() || null,
         profile_picture_url: profilePicture || null,
         interests: selectedInterests,
-      }).catch(() => {});
+      }).catch((err) => {
+        console.warn('[profile] Background profile update failed:', err?.message);
+      });
 
       // Return to idle after checkmark shows
       setTimeout(() => setSaveState('idle'), 1800);
@@ -686,6 +705,7 @@ export default function ProfileScreen() {
   }, [user, name, phone, profilePicture, selectedInterests, updateUserProfile]);
 
   return (
+    <ScreenErrorBoundary screen="Profile">
     <SwipeableLayout>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
       <Animated.View style={[styles.container, { backgroundColor: colors.background }, menuContentStyle]}>
@@ -718,6 +738,9 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.avatarContainer}
           onPress={handleProfilePictureUpload}
+          accessibilityRole="button"
+          accessibilityLabel="Change profile picture"
+          accessibilityHint="Opens photo picker to upload a new profile picture"
         >
           {profilePicture ? (
             <Image
@@ -777,6 +800,7 @@ export default function ProfileScreen() {
               onChangeText={setName}
               placeholder="Enter your name"
               placeholderTextColor={colors.textSecondary}
+              accessibilityLabel="Name"
             />
           </View>
 
@@ -791,6 +815,7 @@ export default function ProfileScreen() {
               }]}
               value={user?.email || ''}
               editable={false}
+              accessibilityLabel="Email, read only"
             />
             <Text style={[styles.hint, { color: colors.textSecondary }]}>
               Email cannot be changed
@@ -811,6 +836,7 @@ export default function ProfileScreen() {
               placeholder="Enter your phone number"
               placeholderTextColor={colors.textSecondary}
               keyboardType="phone-pad"
+              accessibilityLabel="Phone number"
             />
           </View>
 
@@ -821,6 +847,9 @@ export default function ProfileScreen() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push('/(tabs)/locations');
             }}
+            accessibilityRole="button"
+            accessibilityLabel="My Locations"
+            accessibilityHint="Set home and work addresses"
           >
             <View style={[styles.locationsIconContainer, { backgroundColor: BrandColors.loopGreen + '20' }]}>
               <Ionicons name="location" size={24} color={BrandColors.loopGreen} />
@@ -852,7 +881,7 @@ export default function ProfileScreen() {
             />
           </View>
           <Text style={[styles.hint, { color: colors.textSecondary, marginBottom: Spacing.md }]}>
-            Tap to toggle — we'll refine as you use Loop
+            {"Tap to toggle — we'll refine as you use Loop"}
           </Text>
 
           <View style={styles.interestGrid}>
@@ -891,6 +920,7 @@ export default function ProfileScreen() {
       </View>
 
     </SwipeableLayout>
+    </ScreenErrorBoundary>
   );
 }
 

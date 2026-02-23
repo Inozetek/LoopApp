@@ -24,6 +24,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '@/lib/supabase';
 import { DragHandle } from '@/components/drag-handle';
+import { trackFeedback } from '@/utils/analytics';
 
 interface FeedbackModalProps {
   visible: boolean;
@@ -181,6 +182,7 @@ export function FeedbackModal({
       }
 
       setHasSubmitted(true); // Prevent any future submissions
+      trackFeedback(userId, rating, activityCategory);
       console.log('✅ Feedback submission complete');
 
       // If thumbs up and share callback exists, show share prompt instead of closing
@@ -240,7 +242,12 @@ export function FeedbackModal({
             <Text style={[styles.title, { color: colors.text }]}>
               How was it?
             </Text>
-            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
+            <TouchableOpacity
+              onPress={handleClose}
+              style={styles.closeButton}
+              accessibilityLabel="Close feedback"
+              accessibilityRole="button"
+            >
               <Ionicons name="close-circle" size={28} color={colors.icon} />
             </TouchableOpacity>
           </View>
@@ -263,6 +270,8 @@ export function FeedbackModal({
                     borderColor: rating === 'thumbs_up' ? BrandColors.success : colors.border,
                   },
                 ]}
+                accessibilityLabel={`Thumbs up, loved it${rating === 'thumbs_up' ? ', selected' : ''}`}
+                accessibilityRole="button"
               >
                 <Ionicons
                   name="thumbs-up"
@@ -289,6 +298,8 @@ export function FeedbackModal({
                     borderColor: rating === 'thumbs_down' ? BrandColors.error : colors.border,
                   },
                 ]}
+                accessibilityLabel={`Thumbs down, not great${rating === 'thumbs_down' ? ', selected' : ''}`}
+                accessibilityRole="button"
               >
                 <Ionicons
                   name="thumbs-down"
@@ -329,6 +340,8 @@ export function FeedbackModal({
                             : colors.border,
                         },
                       ]}
+                      accessibilityLabel={`${tag.label}${selectedTags.includes(tag.id) ? ', selected' : ''}`}
+                      accessibilityRole="button"
                     >
                       <Ionicons
                         name={tag.icon as any}
@@ -399,6 +412,8 @@ export function FeedbackModal({
                   resetForm();
                 }}
                 style={[styles.shareButton, { backgroundColor: BrandColors.loopBlue }]}
+                accessibilityLabel="Share experience to Loop"
+                accessibilityRole="button"
               >
                 <Ionicons name="share-outline" size={20} color="#ffffff" />
                 <Text style={styles.shareButtonText}>Share to Loop</Text>
@@ -409,6 +424,8 @@ export function FeedbackModal({
                   resetForm();
                 }}
                 style={styles.skipShareButton}
+                accessibilityLabel="Skip sharing"
+                accessibilityRole="button"
               >
                 <Text style={[styles.skipShareText, { color: colors.icon }]}>Maybe later</Text>
               </TouchableOpacity>
@@ -425,6 +442,8 @@ export function FeedbackModal({
                   opacity: rating && !submitting && !hasSubmitted ? 1 : 0.5,
                 },
               ]}
+              accessibilityLabel={submitting ? 'Submitting feedback' : hasSubmitted ? 'Feedback submitted' : 'Submit feedback'}
+              accessibilityRole="button"
             >
               <Text style={styles.submitButtonText}>
                 {submitting ? 'Submitting...' : hasSubmitted ? 'Submitted!' : 'Submit Feedback'}

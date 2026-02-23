@@ -235,7 +235,13 @@ export function NotificationsTrayModal({ visible, onClose, onFeedbackRequest }: 
       <View style={[styles.container, { paddingTop: insets.top }]}>
         {/* HEADER */}
         <View style={[styles.header, { borderBottomColor: colors.border }]}>
-          <Pressable onPress={handleClose} style={styles.closeButton} hitSlop={8}>
+          <Pressable
+            onPress={handleClose}
+            style={styles.closeButton}
+            hitSlop={8}
+            accessibilityLabel="Close notifications"
+            accessibilityRole="button"
+          >
             <Ionicons name="close" size={24} color={colors.text} />
           </Pressable>
 
@@ -244,7 +250,13 @@ export function NotificationsTrayModal({ visible, onClose, onFeedbackRequest }: 
           </Text>
 
           {notifications.length > 0 && (
-            <Pressable onPress={handleClearAll} style={styles.clearButton} hitSlop={8}>
+            <Pressable
+              onPress={handleClearAll}
+              style={styles.clearButton}
+              hitSlop={8}
+              accessibilityLabel="Clear all notifications"
+              accessibilityRole="button"
+            >
               <Text style={[styles.clearButtonText, { color: BrandColors.loopBlue }]}>
                 Clear All
               </Text>
@@ -266,6 +278,8 @@ export function NotificationsTrayModal({ visible, onClose, onFeedbackRequest }: 
                     isActive && styles.filterChipActive,
                   ]}
                   onPress={() => handleFilterChange(filter.id)}
+                  accessibilityLabel={`Filter: ${filter.label}${isActive ? ', selected' : ''}`}
+                  accessibilityRole="button"
                 >
                   <Ionicons
                     name={filter.icon as any}
@@ -313,6 +327,8 @@ export function NotificationsTrayModal({ visible, onClose, onFeedbackRequest }: 
               <Pressable
                 style={[styles.resetFilterButton, { backgroundColor: BrandColors.loopBlue }]}
                 onPress={() => setActiveFilter('all')}
+                accessibilityLabel="Show all notifications"
+                accessibilityRole="button"
               >
                 <Text style={styles.resetFilterButtonText}>Show All</Text>
               </Pressable>
@@ -433,6 +449,9 @@ function NotificationCard({ notification, colors, onDismiss, onAction }: Notific
         Shadows.sm,
       ]}
       onPress={onAction}
+      accessibilityLabel={`${notification.title}${notification.message ? `, ${notification.message}` : ''}${!notification.is_read ? ', unread' : ''}`}
+      accessibilityRole="button"
+      accessibilityHint={notification.action_button_text || 'Tap to view'}
     >
       {/* Priority indicator */}
       <View style={[styles.priorityBar, { backgroundColor: priorityColor }]} />
@@ -472,6 +491,8 @@ function NotificationCard({ notification, colors, onDismiss, onAction }: Notific
           <Pressable
             style={[styles.actionButton, { backgroundColor: priorityColor }]}
             onPress={onAction}
+            accessibilityLabel={notification.action_button_text}
+            accessibilityRole="button"
           >
             <Text style={styles.actionButtonText}>
               {notification.action_button_text}
@@ -481,7 +502,13 @@ function NotificationCard({ notification, colors, onDismiss, onAction }: Notific
       </View>
 
       {/* Dismiss button */}
-      <Pressable onPress={onDismiss} style={styles.dismissButton} hitSlop={8}>
+      <Pressable
+        onPress={onDismiss}
+        style={styles.dismissButton}
+        hitSlop={8}
+        accessibilityLabel="Dismiss notification"
+        accessibilityRole="button"
+      >
         <Ionicons name="close" size={18} color={colors.textTertiary} />
       </Pressable>
     </Pressable>

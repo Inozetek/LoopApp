@@ -3,7 +3,7 @@
  *
  * Provides consistent animation behavior for all tab bar icons:
  * - Subtle scale animation on selection
- * - Optional badge indicator
+ * - Instagram-style badge: count shows for ~4s then shrinks to red dot
  * - Smooth transitions
  */
 
@@ -11,6 +11,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated as RNAnimated, View, Text, StyleSheet } from 'react-native';
 import { IconSymbol } from '@/components/ui/icon-symbol';
 import { BrandColors, BorderRadius } from '@/constants/brand';
+
+const COUNT_DISPLAY_DURATION = 4000; // Show count for 4 seconds before collapsing to dot
 
 interface AnimatedTabIconProps {
   name?: string;
@@ -41,6 +43,12 @@ export function AnimatedTabIcon({
   // Only resets when badge count drops to 0.
   const [hasSeen, setHasSeen] = useState(false);
 
+  // Instagram-style: count → dot collapse after 4 seconds
+  const [showCount, setShowCount] = useState(true);
+  const collapseAnim = useRef(new RNAnimated.Value(1)).current; // 1 = full count, 0 = dot
+  const countTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastBadgeRef = useRef<number>(0);
+
   useEffect(() => {
     if (focused && badge && badge > 0) {
       setHasSeen(true);
@@ -50,10 +58,39 @@ export function AnimatedTabIcon({
   useEffect(() => {
     if (!badge || badge <= 0) {
       setHasSeen(false);
+      setShowCount(true);
+      collapseAnim.setValue(1);
+      lastBadgeRef.current = 0;
     }
-  }, [badge]);
+  }, [badge, collapseAnim]);
 
-  const showAsDot = badge !== undefined && badge > 0 && (focused || hasSeen);
+  // When a new badge count appears, show it for 4s then animate to dot
+  useEffect(() => {
+    if (badge && badge > 0 && badge !== lastBadgeRef.current) {
+      lastBadgeRef.current = badge;
+      setShowCount(true);
+      collapseAnim.setValue(1);
+
+      // Clear any existing timer
+      if (countTimerRef.current) clearTimeout(countTimerRef.current);
+
+      countTimerRef.current = setTimeout(() => {
+        RNAnimated.timing(collapseAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }).start(() => {
+          setShowCount(false);
+        });
+      }, COUNT_DISPLAY_DURATION);
+    }
+
+    return () => {
+      if (countTimerRef.current) clearTimeout(countTimerRef.current);
+    };
+  }, [badge, collapseAnim]);
+
+  const showAsDot = badge !== undefined && badge > 0 && ((focused || hasSeen) || !showCount);
 
   useEffect(() => {
     RNAnimated.spring(scaleAnim, {
@@ -73,20 +110,26 @@ export function AnimatedTabIcon({
     >
       {customIcon ? customIcon({ size, color, focused }) : <IconSymbol size={size} name={iconName as any} color={color} />}
 
-      {/* Badge: dot (persistent after first visit) or count pill (before first visit) */}
+      {/* Badge: animated count pill that collapses to dot */}
       {badge !== undefined && badge > 0 && (
         showAsDot ? (
           <View style={styles.dotContainer}>
             <View style={styles.dot} />
           </View>
         ) : (
-          <View style={styles.badgeContainer}>
+          <RNAnimated.View style={[
+            styles.badgeContainer,
+            {
+              opacity: collapseAnim,
+              transform: [{ scale: collapseAnim }],
+            },
+          ]}>
             <View style={styles.badgePill}>
               <Text style={styles.badgeText}>
                 {badge > 99 ? '99+' : badge}
               </Text>
             </View>
-          </View>
+          </RNAnimated.View>
         )
       )}
     </RNAnimated.View>

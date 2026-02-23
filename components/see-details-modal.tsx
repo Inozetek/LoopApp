@@ -235,6 +235,7 @@ export function SeeDetailsModal({
   useEffect(() => {
     const googlePlaceId = recommendation?.activity?.googlePlaceId;
     const isEvent = !!(recommendation as any)?.event_metadata?.event_url;
+    let isMounted = true;
 
     if (visible && !isEvent && googlePlaceId) {
       const fetchReviews = async () => {
@@ -245,20 +246,24 @@ export function SeeDetailsModal({
             getComments(googlePlaceId, 10),
             getLikesCount(googlePlaceId).catch(() => 0),
           ]);
-          setReviews(placeReviews);
-          setLoopComments(comments);
-          setLikesCount(likes);
+          if (isMounted) {
+            setReviews(placeReviews);
+            setLoopComments(comments);
+            setLikesCount(likes);
 
-          // Extract topics from reviews
-          const topics = extractReviewTopics(placeReviews);
-          setReviewTopics(topics);
+            // Extract topics from reviews
+            const topics = extractReviewTopics(placeReviews);
+            setReviewTopics(topics);
+          }
         } catch (error) {
           console.error('Failed to fetch reviews:', error);
-          setReviews([]);
-          setLoopComments([]);
-          setReviewTopics([]);
+          if (isMounted) {
+            setReviews([]);
+            setLoopComments([]);
+            setReviewTopics([]);
+          }
         } finally {
-          setLoadingReviews(false);
+          if (isMounted) setLoadingReviews(false);
         }
       };
 
@@ -274,6 +279,7 @@ export function SeeDetailsModal({
       setHelpedComments(new Set());
       setLikesCount(0);
     }
+    return () => { isMounted = false; };
   }, [visible, recommendation?.activity?.googlePlaceId]);
 
   // Scroll to comments section when triggered from card comment icon
@@ -417,7 +423,12 @@ export function SeeDetailsModal({
         experimentalBlurMethod={ANDROID_BLUR_METHOD}
         style={[StyleSheet.absoluteFill, backdropStyle]}
       >
-        <Pressable style={StyleSheet.absoluteFill} onPress={handleClose} />
+        <Pressable
+          style={StyleSheet.absoluteFill}
+          onPress={handleClose}
+          accessibilityLabel="Close details"
+          accessibilityRole="button"
+        />
       </AnimatedBlurView>
       <Animated.View style={[styles.overlay, backdropOverlayStyle]} pointerEvents="none" />
 
@@ -429,7 +440,12 @@ export function SeeDetailsModal({
       >
         <View style={[styles.modal, { backgroundColor: colors.card }]}>
           {/* Close Button */}
-          <Pressable style={styles.closeButton} onPress={handleClose}>
+          <Pressable
+            style={styles.closeButton}
+            onPress={handleClose}
+            accessibilityLabel="Close details"
+            accessibilityRole="button"
+          >
             <IconSymbol name="xmark.circle.fill" size={32} color={colors.text} />
           </Pressable>
 
@@ -601,6 +617,8 @@ export function SeeDetailsModal({
                       Linking.openURL(url);
                     }}
                     style={styles.mapPreviewContainer}
+                    accessibilityLabel={`Get directions to ${recommendation.title}`}
+                    accessibilityRole="button"
                   >
                     <Image
                       source={{
@@ -734,6 +752,8 @@ export function SeeDetailsModal({
                                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                                 }}
                                 disabled={helpedComments.has(comment.id)}
+                                accessibilityLabel={helpedComments.has(comment.id) ? 'Marked as helpful' : 'Mark comment as helpful'}
+                                accessibilityRole="button"
                               >
                                 <Ionicons
                                   name={helpedComments.has(comment.id) ? 'thumbs-up' : 'thumbs-up-outline'}
@@ -757,6 +777,8 @@ export function SeeDetailsModal({
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             setShowCommentInput(true);
                           }}
+                          accessibilityLabel="Add your experience"
+                          accessibilityRole="button"
                         >
                           <Ionicons name="add-circle-outline" size={18} color={BrandColors.loopBlue} />
                           <Text style={[styles.addCommentText, { color: BrandColors.loopBlue }]}>
@@ -781,6 +803,8 @@ export function SeeDetailsModal({
                                 key={star}
                                 onPress={() => setCommentRating(commentRating === star ? null : star)}
                                 hitSlop={{ top: 8, bottom: 8, left: 4, right: 4 }}
+                                accessibilityLabel={`Rate ${star} star${star > 1 ? 's' : ''}`}
+                                accessibilityRole="button"
                               >
                                 <IconSymbol
                                   name={star <= (commentRating ?? 0) ? 'star.fill' : 'star'}
@@ -794,13 +818,19 @@ export function SeeDetailsModal({
                             </Text>
                           </View>
                           <View style={styles.commentInputActions}>
-                            <TouchableOpacity onPress={() => { setShowCommentInput(false); setCommentText(''); }}>
+                            <TouchableOpacity
+                              onPress={() => { setShowCommentInput(false); setCommentText(''); }}
+                              accessibilityLabel="Cancel comment"
+                              accessibilityRole="button"
+                            >
                               <Text style={[styles.commentCancelText, { color: colors.icon }]}>Cancel</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                               onPress={handlePostComment}
                               disabled={!commentText.trim() || isPostingComment}
                               style={[styles.commentPostButton, { backgroundColor: commentText.trim() ? BrandColors.loopBlue : colors.border }]}
+                              accessibilityLabel={isPostingComment ? 'Posting comment' : 'Post comment'}
+                              accessibilityRole="button"
                             >
                               {isPostingComment ? (
                                 <ActivityIndicator size="small" color="#fff" />
@@ -956,6 +986,8 @@ export function SeeDetailsModal({
                   {(recommendation as any).event_metadata?.event_url && typeof (recommendation as any).event_metadata.event_url === 'string' && (
                     <Pressable
                       style={styles.primaryTicketButton}
+                      accessibilityLabel={`Get tickets for ${recommendation.title}`}
+                      accessibilityRole="button"
                       onPress={async () => {
                         try {
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -971,7 +1003,9 @@ export function SeeDetailsModal({
 
                           // Track affiliate click (non-blocking)
                           if (partnerId) {
-                            trackAffiliateClick(userId, partnerId, recommendation).catch(() => {});
+                            trackAffiliateClick(userId, partnerId, recommendation).catch((err) => {
+                              console.warn('[see-details] trackAffiliateClick failed:', err?.message);
+                            });
                           }
 
                           const canOpen = await Linking.canOpenURL(url);
@@ -1049,6 +1083,8 @@ export function SeeDetailsModal({
                         <Pressable
                           key={partner.partnerId}
                           style={[styles.affiliateButton, { borderColor: partner.color, backgroundColor: partner.color + '0D' }]}
+                          accessibilityLabel={partner.ctaText}
+                          accessibilityRole="button"
                           onPress={async () => {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                             const success = await openAffiliateLink(partner.partnerId, recommendation, userId);
@@ -1077,6 +1113,8 @@ export function SeeDetailsModal({
                   {(recommendation as any).event_metadata?.event_url && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: '#FF4444', backgroundColor: 'rgba(255, 68, 68, 0.05)' }]}
+                      accessibilityLabel="Open event page"
+                      accessibilityRole="button"
                       onPress={async () => {
                         try {
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1098,6 +1136,8 @@ export function SeeDetailsModal({
                   {recommendation.activity?.website && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon }]}
+                      accessibilityLabel="Open website"
+                      accessibilityRole="button"
                       onPress={() => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         Linking.openURL(recommendation.activity!.website!).catch(() =>
@@ -1116,6 +1156,8 @@ export function SeeDetailsModal({
                   {recommendation.activity?.phone && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon }]}
+                      accessibilityLabel={`Call ${recommendation.title}`}
+                      accessibilityRole="button"
                       onPress={() => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         const phoneUrl = `tel:${recommendation.activity!.phone!.replace(/\D/g, '')}`;
@@ -1135,6 +1177,8 @@ export function SeeDetailsModal({
                   {recommendation.activity?.location && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon }]}
+                      accessibilityLabel="Get directions"
+                      accessibilityRole="button"
                       onPress={async () => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         const { latitude, longitude } = recommendation.activity!.location;
@@ -1160,7 +1204,7 @@ export function SeeDetailsModal({
                         }
 
                         // If Google Maps not available, show options
-                        const availableApps: Array<{ name: string; url: string }> = [];
+                        const availableApps: { name: string; url: string }[] = [];
 
                         // Check Apple Maps (iOS only)
                         if (Platform.OS === 'ios') {
@@ -1214,6 +1258,8 @@ export function SeeDetailsModal({
                   {recommendation.activity?.location && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon, backgroundColor: 'rgba(0, 0, 0, 0.05)' }]}
+                      accessibilityLabel="Book Uber ride"
+                      accessibilityRole="button"
                       onPress={async () => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         const success = await openAffiliateLink('uber', recommendation, userId);
@@ -1233,6 +1279,8 @@ export function SeeDetailsModal({
                   {recommendation.activity?.location && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: '#FF00BF', backgroundColor: 'rgba(255, 0, 191, 0.05)' }]}
+                      accessibilityLabel="Book Lyft ride"
+                      accessibilityRole="button"
                       onPress={async () => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         const success = await openAffiliateLink('lyft', recommendation, userId);
@@ -1254,6 +1302,8 @@ export function SeeDetailsModal({
                    !(recommendation as any).event_metadata?.start_time && (
                     <Pressable
                       style={[styles.actionButton, { borderColor: colors.icon }]}
+                      accessibilityLabel="View reviews"
+                      accessibilityRole="button"
                       onPress={() => {
                         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                         // Open Google Maps to reviews for this place
@@ -1289,6 +1339,8 @@ export function SeeDetailsModal({
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                   recommendation.groupContext!.onChoose!();
                 }}
+                accessibilityLabel={`Choose ${recommendation.title} for group`}
+                accessibilityRole="button"
               >
                 <Ionicons name="people" size={24} color="#FFFFFF" />
                 <Text style={styles.addButtonText}>Choose for Group</Text>
@@ -1298,6 +1350,8 @@ export function SeeDetailsModal({
                 style={[styles.addButton, { backgroundColor: colors.primary }]}
                 onPress={handleAddToCalendar}
                 onPressIn={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium)}
+                accessibilityLabel={`Add ${recommendation.title} to calendar`}
+                accessibilityRole="button"
               >
                 <IconSymbol name="plus.circle.fill" size={24} color="#FFFFFF" />
                 <Text style={styles.addButtonText}>Add to Loop</Text>

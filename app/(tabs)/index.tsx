@@ -53,6 +53,7 @@ import { ThemeColors, Spacing, BrandColors, BorderRadius, Typography } from '@/c
 import { supabase } from '@/lib/supabase';
 import { getCurrentLocation } from '@/services/location-service';
 import { handleError } from '@/utils/error-handler';
+import { trackActivityAdded, trackEvent, trackFeedback } from '@/utils/analytics';
 import { shouldShowDashboardNow, markDashboardDismissedToday } from '@/utils/dashboard-tracker';
 import { getPendingFeedbackNotificationCount, fetchDashboardNotifications } from '@/services/dashboard-aggregator';
 import { computeTabBadges } from '@/utils/notification-routing';
@@ -81,6 +82,7 @@ import { HotDropCard } from '@/components/hot-drop-card';
 import { getHotDropsForFeed, claimHotDrop, HOT_DROP_FEED_POSITION } from '@/services/hot-drop-service';
 import { UpgradePromptModal } from '@/components/upgrade-prompt-modal';
 import type { GatedFeature } from '@/utils/tier-gate';
+import { ScreenErrorBoundary } from '@/components/error-boundary';
 
 // Type for lat/lng coordinates
 type PlaceLocation = { lat: number; lng: number };
@@ -307,6 +309,9 @@ const FeedList = memo(
                   <TouchableOpacity
                     style={[styles.exhaustionButton, { backgroundColor: BrandColors.loopBlue }]}
                     onPress={onRemoveDistanceFilter}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove distance filter"
+                    accessibilityHint="Shows activities at any distance"
                   >
                     <Text style={[Typography.labelLarge, { color: '#FFFFFF' }]}>
                       Remove distance filter
@@ -316,6 +321,9 @@ const FeedList = memo(
                   <TouchableOpacity
                     style={[styles.exhaustionButton, { backgroundColor: colors.cardBackground, borderWidth: 1, borderColor: colors.border }]}
                     onPress={onExpandDistance}
+                    accessibilityRole="button"
+                    accessibilityLabel="Expand search distance by 10 miles"
+                    accessibilityHint="Searches for activities farther away"
                   >
                     <Text style={[Typography.labelLarge, { color: colors.text }]}>
                       Expand to +10 miles
@@ -631,6 +639,7 @@ export default function RecommendationFeedScreen() {
   const commentCountsFetched = useRef(new Set<string>());
   useEffect(() => {
     if (recommendations.length === 0) return;
+    let isMounted = true;
 
     const fetchCommentCounts = async () => {
       try {
@@ -645,19 +654,22 @@ export default function RecommendationFeedScreen() {
 
         const countMap = await getBatchCommentCounts(newPlaceIds);
 
-        setRecommendations(prev => prev.map(r => {
-          const placeId = r.activity?.googlePlaceId;
-          if (placeId && countMap.has(placeId)) {
-            return { ...r, commentsCount: countMap.get(placeId)! };
-          }
-          return r;
-        }));
+        if (isMounted) {
+          setRecommendations(prev => prev.map(r => {
+            const placeId = r.activity?.googlePlaceId;
+            if (placeId && countMap.has(placeId)) {
+              return { ...r, commentsCount: countMap.get(placeId)! };
+            }
+            return r;
+          }));
+        }
       } catch (error) {
         // Non-critical — 0 will show as fallback
       }
     };
 
     fetchCommentCounts();
+    return () => { isMounted = false; };
   }, [recommendations.length]);
 
   // Check if any filter sheet filters are active (for icon rotation animation)
@@ -732,18 +744,20 @@ export default function RecommendationFeedScreen() {
 
   // Load saved search radius on mount (Phase 1.4: Radius Persistence)
   useEffect(() => {
+    let isMounted = true;
     const loadSavedRadius = async () => {
       if (!user) return;
 
       const prefs = user.preferences as UserPreferences;
       const savedRadius = prefs?.last_search_radius;
-      if (savedRadius && savedRadius > 10) {
+      if (savedRadius && savedRadius > 10 && isMounted) {
         console.log(`📍 Restoring saved search radius: ${savedRadius} miles`);
         searchRadiusRef.current = savedRadius;
         setSearchRadius(savedRadius);
       }
     };
     loadSavedRadius();
+    return () => { isMounted = false; };
   }, [user]);
 
   // Handle deep link scroll to card (from notifications)
@@ -778,21 +792,25 @@ export default function RecommendationFeedScreen() {
 
   // Check daily limit for subscription-based limits (Daily tab)
   useEffect(() => {
+    let isMounted = true;
     const loadDailyLimit = async () => {
       if (!user) {
-        setDailyLimitInfo(null);
+        if (isMounted) setDailyLimitInfo(null);
         return;
       }
 
       try {
         const limitInfo = await checkDailyLimit(user.id);
-        setDailyLimitInfo(limitInfo);
-        console.log(`📊 Daily limit: ${limitInfo.viewedToday}/${limitInfo.dailyLimit} (${limitInfo.subscriptionTier} tier)`);
+        if (isMounted) {
+          setDailyLimitInfo(limitInfo);
+          console.log(`📊 Daily limit: ${limitInfo.viewedToday}/${limitInfo.dailyLimit} (${limitInfo.subscriptionTier} tier)`);
+        }
       } catch (error) {
         console.error('❌ Error checking daily limit:', error);
       }
     };
     loadDailyLimit();
+    return () => { isMounted = false; };
   }, [user]);
 
   // Save radius changes to user preferences (Phase 1.4: Radius Persistence)
@@ -1009,7 +1027,7 @@ export default function RecommendationFeedScreen() {
 
   // Fetch recommendations
   // skipDbCache: force fresh generation
-  const fetchRecommendations = async (showRefreshIndicator = false, _modeOverride?: string, skipDbCache = false) => {
+  const fetchRecommendations = useCallback(async (showRefreshIndicator = false, _modeOverride?: string, skipDbCache = false) => {
     const effectiveMode = 'for_you' as const;
     console.log('🚀 fetchRecommendations called, user:', user?.id, 'skipCache:', skipDbCache);
 
@@ -1152,6 +1170,7 @@ export default function RecommendationFeedScreen() {
           rating: s.place.rating || 0,
           imageUrl: s.photoUrl || '',
           photos: s.photoUrls,
+          photoReferences: s.place.photos?.map(p => p.photo_reference).filter(Boolean),
           aiExplanation: s.aiExplanation,
           description: s.place.description,
           openNow: s.place.opening_hours?.open_now,
@@ -1312,6 +1331,7 @@ export default function RecommendationFeedScreen() {
         rating: s.place.rating || 0,
         imageUrl: s.photoUrl || '',
         photos: s.photoUrls, // Array of photos for carousel (only if 3+ photos)
+        photoReferences: s.place.photos?.map(p => p.photo_reference).filter(Boolean),
         aiExplanation: s.aiExplanation,
         description: s.place.description, // Editorial summary from Google Places
         openNow: s.place.opening_hours?.open_now,
@@ -1414,7 +1434,7 @@ export default function RecommendationFeedScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [user]);
 
   // Handle adding activity to calendar
   const handleAddToCalendar = useCallback((recommendation: Recommendation, index: number) => {
@@ -1428,7 +1448,14 @@ export default function RecommendationFeedScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setSelectedRecommendation(recommendation);
     setShowDetailsModal(true);
-  }, []);
+    if (user?.id) {
+      trackEvent('recommendation_viewed', {
+        activityId: recommendation.id,
+        category: recommendation.category,
+        score: recommendation.score ?? 0,
+      }, user.id);
+    }
+  }, [user?.id]);
 
   // Handle not interested button
   const handleNotInterested = useCallback((recommendation: Recommendation, index: number) => {
@@ -1462,6 +1489,8 @@ export default function RecommendationFeedScreen() {
       if (result.success) {
         console.log('✅ Feedback submitted successfully');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Track feedback submission
+        trackFeedback(user.id, feedback.rating, feedbackActivity.activityName);
         // Refresh badge count so it clears the feedback notification
         refreshTabBadges();
       } else {
@@ -1711,6 +1740,9 @@ export default function RecommendationFeedScreen() {
       // Award gamification points for accepting a recommendation (fire-and-forget)
       void recordActivity(user.id, 'RECOMMENDATION_ACCEPTED');
 
+      // Track activity added to calendar
+      trackActivityAdded(user.id, selectedRecommendation.category, 'recommendation');
+
       // Close modal and show success toast
       setShowScheduleModal(false);
       setToastMessage('Added to calendar ✓');
@@ -1738,12 +1770,13 @@ export default function RecommendationFeedScreen() {
 
   // Initial load
   useEffect(() => {
+    let isMounted = true;
     console.log('🎬 Feed screen mounted, user:', user?.id);
     if (user) {
       console.log('✅ User exists, fetching recommendations...');
       fetchRecommendations().catch(error => {
         console.error('❌ CRITICAL: fetchRecommendations failed in useEffect:', error);
-        setLoading(false); // Ensure we exit loading state even on error
+        if (isMounted) setLoading(false); // Ensure we exit loading state even on error
       });
       checkDashboardStatus();
 
@@ -1751,7 +1784,7 @@ export default function RecommendationFeedScreen() {
       if (FEATURE_FLAGS.ENABLE_RADAR && !radarAlertsFetched.current) {
         radarAlertsFetched.current = true;
         getPendingRadarAlerts(user.id).then(alerts => {
-          if (alerts.length > 0) {
+          if (isMounted && alerts.length > 0) {
             setRadarAlerts(alerts);
             console.log(`📡 Loaded ${alerts.length} radar alerts for feed`);
           }
@@ -1765,7 +1798,7 @@ export default function RecommendationFeedScreen() {
         hotDropsFetched.current = true;
         const userTier = user.subscription_tier === 'plus' ? 'plus' : 'free';
         getHotDropsForFeed(userTier).then(drops => {
-          if (drops.length > 0) {
+          if (isMounted && drops.length > 0) {
             setHotDrops(drops);
             console.log(`🔥 Loaded ${drops.length} hot drops for feed`);
           }
@@ -1783,10 +1816,11 @@ export default function RecommendationFeedScreen() {
       // Set a timeout to prevent infinite loading if auth fails
       const timeout = setTimeout(() => {
         console.error('❌ TIMEOUT: No user after 10 seconds, exiting loading state');
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }, 10000);
-      return () => clearTimeout(timeout);
+      return () => { isMounted = false; clearTimeout(timeout); };
     }
+    return () => { isMounted = false; };
   }, [user]);
 
   // Check for activities that need feedback
@@ -1821,14 +1855,19 @@ export default function RecommendationFeedScreen() {
   // Check for pending feedback count on mount
   useEffect(() => {
     if (!user) return;
+    let isMounted = true;
     Promise.all([
       getPendingFeedbackActivities(user.id),
       getPastEventsNeedingFeedback(user.id),
     ]).then(([completed, past]) => {
+      if (!isMounted) return;
       const seenIds = new Set(completed.map(a => a.eventId));
       const uniquePast = past.filter(a => !seenIds.has(a.eventId));
       setPendingFeedbackCount(completed.length + uniquePast.length);
-    }).catch(() => {});
+    }).catch((err) => {
+      console.warn('[feed] pending feedback count fetch failed:', err?.message);
+    });
+    return () => { isMounted = false; };
   }, [user]);
 
   // Handle feedback request from notification tray
@@ -2066,6 +2105,7 @@ export default function RecommendationFeedScreen() {
           rating: s.place.rating || 0,
           imageUrl: s.photoUrl || '',
           photos: s.photoUrls,
+          photoReferences: s.place.photos?.map(p => p.photo_reference).filter(Boolean),
           aiExplanation: s.aiExplanation,
           suggestedTime: s.suggestedTime,
           description: s.place.description,
@@ -2202,7 +2242,6 @@ export default function RecommendationFeedScreen() {
       return;
     }
 
-    // Analyze calendar for the target date
     // TODO: Fetch real calendar events from calendar-service
     // For now, use an empty array (shows "Open day" in banner)
     const mockEvents: CalendarEvent[] = [];
@@ -2368,6 +2407,7 @@ export default function RecommendationFeedScreen() {
         rating: s.place.rating || 0,
         imageUrl: s.photoUrl || '',
         photos: s.photoUrls,
+        photoReferences: s.place.photos?.map(p => p.photo_reference).filter(Boolean),
         aiExplanation: s.aiExplanation,
         description: s.place.description,
         openNow: s.place.opening_hours?.open_now,
@@ -2635,7 +2675,7 @@ export default function RecommendationFeedScreen() {
 
     // Refresh feed
     fetchRecommendations(true);
-  }, [fetchRecommendations]);
+  }, [user, fetchRecommendations]);
 
   // Handle filter sheet apply
   const handleFilterSheetApply = useCallback((newFilters: FilterSheetFilters) => {
@@ -2792,6 +2832,7 @@ export default function RecommendationFeedScreen() {
 
   // Render recommendations list
   return (
+    <ScreenErrorBoundary screen="Feed">
     <SwipeableLayout disableLeftEdgeSwipe>
       <GestureDetector gesture={menuEdgeGesture}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -2844,6 +2885,9 @@ export default function RecommendationFeedScreen() {
                       style={styles.trialBadge}
                       onPress={() => router.push('/(tabs)/settings')}
                       activeOpacity={0.7}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Plus trial: ${dailyLimitInfo.trialStatus.daysLeft} days left`}
+                      accessibilityHint="Opens subscription settings"
                     >
                       <LinearGradient
                         colors={[BrandColors.loopGreen, BrandColors.loopBlue]}
@@ -3055,6 +3099,7 @@ export default function RecommendationFeedScreen() {
       </View>
       </GestureDetector>
     </SwipeableLayout>
+    </ScreenErrorBoundary>
   );
 }
 

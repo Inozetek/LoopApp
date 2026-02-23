@@ -1,4 +1,3 @@
-// @ts-nocheck - Phase 2 feature: Run migration 010_phase2_tables_consolidated.sql first
 /**
  * Refresh Service - Tier-Based Cooldown Enforcement
  *
@@ -8,9 +7,6 @@
  */
 
 import { supabase } from '@/lib/supabase';
-import type { Database } from '@/types/database';
-
-type RefreshHistory = Database['public']['Tables']['refresh_history']['Row'];
 import { SubscriptionTier, TIER_LIMITS } from '@/types/subscription';
 import {
   REFRESH_COOLDOWN_PROMPTS,

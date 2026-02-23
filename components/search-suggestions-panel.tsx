@@ -9,9 +9,9 @@ import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { Spacing, BrandColors } from '@/constants/brand';
+import { Spacing, BrandColors , ThemeColors } from '@/constants/brand';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { ThemeColors } from '@/constants/brand';
+
 import { ExploreTile } from '@/components/explore-tile';
 import type { ExploreItem } from '@/types/explore';
 

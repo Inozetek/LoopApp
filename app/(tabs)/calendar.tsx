@@ -78,6 +78,8 @@ import { MainMenuModal } from '@/components/main-menu-modal';
 import { AnimatedDrawer } from '@/components/animated-drawer';
 import { BlurView } from 'expo-blur';
 import { MetallicRingButton } from '@/components/ui/metallic-ring-button';
+import { ScreenErrorBoundary } from '@/components/error-boundary';
+import { EmptyState } from '@/components/empty-state';
 import { LoopRouteIcon } from '@/components/ui/loop-route-icon';
 import { LinearGradient } from 'expo-linear-gradient';
 import { MomentCaptureModal } from '@/components/moment-capture-modal';
@@ -103,6 +105,7 @@ import {
   CalendarEventPreview,
   SyncProgressInfo,
 } from '@/services/calendar-service';
+import { trackActivityAdded } from '@/utils/analytics';
 
 interface CalendarEvent {
   id: string;
@@ -386,6 +389,9 @@ function ViewModeToggle({
         <Pressable
           onPressIn={visualMode !== 'list' ? handleToggle : undefined}
           style={{ width: TOGGLE_CELL, height: TOGGLE_CELL - 2, alignItems: 'center', justifyContent: 'center' }}
+          accessibilityRole="button"
+          accessibilityLabel="List view"
+          accessibilityState={{ selected: visualMode === 'list' }}
         >
           <Ionicons
             name="menu"
@@ -405,6 +411,9 @@ function ViewModeToggle({
             justifyContent: 'center',
             marginLeft: TOGGLE_SLIDE - TOGGLE_CELL,
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Map view"
+          accessibilityState={{ selected: visualMode === 'loop' }}
         >
           <View style={{ marginLeft: -1 }}>
             <LoopRouteIcon
@@ -585,11 +594,11 @@ export default function CalendarScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncProgress, setSyncProgress] = useState<SyncProgressInfo | null>(null);
   const [syncResult, setSyncResult] = useState<{ count: number; errors: number } | null>(null);
-  const [freeTimeSlots, setFreeTimeSlots] = useState<Array<{
+  const [freeTimeSlots, setFreeTimeSlots] = useState<{
     start: Date;
     end: Date;
     durationMinutes: number;
-  }>>([]);
+  }[]>([]);
   const [showFreeTime, setShowFreeTime] = useState(false);
 
   // Sync preview modal state
@@ -650,9 +659,11 @@ export default function CalendarScreen() {
 
   // Fetch user's current location on mount for autocomplete biasing
   useEffect(() => {
+    let isMounted = true;
     const fetchUserLocation = async () => {
       try {
         const location = await getCurrentLocation();
+        if (!isMounted) return;
         setCurrentUserLocation({
           latitude: location.latitude,
           longitude: location.longitude,
@@ -661,7 +672,7 @@ export default function CalendarScreen() {
       } catch (error) {
         console.warn('Could not get user location for autocomplete:', error);
         // Fallback to user's home location if available
-        if (user?.home_location) {
+        if (isMounted && user?.home_location) {
           const homeCoords = user.home_location as any;
           setCurrentUserLocation({
             latitude: homeCoords.coordinates[1],
@@ -672,10 +683,12 @@ export default function CalendarScreen() {
     };
 
     fetchUserLocation();
+    return () => { isMounted = false; };
   }, [user]);
 
   // Load recent locations from past calendar events (location memory)
   useEffect(() => {
+    let isMounted = true;
     const loadRecentLocations = async () => {
       if (!user || user.id === 'demo-user-123') return;
       try {
@@ -688,7 +701,7 @@ export default function CalendarScreen() {
           .order('start_time', { ascending: false })
           .limit(50);
 
-        if (error || !data) return;
+        if (error || !data || !isMounted) return;
 
         // Build RecentLocation entries, dedupe by address
         const seen = new Map<string, RecentLocation>();
@@ -713,6 +726,7 @@ export default function CalendarScreen() {
       }
     };
     loadRecentLocations();
+    return () => { isMounted = false; };
   }, [user]);
 
   // Event list entry animations are now handled by Reanimated FadeInDown
@@ -898,7 +912,9 @@ export default function CalendarScreen() {
         setEventsNeedingFeedback(new Set(allPending.map(p => p.eventId)));
         setPendingFeedbackActivities(allPending);
         setPendingFeedbackCount(allPending.length);
-      }).catch(() => {});
+      }).catch((err) => {
+      console.warn('[calendar] pending feedback fetch failed:', err?.message);
+    });
     } catch (error) {
       console.error('Error loading events:', error);
     } finally {
@@ -1046,6 +1062,8 @@ export default function CalendarScreen() {
       } as any);
 
       if (error) throw error;
+
+      trackActivityAdded(user.id, newTaskCategory, 'manual');
 
       Alert.alert('Success', 'Added to your Loop!');
       closeCreateModal();
@@ -1237,6 +1255,8 @@ export default function CalendarScreen() {
       <TouchableOpacity
         style={styles.deleteSwipeAction}
         onPress={() => handleSwipeDelete(eventId)}
+        accessibilityRole="button"
+        accessibilityLabel="Delete event"
       >
         <Ionicons name="trash-outline" size={24} color="#ffffff" />
         <Text style={styles.deleteSwipeText}>Delete</Text>
@@ -1376,21 +1396,23 @@ export default function CalendarScreen() {
   const [showSyncPrompt, setShowSyncPrompt] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
     const checkSyncPrompt = async () => {
       if (!user || user.id === 'demo-user-123') return;
       const dismissed = await AsyncStorage.getItem('loop_sync_prompt_dismissed');
-      if (dismissed) return;
+      if (dismissed || !isMounted) return;
       // Check if user has any synced calendar events
       const { count } = await supabase
         .from('calendar_events')
         .select('id', { count: 'exact', head: true })
         .eq('user_id', user.id)
         .in('source', ['google_calendar', 'apple_calendar']);
-      if ((count ?? 0) === 0) {
+      if (isMounted && (count ?? 0) === 0) {
         setShowSyncPrompt(true);
       }
     };
     checkSyncPrompt();
+    return () => { isMounted = false; };
   }, [user]);
 
   const dismissSyncPrompt = async () => {
@@ -1399,6 +1421,7 @@ export default function CalendarScreen() {
   };
 
   return (
+    <ScreenErrorBoundary screen="Calendar">
     <SwipeableLayout>
       <View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }]}>
       <Reanimated.View style={[styles.container, { backgroundColor: Colors[colorScheme ?? 'light'].background }, contentAnimStyle]}>
@@ -1529,6 +1552,9 @@ export default function CalendarScreen() {
                   dismissSyncPrompt();
                   handleSyncCalendar();
                 }}
+                accessibilityRole="button"
+                accessibilityLabel="Connect calendar"
+                accessibilityHint="Import events from your device calendar"
               >
                 <Ionicons name="link-outline" size={16} color="#ffffff" />
                 <Text style={[Typography.labelMedium, { color: '#ffffff', marginLeft: 6 }]}>Connect</Text>
@@ -1536,6 +1562,8 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 onPress={dismissSyncPrompt}
                 style={styles.syncPromptDismiss}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss calendar sync prompt"
               >
                 <Text style={[Typography.labelMedium, { color: colors.icon }]}>Not now</Text>
               </TouchableOpacity>
@@ -1574,7 +1602,11 @@ export default function CalendarScreen() {
                   : `${syncResult.count} events synced`}
               </Text>
             </View>
-            <TouchableOpacity onPress={() => setSyncResult(null)}>
+            <TouchableOpacity
+              onPress={() => setSyncResult(null)}
+              accessibilityRole="button"
+              accessibilityLabel="Dismiss sync result"
+            >
               <Ionicons name="close" size={18} color={colors.icon} />
             </TouchableOpacity>
           </View>
@@ -1589,20 +1621,19 @@ export default function CalendarScreen() {
           </>
         ) : mergedTimeline.length === 0 ? (
           <Reanimated.View entering={FadeIn.duration(300)} style={styles.emptyState}>
-            <View style={[styles.emptyStateIconCircle, { backgroundColor: isDark ? `${BrandColors.loopBlue}15` : `${BrandColors.loopBlue}0D` }]}>
-              <Ionicons name="sunny-outline" size={40} color={BrandColors.loopBlue} />
-            </View>
-            <Text style={[Typography.titleMedium, styles.emptyText, { color: Colors[colorScheme ?? 'light'].text }]}>
-              Nothing planned
-            </Text>
-            <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center', marginBottom: Spacing.lg }]}>
-              Your day is wide open. Fill it with something great.
-            </Text>
+            <EmptyState
+              icon="calendar"
+              title="No Events Today"
+              message="Your day is wide open! Check out recommendations to find something fun."
+            />
             <View style={styles.emptyStateActions}>
               <TouchableOpacity
                 style={[styles.emptyStateButton, { backgroundColor: BrandColors.loopBlue }]}
                 onPress={openCreateModal}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Add event"
+                accessibilityHint="Create a new calendar event"
               >
                 <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" />
                 <Text style={[Typography.labelLarge, { color: '#FFFFFF', marginLeft: Spacing.xs }]}>
@@ -1616,6 +1647,9 @@ export default function CalendarScreen() {
                   router.push('/(tabs)');
                 }}
                 activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel="Get suggestions"
+                accessibilityHint="Browse AI-curated activity recommendations"
               >
                 <Ionicons name="sparkles-outline" size={20} color={BrandColors.loopGreen} />
                 <Text style={[Typography.labelLarge, { color: BrandColors.loopGreen, marginLeft: Spacing.xs }]}>
@@ -1659,6 +1693,8 @@ export default function CalendarScreen() {
                           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                           router.push('/(tabs)');
                         }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Get suggestions for free time"
                       >
                         <Text style={[Typography.labelSmall, { color: BrandColors.loopGreen }]}>Get suggestions</Text>
                       </TouchableOpacity>
@@ -1687,6 +1723,9 @@ export default function CalendarScreen() {
                   ]}
                   onPress={() => handleEventPress(event)}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${event.title}, ${new Date(event.start_time).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}${event.address ? `, ${event.address}` : ''}`}
+                  accessibilityHint="View event details"
                 >
               <View style={styles.eventHeader}>
                 <View style={[styles.eventIconContainer, { backgroundColor: getCategoryColor(event.category) + '1A' }]}>
@@ -1724,6 +1763,9 @@ export default function CalendarScreen() {
                   <TouchableOpacity
                     style={[styles.completeButton, { borderColor: BrandColors.loopGreen, backgroundColor: BrandColors.loopGreen + '10' }]}
                     onPress={() => handleMarkAsComplete(event)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate ${event.title}`}
+                    accessibilityHint="Provide feedback on this activity"
                   >
                     <Ionicons
                       name="chatbubble-outline"
@@ -1745,18 +1787,21 @@ export default function CalendarScreen() {
                 new Date(event.end_time) < new Date() &&
                 !eventsNeedingFeedback.has(event.id) && (
                   <TouchableOpacity
-                    style={[styles.completeButton, { borderColor: Colors[colorScheme ?? 'light'].border }]}
+                    style={[styles.completeButton, { borderColor: BrandColors.loopGreen }]}
                     onPress={() => handleMarkAsComplete(event)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Rate ${event.title}`}
+                    accessibilityHint="Provide feedback on this activity"
                   >
                     <Ionicons
                       name="checkmark-circle-outline"
                       size={20}
-                      color={BrandColors.loopBlue}
+                      color={BrandColors.loopGreen}
                     />
                     <Text
                       style={[
                         Typography.labelMedium,
-                        { color: BrandColors.loopBlue, marginLeft: 6 },
+                        { color: BrandColors.loopGreen, marginLeft: 6 },
                       ]}
                     >
                       Rate Activity
@@ -1885,6 +1930,9 @@ export default function CalendarScreen() {
                     openCreateModal();
                   }}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="New Task"
+                  accessibilityHint="Create a task with time, location, and category"
                 >
                   <View style={[styles.addOptionIcon, { backgroundColor: BrandColors.loopBlue + '15' }]}>
                     <Ionicons name="create-outline" size={22} color={BrandColors.loopBlue} />
@@ -1903,6 +1951,9 @@ export default function CalendarScreen() {
                     router.push('/(tabs)');
                   }}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel="From Recommendations"
+                  accessibilityHint="Browse AI-curated suggestions"
                 >
                   <View style={[styles.addOptionIcon, { backgroundColor: BrandColors.loopGreen + '15' }]}>
                     <Ionicons name="sparkles-outline" size={22} color={BrandColors.loopGreen} />
@@ -1935,7 +1986,11 @@ export default function CalendarScreen() {
             <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
               Add to Loop
             </Text>
-            <TouchableOpacity onPress={closeCreateModal}>
+            <TouchableOpacity
+              onPress={closeCreateModal}
+              accessibilityRole="button"
+              accessibilityLabel="Close create task"
+            >
               <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
             </TouchableOpacity>
           </View>
@@ -1958,6 +2013,8 @@ export default function CalendarScreen() {
                 onChangeText={setNewTaskTitle}
                 placeholder="What are you planning?"
                 placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
+                accessibilityLabel="Task title"
+                accessibilityHint="Enter the name of your task"
               />
 
               {/* Description */}
@@ -1980,6 +2037,8 @@ export default function CalendarScreen() {
                 placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
                 multiline
                 numberOfLines={3}
+                accessibilityLabel="Task description"
+                accessibilityHint="Add optional details about this task"
               />
 
               {/* Date */}
@@ -1992,6 +2051,9 @@ export default function CalendarScreen() {
                   { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground },
                 ]}
                 onPress={() => setShowDatePicker(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Date: ${newTaskDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}`}
+                accessibilityHint="Tap to change the date"
               >
                 <Ionicons name="calendar-outline" size={20} color={BrandColors.loopBlue} />
                 <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text, marginLeft: Spacing.sm }]}>
@@ -2021,6 +2083,9 @@ export default function CalendarScreen() {
                   { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground },
                 ]}
                 onPress={() => setShowTimePicker(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`Start time: ${newTaskTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+                accessibilityHint="Tap to change the start time"
               >
                 <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
                 <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text, marginLeft: Spacing.sm }]}>
@@ -2047,6 +2112,9 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 style={[styles.dateTimeButton, { backgroundColor: isDark ? BrandColors.mediumGray : BrandColors.lightBackground }]}
                 onPress={() => setShowEndTimePicker(true)}
+                accessibilityRole="button"
+                accessibilityLabel={`End time: ${newTaskEndTime.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`}
+                accessibilityHint="Tap to change the end time"
               >
                 <Ionicons name="time-outline" size={20} color={BrandColors.loopBlue} />
                 <Text style={[Typography.bodyLarge, { color: Colors[colorScheme ?? 'light'].text, marginLeft: Spacing.sm }]}>
@@ -2130,48 +2198,15 @@ export default function CalendarScreen() {
                       setNewTaskAddress('');
                     }}
                     style={styles.changeLocationButton}
+                    accessibilityRole="button"
+                    accessibilityLabel="Remove selected location"
+                    accessibilityHint="Clears the location so you can choose a different one"
                   >
                     <Ionicons name="close-circle" size={24} color={Colors[colorScheme ?? 'light'].icon} />
                   </TouchableOpacity>
                 </View>
               )}
 
-              {/* Map Preview - Temporarily disabled for web compatibility */}
-              {/* TODO: Re-enable with separate MapPreview component */}
-              {/* {newTaskLocation && Platform.OS !== 'web' && MapView && (
-                <View style={styles.mapPreview}>
-                  <MapView
-                    provider={PROVIDER_GOOGLE}
-                    style={styles.map}
-                    initialRegion={{
-                      latitude: newTaskLocation.latitude,
-                      longitude: newTaskLocation.longitude,
-                      latitudeDelta: 0.05,
-                      longitudeDelta: 0.05,
-                    }}
-                    scrollEnabled={true}
-                    zoomEnabled={true}
-                    pitchEnabled={false}
-                    rotateEnabled={true}
-                    showsUserLocation={true}
-                    showsMyLocationButton={false}
-                  >
-                    <Marker
-                      coordinate={{
-                        latitude: newTaskLocation.latitude,
-                        longitude: newTaskLocation.longitude,
-                      }}
-                      pinColor={BrandColors.loopBlue}
-                    />
-                  </MapView>
-                  <View style={styles.mapHint}>
-                    <Ionicons name="information-circle" size={14} color={Colors[colorScheme ?? 'light'].icon} />
-                    <Text style={[Typography.bodySmall, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 4 }]}>
-                      Pinch to zoom • Drag to explore
-                    </Text>
-                  </View>
-                </View>
-              )} */}
               {newTaskLocation && (
                 <View style={styles.mapPreview}>
                   <MapPreview
@@ -2200,6 +2235,10 @@ export default function CalendarScreen() {
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                       setNewTaskCategory(cat.id);
                     }}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${cat.label} category`}
+                    accessibilityState={{ selected: newTaskCategory === cat.id }}
+                    accessibilityHint={newTaskCategory === cat.id ? 'Currently selected' : 'Tap to select this category'}
                   >
                     <View style={styles.categoryButtonContent}>
                       <Ionicons
@@ -2232,6 +2271,9 @@ export default function CalendarScreen() {
               <TouchableOpacity
                 style={[styles.createButton, { backgroundColor: BrandColors.loopBlue }]}
                 onPress={createEvent}
+                accessibilityRole="button"
+                accessibilityLabel="Add to Loop"
+                accessibilityHint="Creates the task and adds it to your calendar"
               >
                 <Text style={[Typography.labelLarge, { color: '#ffffff' }]}>Add to Loop</Text>
               </TouchableOpacity>
@@ -2252,7 +2294,11 @@ export default function CalendarScreen() {
                   <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
                     Edit
                   </Text>
-                  <TouchableOpacity onPress={() => setShowEditModal(false)}>
+                  <TouchableOpacity
+                    onPress={() => setShowEditModal(false)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Close edit modal"
+                  >
                     <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
                   </TouchableOpacity>
                 </View>
@@ -2280,6 +2326,8 @@ export default function CalendarScreen() {
                       onChangeText={(text) => setEditingEvent({ ...editingEvent, title: text })}
                       placeholder="What are you planning?"
                       placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
+                      accessibilityLabel="Edit task title"
+                      accessibilityHint="Change the name of this task"
                     />
 
                     {/* Description */}
@@ -2302,6 +2350,8 @@ export default function CalendarScreen() {
                       placeholderTextColor={Colors[colorScheme ?? 'light'].icon}
                       multiline
                       numberOfLines={3}
+                      accessibilityLabel="Edit task description"
+                      accessibilityHint="Change the details of this task"
                     />
 
                     {/* Category */}
@@ -2322,6 +2372,10 @@ export default function CalendarScreen() {
                             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                             setEditingEvent({ ...editingEvent, category: cat.id });
                           }}
+                          accessibilityRole="button"
+                          accessibilityLabel={`${cat.label} category`}
+                          accessibilityState={{ selected: editingEvent.category === cat.id }}
+                          accessibilityHint={editingEvent.category === cat.id ? 'Currently selected' : 'Tap to select this category'}
                         >
                           <Ionicons
                             name={cat.icon as any}
@@ -2410,6 +2464,9 @@ export default function CalendarScreen() {
                         setShowEditModal(false);
                         setViewMode('loop'); // Switch to map view
                       }}
+                      accessibilityRole="button"
+                      accessibilityLabel="View on Loop Map"
+                      accessibilityHint="Closes the editor and shows this event on the map"
                     >
                       <Ionicons name="map" size={20} color={BrandColors.loopBlue} />
                       <Text style={[Typography.labelLarge, { color: BrandColors.loopBlue, marginLeft: 8 }]}>
@@ -2422,6 +2479,9 @@ export default function CalendarScreen() {
                       <TouchableOpacity
                         style={[styles.deleteButton, { borderColor: BrandColors.error }]}
                         onPress={handleDeleteEvent}
+                        accessibilityRole="button"
+                        accessibilityLabel="Delete event"
+                        accessibilityHint="Permanently removes this event from your calendar"
                       >
                         <Ionicons name="trash-outline" size={20} color={BrandColors.error} />
                         <Text style={[Typography.labelLarge, { color: '#ef4444', marginLeft: 8 }]}>
@@ -2432,6 +2492,9 @@ export default function CalendarScreen() {
                       <TouchableOpacity
                         style={[styles.saveButton, { backgroundColor: BrandColors.loopBlue }]}
                         onPress={handleUpdateEvent}
+                        accessibilityRole="button"
+                        accessibilityLabel="Save changes"
+                        accessibilityHint="Saves your edits to this event"
                       >
                         <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" />
                         <Text style={[Typography.labelLarge, { color: '#ffffff', marginLeft: 8 }]}>
@@ -2903,6 +2966,7 @@ export default function CalendarScreen() {
       </Modal>
       </View>
     </SwipeableLayout>
+    </ScreenErrorBoundary>
   );
 }
 

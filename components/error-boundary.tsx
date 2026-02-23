@@ -1,9 +1,12 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, useColorScheme } from 'react-native';
+import { logError } from '@/utils/error-logger';
 
 interface Props {
   children: ReactNode;
   fallbackMessage?: string;
+  /** Screen name for error logging context */
+  screen?: string;
 }
 
 interface State {
@@ -12,8 +15,8 @@ interface State {
 }
 
 /**
- * Error boundary that catches render errors in child components
- * Prevents a single screen crash from taking down the entire app
+ * Error boundary that catches render errors in child components.
+ * Prevents a single screen crash from taking down the entire app.
  */
 export class ErrorBoundary extends Component<Props, State> {
   constructor(props: Props) {
@@ -26,7 +29,11 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('ErrorBoundary caught:', error.message, errorInfo.componentStack);
+    logError(error, {
+      screen: this.props.screen ?? 'unknown',
+      action: 'render_crash',
+      metadata: { componentStack: errorInfo.componentStack ?? '' },
+    });
   }
 
   handleRetry = () => {
@@ -36,21 +43,68 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <View style={styles.container}>
-          <Text style={styles.icon}>!</Text>
-          <Text style={styles.title}>Something went wrong</Text>
-          <Text style={styles.message}>
-            {this.props.fallbackMessage || 'This screen encountered an error.'}
-          </Text>
-          <Pressable style={styles.button} onPress={this.handleRetry}>
-            <Text style={styles.buttonText}>Try Again</Text>
-          </Pressable>
-        </View>
+        <ErrorFallback
+          message={this.props.fallbackMessage}
+          onRetry={this.handleRetry}
+        />
       );
     }
 
     return this.props.children;
   }
+}
+
+/** Theme-aware fallback UI shown when a screen crashes. */
+function ErrorFallback({ message, onRetry }: { message?: string; onRetry: () => void }) {
+  const scheme = useColorScheme();
+  const dark = scheme === 'dark';
+
+  return (
+    <View style={[styles.container, dark && styles.containerDark]}>
+      <Text style={[styles.icon, dark && styles.iconDark]}>!</Text>
+      <Text style={[styles.title, dark && styles.titleDark]}>Something went wrong</Text>
+      <Text style={[styles.message, dark && styles.messageDark]}>
+        {message || 'This screen encountered an error. Your other tabs still work.'}
+      </Text>
+      <Pressable
+        style={[styles.button, dark && styles.buttonDark]}
+        onPress={onRetry}
+        accessibilityLabel="Try again"
+        accessibilityRole="button"
+        accessibilityHint="Reload this screen"
+      >
+        <Text style={styles.buttonText}>Try Again</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+/**
+ * Convenience wrapper: a screen-level error boundary.
+ * Use this inside each tab screen to isolate crashes.
+ *
+ * ```tsx
+ * export default function CalendarScreen() {
+ *   return (
+ *     <ScreenErrorBoundary screen="Calendar">
+ *       {/* screen content *\/}
+ *     </ScreenErrorBoundary>
+ *   );
+ * }
+ * ```
+ */
+export function ScreenErrorBoundary({
+  children,
+  screen,
+}: {
+  children: ReactNode;
+  screen: string;
+}) {
+  return (
+    <ErrorBoundary screen={screen} fallbackMessage={`The ${screen} screen hit an error. Tap below to reload it.`}>
+      {children}
+    </ErrorBoundary>
+  );
 }
 
 const styles = StyleSheet.create({
@@ -60,6 +114,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 32,
     backgroundColor: '#FAFAFA',
+  },
+  containerDark: {
+    backgroundColor: '#111111',
   },
   icon: {
     fontSize: 48,
@@ -74,11 +131,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEE2E2',
     overflow: 'hidden',
   },
+  iconDark: {
+    backgroundColor: '#3B1111',
+  },
   title: {
     fontSize: 20,
     fontWeight: '600',
     color: '#1F2937',
     marginBottom: 8,
+  },
+  titleDark: {
+    color: '#F3F4F6',
   },
   message: {
     fontSize: 15,
@@ -87,11 +150,17 @@ const styles = StyleSheet.create({
     marginBottom: 24,
     lineHeight: 22,
   },
+  messageDark: {
+    color: '#9CA3AF',
+  },
   button: {
     backgroundColor: '#1F2937',
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
+  },
+  buttonDark: {
+    backgroundColor: '#E5E7EB',
   },
   buttonText: {
     color: '#FFFFFF',

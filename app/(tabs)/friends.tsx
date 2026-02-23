@@ -56,6 +56,9 @@ import { AnimatedBlurView, SUPPORTS_ANIMATED_BLUR, ANDROID_BLUR_METHOD } from '@
 import { MENU_CONTENT_BLUR, MENU_OPEN_SPRING, GROK_SPRING, MENU_DIMENSIONS } from '@/constants/animations';
 import { MainMenuModal } from '@/components/main-menu-modal';
 import { AdvancedSearchModal, type SearchFilters } from '@/components/advanced-search-modal';
+import { ScreenErrorBoundary } from '@/components/error-boundary';
+import { EmptyState } from '@/components/empty-state';
+import { trackFriendRequest } from '@/utils/analytics';
 
 interface Friend {
   id: string;
@@ -562,6 +565,8 @@ export default function FriendsScreen() {
 
       if (error) throw error;
 
+      trackFriendRequest(user.id, 'sent');
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       // Show success animation
@@ -590,6 +595,8 @@ export default function FriendsScreen() {
         .eq('id', requestId);
 
       if (error) throw error;
+
+      if (user) trackFriendRequest(user.id, 'accepted');
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -714,6 +721,8 @@ export default function FriendsScreen() {
         <TouchableOpacity
           style={[styles.acceptButton, { backgroundColor: BrandColors.loopGreen }]}
           onPress={() => acceptFriendRequest(item.id, item.friend_name)}
+          accessibilityRole="button"
+          accessibilityLabel={`Accept friend request from ${item.friend_name}`}
         >
           <Ionicons name="checkmark" size={20} color="#ffffff" />
           <Text style={[Typography.labelMedium, { color: '#ffffff', marginLeft: 4 }]}>Accept</Text>
@@ -722,6 +731,8 @@ export default function FriendsScreen() {
         <TouchableOpacity
           style={[styles.declineButton, { borderColor: Colors[colorScheme ?? 'light'].icon }]}
           onPress={() => declineFriendRequest(item.id, item.friend_name)}
+          accessibilityRole="button"
+          accessibilityLabel={`Decline friend request from ${item.friend_name}`}
         >
           <Ionicons name="close" size={20} color={Colors[colorScheme ?? 'light'].icon} />
           <Text style={[Typography.labelMedium, { color: Colors[colorScheme ?? 'light'].icon, marginLeft: 4 }]}>
@@ -800,6 +811,9 @@ export default function FriendsScreen() {
       onLongPress={() => handleFriendLongPress(item)}
       delayLongPress={400}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={`${item.name}, Loop score ${item.loop_score}`}
+      accessibilityHint="Tap to view Loop, long press for more options"
     >
       <View style={styles.friendRow}>
         {item.profile_picture_url ? (
@@ -832,6 +846,8 @@ export default function FriendsScreen() {
             router.push('/chat' as any);
           }}
           hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          accessibilityRole="button"
+          accessibilityLabel={`Message ${item.name}`}
         >
           <Ionicons name="chatbubble-outline" size={20} color={Colors[colorScheme ?? 'light'].icon} />
         </TouchableOpacity>
@@ -840,6 +856,7 @@ export default function FriendsScreen() {
   );
 
   return (
+    <ScreenErrorBoundary screen="Friends">
     <SwipeableLayout disableLeftEdgeSwipe>
       <GestureDetector gesture={menuEdgeGesture}>
       <View style={{ flex: 1, backgroundColor: Colors[colorScheme ?? 'light'].background }}>
@@ -883,6 +900,9 @@ export default function FriendsScreen() {
                 },
               ]}
               onPress={() => setSelectedGroupId(null)}
+              accessibilityRole="button"
+              accessibilityLabel="All Friends"
+              accessibilityState={{ selected: selectedGroupId === null }}
             >
               <Text
                 style={[
@@ -911,6 +931,10 @@ export default function FriendsScreen() {
                   setManagingGroup(group);
                   setShowGroupManagement(true);
                 }}
+                accessibilityRole="button"
+                accessibilityLabel={`${group.name} group`}
+                accessibilityHint="Tap to filter, long press to manage"
+                accessibilityState={{ selected: selectedGroupId === group.id }}
               >
                 <Text
                   style={[
@@ -930,6 +954,8 @@ export default function FriendsScreen() {
                 setManagingGroup(null);
                 setShowGroupManagement(true);
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Create new friend group"
             >
               <Ionicons name="add" size={16} color={BrandColors.loopBlue} />
               <Text style={[styles.groupChipText, { color: BrandColors.loopBlue, marginLeft: 4 }]}>
@@ -1015,15 +1041,13 @@ export default function FriendsScreen() {
             }
             if (filteredFriends.length === 0) {
               return (
-                <View style={styles.emptyState}>
-                  <Ionicons name="people-outline" size={64} color={Colors[colorScheme ?? 'light'].icon} />
-                  <Text style={[Typography.bodyLarge, styles.emptyText, { color: Colors[colorScheme ?? 'light'].icon }]}>
-                    {selectedGroupId ? 'No friends in this group' : 'No friends yet'}
-                  </Text>
-                  <Text style={[Typography.bodyMedium, { color: Colors[colorScheme ?? 'light'].icon, textAlign: 'center' }]}>
-                    {selectedGroupId ? 'Long-press the group chip to manage members' : 'Tap the + button to add friends'}
-                  </Text>
-                </View>
+                <EmptyState
+                  icon="person.2.fill"
+                  title={selectedGroupId ? 'No Friends in This Group' : 'No Friends Yet'}
+                  message={selectedGroupId
+                    ? 'Long-press the group chip to manage members.'
+                    : 'Add friends to plan activities together and see what they\'re up to.'}
+                />
               );
             }
             return filteredFriends.map((friend) => (
@@ -1073,7 +1097,11 @@ export default function FriendsScreen() {
               <Text style={[Typography.headlineMedium, { color: Colors[colorScheme ?? 'light'].text }]}>
                 Add Friend
               </Text>
-              <TouchableOpacity onPress={closeAddFriendModal}>
+              <TouchableOpacity
+                onPress={closeAddFriendModal}
+                accessibilityRole="button"
+                accessibilityLabel="Close add friend dialog"
+              >
                 <Ionicons name="close" size={28} color={Colors[colorScheme ?? 'light'].icon} />
               </TouchableOpacity>
             </View>
@@ -1099,12 +1127,17 @@ export default function FriendsScreen() {
                 autoCapitalize="none"
                 autoCorrect={false}
                 maxLength={200}
+                accessibilityLabel="Friend email address"
+                accessibilityHint="Enter your friend's email to send a request"
               />
 
               <TouchableOpacity
                 style={[styles.searchButton, { backgroundColor: BrandColors.loopBlue }]}
                 onPress={searchForUser}
                 disabled={searching}
+                accessibilityRole="button"
+                accessibilityLabel={searching ? 'Searching for friend' : 'Find friend'}
+                accessibilityState={{ disabled: searching }}
               >
                 {searching ? (
                   <Text style={[Typography.labelLarge, { color: '#ffffff' }]}>Searching...</Text>
@@ -1135,6 +1168,9 @@ export default function FriendsScreen() {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             setShowGroupPlanning(true);
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Plan group activity"
+          accessibilityHint="Opens group activity planning"
         >
           <Ionicons name="people" size={28} color="#ffffff" />
           <Text style={[Typography.labelMedium, { color: '#ffffff', marginLeft: 8 }]}>
@@ -1237,6 +1273,7 @@ export default function FriendsScreen() {
       </View>
       </GestureDetector>
     </SwipeableLayout>
+    </ScreenErrorBoundary>
   );
 }
 

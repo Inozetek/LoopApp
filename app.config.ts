@@ -4,17 +4,21 @@ const pkg = require('./package.json') as { version: string };
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
-  name: 'LoopApp',
+  name: 'Loop',
   slug: 'LoopApp',
   // Version is sourced from package.json so there is a single source of truth.
   // EAS manages versionCode / buildNumber via autoIncrement (eas.json) and
   // appVersionSource: "remote" — do NOT hardcode the version string here.
   version: pkg.version,
+  description:
+    'AI-powered activity discovery. Get personalized recommendations, plan with friends, and never miss out on experiences that matter to you.',
   orientation: 'portrait',
   icon: './assets/images/icon.png',
   scheme: 'loopapp',
   userInterfaceStyle: 'automatic',
   newArchEnabled: true,
+  // App Store / Play Store metadata
+  primaryColor: '#7C3AED',
   ios: {
     supportsTablet: true,
     usesAppleSignIn: true,
@@ -23,6 +27,10 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         'Loop needs your location to show nearby activities and calculate distances.',
       NSLocationAlwaysUsageDescription:
         'Loop needs your location to provide recommendations based on your routine and commute.',
+      NSCalendarsUsageDescription:
+        'Loop needs calendar access to find your free time and add activities.',
+      NSContactsUsageDescription:
+        'Loop uses your contacts to help you find friends on the app.',
       CADisableMinimumFrameDurationOnPhone: true,
       ITSAppUsesNonExemptEncryption: false,
       // NOTE: NSUserTrackingUsageDescription and SKAdNetworkItems removed —
@@ -32,6 +40,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       googleMapsApiKey: process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '',
     },
     bundleIdentifier: 'com.ncasey92.LoopApp',
+    // Universal Links: associate with loopapp.com so web URLs open the app.
+    // Requires hosting an apple-app-site-association file at https://loopapp.com/.well-known/
+    associatedDomains: ['applinks:loopapp.com'],
+    // App Store category: https://developer.apple.com/documentation/bundleresources/information_property_list/lsapplicationcategorytype
+    appStoreUrl: 'https://apps.apple.com/app/loop/id0000000000', // TODO: update after App Store submission
   },
   android: {
     adaptiveIcon: {
@@ -54,6 +67,20 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     },
     package: 'com.ncasey92.loopapp',
+    // Android App Links: handle https://loopapp.com URLs in the app.
+    // Requires hosting an assetlinks.json file at https://loopapp.com/.well-known/
+    intentFilters: [
+      {
+        action: 'VIEW',
+        autoVerify: true,
+        data: [
+          { scheme: 'https', host: 'loopapp.com', pathPrefix: '/activity' },
+          { scheme: 'https', host: 'loopapp.com', pathPrefix: '/profile' },
+          { scheme: 'https', host: 'loopapp.com', pathPrefix: '/plan' },
+        ],
+        category: ['BROWSABLE', 'DEFAULT'],
+      },
+    ],
   },
   web: {
     output: 'static' as const,
@@ -118,12 +145,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ],
   experiments: {
     typedRoutes: true,
-    reactCompiler: true,
+    // reactCompiler disabled — causes crash loop on Android (rapid remount cycle)
+    // Re-enable once React Compiler is stable with Expo SDK 54 + New Architecture
+    reactCompiler: false,
   },
   extra: {
     router: {},
     eas: {
       projectId: '0268111f-c9d2-46ec-99c8-777b1393294b',
     },
+    // These URLs are referenced in settings screens and required for store submission.
+    // TODO: Replace with actual hosted pages before submitting to App Store / Play Store.
+    privacyPolicyUrl: 'https://inozetek.github.io/LoopApp/privacy.html',
+    termsOfServiceUrl: 'https://inozetek.github.io/LoopApp/terms.html',
   },
 });

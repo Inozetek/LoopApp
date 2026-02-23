@@ -21,8 +21,8 @@ import {
   Dimensions,
   ActivityIndicator,
   Platform,
-} from 'react-native';
-import { Image } from 'react-native';
+ Image } from 'react-native';
+
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';

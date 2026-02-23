@@ -32,6 +32,7 @@ export interface Activity {
   isSponsored?: boolean;
   sponsorTier?: 'organic' | 'boosted' | 'premium';
   googlePlaceId?: string;
+  aiDescription?: string; // Gemini-generated description, cached at seed time
 }
 
 export interface RecommendationScore {
@@ -71,6 +72,7 @@ export interface Recommendation {
   rating: number;
   imageUrl: string;
   photos?: string[]; // Array of photo URLs for Instagram-style carousel
+  photoReferences?: string[]; // Original Google Places photo references for cache reconstruction
   aiExplanation: string;
   description?: string; // Editorial summary from Google Places
   reviewSummary?: string; // AI-generated summary of reviews

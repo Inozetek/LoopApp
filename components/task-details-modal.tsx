@@ -404,7 +404,7 @@ export function TaskDetailsModal({
       return;
     }
 
-    const availableApps: Array<{ name: string; url: string }> = [];
+    const availableApps: { name: string; url: string }[] = [];
 
     if (Platform.OS === 'ios') {
       const appleMapsInstalled = await Linking.canOpenURL(appleMapsUrl).catch(() => false);

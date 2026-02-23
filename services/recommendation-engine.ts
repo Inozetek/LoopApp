@@ -1,4 +1,3 @@
-// @ts-nocheck - Type interface differences between Activity and Recommendation
 import { Activity, RecommendationScore, Recommendation } from '@/types/activity';
 import { UserProfile } from '@/types/database';
 
@@ -12,6 +11,25 @@ import { UserProfile } from '@/types/database';
  * - Collaborative: 10 points (similar users)
  * - Sponsor boost: +15-30% (after base scoring)
  */
+
+/** Shape of the user preferences JSONB column */
+interface UserPreferencesJson {
+  budget?: number;
+  max_distance_miles?: number;
+  preferred_times?: string[];
+  notification_enabled?: boolean;
+}
+
+/** Shape of the user ai_profile JSONB column */
+interface UserAiProfileJson {
+  preferred_distance_miles?: number;
+  budget_level?: number;
+  favorite_categories?: string[];
+  disliked_categories?: string[];
+  price_sensitivity?: string;
+  time_preferences?: string[];
+  distance_tolerance?: string;
+}
 
 interface ScoringContext {
   userLocation?: { latitude: number; longitude: number };
@@ -226,7 +244,7 @@ export function generateRecommendations(
   context: Partial<ScoringContext> = {}
 ): Recommendation[] {
   // Parse preferences and AI profile from JSON
-  const preferences = (user.preferences || {}) as any;
+  const preferences = (user.preferences || {}) as UserPreferencesJson;
   const aiProfile = (user.ai_profile || {
     preferred_distance_miles: 5.0,
     budget_level: 2,
@@ -235,7 +253,7 @@ export function generateRecommendations(
     price_sensitivity: 'medium',
     time_preferences: [],
     distance_tolerance: 'medium',
-  }) as any;
+  }) as UserAiProfileJson;
 
   // Build enhanced scoring context using AI-learned preferences
   const scoringContext: ScoringContext = {
@@ -266,17 +284,35 @@ export function generateRecommendations(
   const filtered = applyBusinessRules(scored);
 
   // Convert to Recommendation objects
-  return filtered.map((item, index) => ({
-    id: `rec-${item.activity.id}-${Date.now()}`,
-    activity: item.activity,
-    score: item.score,
-    reason: generateReason(item.activity, item.score, scoringContext),
-    recommendedFor: new Date(),
-    confidence: Math.min(item.score.finalScore / 100, 1),
-    status: 'pending',
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-  }));
+  return filtered.map((item) => {
+    const act = item.activity;
+    const reason = generateReason(act, item.score, scoringContext);
+    return {
+      // Required Recommendation fields
+      id: `rec-${act.id}-${Date.now()}`,
+      title: act.name,
+      category: act.category,
+      location: act.location.address,
+      neighborhood: act.location.city,
+      distance: act.distance != null ? `${act.distance.toFixed(1)} mi` : 'N/A',
+      priceRange: act.priceRange,
+      rating: act.rating ?? 0,
+      imageUrl: act.photoUrl ?? '',
+      aiExplanation: reason,
+      isSponsored: act.isSponsored ?? false,
+      // Score metadata
+      score: item.score.finalScore,
+      scoreBreakdown: item.score,
+      // Legacy fields for backward compatibility
+      activity: act,
+      reason,
+      recommendedFor: new Date(),
+      confidence: Math.min(item.score.finalScore / 100, 1),
+      status: 'pending' as const,
+      createdAt: new Date(),
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    };
+  });
 }
 
 /**

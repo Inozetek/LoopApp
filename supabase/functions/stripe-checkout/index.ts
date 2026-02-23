@@ -54,21 +54,150 @@ const supabaseAdmin =
     : null;
 
 // ---------------------------------------------------------------------------
-// CORS headers for Expo client
+// CORS headers
+// ---------------------------------------------------------------------------
+// Allowed origins: Expo dev servers + production web domain.
+// Mobile clients (React Native) do not send an Origin header, so they are
+// unaffected by CORS. These headers only restrict browser-based callers.
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:8081',   // Expo dev server
+  'http://localhost:19006',  // Expo web
+  'https://loopapp.com',    // Production web (update when domain is live)
+]);
+
+// Per-request CORS headers. Set at the top of each request handler.
+// Safe because Supabase Edge Function isolates process one request at a time.
+let corsHeaders: Record<string, string> = {};
+
+function setCorsHeaders(req: Request): void {
+  const origin = req.headers.get('origin') ?? '';
+  corsHeaders = {
+    // Reflect the origin only if it's on the allowlist; otherwise return the
+    // first allowed origin (browsers will block the response).
+    'Access-Control-Allow-Origin': ALLOWED_ORIGINS.has(origin)
+      ? origin
+      : 'https://loopapp.com',
+    'Access-Control-Allow-Headers':
+      'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Vary': 'Origin',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Input validation
 // ---------------------------------------------------------------------------
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers':
-    'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
+/** Known actions that this edge function handles. */
+const KNOWN_ACTIONS = new Set([
+  'create_user_checkout',
+  'create_business_checkout',
+  'cancel_user_subscription',
+  'cancel_business_subscription',
+  'create_portal_session',
+  'restore_subscription',
+]);
+
+/**
+ * Check that `value` is a non-empty string.
+ */
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+/**
+ * Basic URL-shape check. Validates the string starts with http:// or https://
+ * and can be parsed by the URL constructor. Does NOT fetch the URL.
+ */
+function isUrlLike(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validate the action name and its required parameters.
+ * Returns `{ valid: true }` or `{ valid: false, error: string }`.
+ */
+function validateAction(
+  action: unknown,
+  params: Record<string, unknown>,
+): { valid: true } | { valid: false; error: string } {
+  // --- action must be a known string ---
+  if (!isNonEmptyString(action)) {
+    return { valid: false, error: 'Missing or invalid "action" field. Must be a non-empty string.' };
+  }
+  if (!KNOWN_ACTIONS.has(action)) {
+    return {
+      valid: false,
+      error: `Unknown action: "${action}". Expected one of: ${[...KNOWN_ACTIONS].join(', ')}`,
+    };
+  }
+
+  // --- per-action parameter checks ---
+  switch (action) {
+    case 'create_user_checkout': {
+      if (!isNonEmptyString(params.userId))
+        return { valid: false, error: 'create_user_checkout requires a non-empty string "userId".' };
+      if (!isNonEmptyString(params.priceId))
+        return { valid: false, error: 'create_user_checkout requires a non-empty string "priceId".' };
+      if (!isUrlLike(params.successUrl))
+        return { valid: false, error: 'create_user_checkout requires a valid URL "successUrl" (http/https).' };
+      if (!isUrlLike(params.cancelUrl))
+        return { valid: false, error: 'create_user_checkout requires a valid URL "cancelUrl" (http/https).' };
+      break;
+    }
+    case 'create_business_checkout': {
+      if (!isNonEmptyString(params.businessId))
+        return { valid: false, error: 'create_business_checkout requires a non-empty string "businessId".' };
+      if (!isNonEmptyString(params.priceId))
+        return { valid: false, error: 'create_business_checkout requires a non-empty string "priceId".' };
+      if (!isNonEmptyString(params.tier))
+        return { valid: false, error: 'create_business_checkout requires a non-empty string "tier".' };
+      if (!isUrlLike(params.successUrl))
+        return { valid: false, error: 'create_business_checkout requires a valid URL "successUrl" (http/https).' };
+      if (!isUrlLike(params.cancelUrl))
+        return { valid: false, error: 'create_business_checkout requires a valid URL "cancelUrl" (http/https).' };
+      break;
+    }
+    case 'cancel_user_subscription': {
+      if (!isNonEmptyString(params.userId))
+        return { valid: false, error: 'cancel_user_subscription requires a non-empty string "userId".' };
+      break;
+    }
+    case 'cancel_business_subscription': {
+      if (!isNonEmptyString(params.businessId))
+        return { valid: false, error: 'cancel_business_subscription requires a non-empty string "businessId".' };
+      break;
+    }
+    case 'create_portal_session': {
+      if (!isNonEmptyString(params.userId))
+        return { valid: false, error: 'create_portal_session requires a non-empty string "userId".' };
+      if (!isUrlLike(params.returnUrl))
+        return { valid: false, error: 'create_portal_session requires a valid URL "returnUrl" (http/https).' };
+      break;
+    }
+    case 'restore_subscription': {
+      if (!isNonEmptyString(params.userId))
+        return { valid: false, error: 'restore_subscription requires a non-empty string "userId".' };
+      break;
+    }
+  }
+
+  return { valid: true };
+}
 
 // ---------------------------------------------------------------------------
 // Main handler
 // ---------------------------------------------------------------------------
 
 Deno.serve(async (req: Request) => {
+  setCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
@@ -91,29 +220,74 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
-    const body = await req.json();
+    // Parse request body — reject malformed JSON early
+    let body: Record<string, unknown>;
+    try {
+      body = await req.json();
+    } catch {
+      return jsonResponse(
+        { error: 'Invalid JSON in request body.' },
+        400,
+      );
+    }
+
+    // Ensure the body is a plain object (not an array, null, etc.)
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) {
+      return jsonResponse(
+        { error: 'Request body must be a JSON object.' },
+        400,
+      );
+    }
+
     const { action, ...params } = body;
+
+    // Validate action and params before dispatching
+    const validation = validateAction(action, params);
+    if (!validation.valid) {
+      return jsonResponse({ error: validation.error }, 400);
+    }
 
     switch (action) {
       case 'create_user_checkout':
-        return await handleCreateUserCheckout(params);
+        return await handleCreateUserCheckout(params as {
+          userId: string;
+          priceId: string;
+          successUrl: string;
+          cancelUrl: string;
+        });
 
       case 'create_business_checkout':
-        return await handleCreateBusinessCheckout(params);
+        return await handleCreateBusinessCheckout(params as {
+          businessId: string;
+          priceId: string;
+          tier: string;
+          successUrl: string;
+          cancelUrl: string;
+        });
 
       case 'cancel_user_subscription':
-        return await handleCancelUserSubscription(params);
+        return await handleCancelUserSubscription(params as {
+          userId: string;
+        });
 
       case 'cancel_business_subscription':
-        return await handleCancelBusinessSubscription(params);
+        return await handleCancelBusinessSubscription(params as {
+          businessId: string;
+        });
 
       case 'create_portal_session':
-        return await handleCreatePortalSession(params);
+        return await handleCreatePortalSession(params as {
+          userId: string;
+          returnUrl: string;
+        });
 
       case 'restore_subscription':
-        return await handleRestoreSubscription(params);
+        return await handleRestoreSubscription(params as {
+          userId: string;
+        });
 
       default:
+        // Unreachable after validation, but satisfies exhaustiveness
         return jsonResponse({ error: `Unknown action: ${action}` }, 400);
     }
   } catch (err) {
@@ -139,10 +313,6 @@ async function handleCreateUserCheckout(params: {
   cancelUrl: string;
 }) {
   const { userId, priceId, successUrl, cancelUrl } = params;
-
-  if (!userId || !priceId) {
-    return jsonResponse({ error: 'Missing userId or priceId' }, 400);
-  }
 
   // Get or create Stripe customer for this user
   const customerId = await getOrCreateCustomerForUser(userId);
@@ -185,10 +355,6 @@ async function handleCreateBusinessCheckout(params: {
 }) {
   const { businessId, priceId, tier, successUrl, cancelUrl } = params;
 
-  if (!businessId || !priceId) {
-    return jsonResponse({ error: 'Missing businessId or priceId' }, 400);
-  }
-
   // Get or create Stripe customer for this business
   const customerId = await getOrCreateCustomerForBusiness(businessId);
   if (!customerId) {
@@ -225,10 +391,6 @@ async function handleCreateBusinessCheckout(params: {
  */
 async function handleCancelUserSubscription(params: { userId: string }) {
   const { userId } = params;
-
-  if (!userId) {
-    return jsonResponse({ error: 'Missing userId' }, 400);
-  }
 
   // Look up the user's stripe_customer_id
   const { data: user } = await supabaseAdmin!
@@ -274,10 +436,6 @@ async function handleCancelBusinessSubscription(params: {
 }) {
   const { businessId } = params;
 
-  if (!businessId) {
-    return jsonResponse({ error: 'Missing businessId' }, 400);
-  }
-
   // Look up the business stripe_subscription_id
   const { data: business } = await supabaseAdmin!
     .from('business_profiles')
@@ -312,10 +470,6 @@ async function handleCreatePortalSession(params: {
 }) {
   const { userId, returnUrl } = params;
 
-  if (!userId) {
-    return jsonResponse({ error: 'Missing userId' }, 400);
-  }
-
   // Look up the user's stripe_customer_id
   const { data: user } = await supabaseAdmin!
     .from('users')
@@ -343,10 +497,6 @@ async function handleCreatePortalSession(params: {
  */
 async function handleRestoreSubscription(params: { userId: string }) {
   const { userId } = params;
-
-  if (!userId) {
-    return jsonResponse({ error: 'Missing userId' }, 400);
-  }
 
   // Look up the user's stripe_customer_id
   const { data: user } = await supabaseAdmin!

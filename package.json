@@ -5,15 +5,16 @@
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "test": "dotenv -e .env.test -- jest",
     "test:watch": "dotenv -e .env.test -- jest --watch",
     "test:coverage": "dotenv -e .env.test -- jest --coverage",
     "test:verbose": "dotenv -e .env.test -- jest --verbose",
-    "test:single": "dotenv -e .env.test -- jest"
+    "test:single": "dotenv -e .env.test -- jest",
+    "prepare": "husky"
   },
   "dependencies": {
     "@azure/abort-controller": "^2.1.2",
@@ -88,10 +89,17 @@
     "dotenv-cli": "^11.0.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "husky": "^9.1.7",
     "jest": "~29.7.0",
     "jest-expo": "~54.0.17",
+    "lint-staged": "^16.2.7",
     "ts-jest": "^29.4.6",
     "typescript": "~5.9.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx}": [
+      "eslint --fix --max-warnings 0"
+    ]
   },
   "private": true
 }

@@ -32,6 +32,7 @@ export interface PlaceResult {
     open_now?: boolean;
     periods?: Array<{ open: { day: number; time: string }; close?: { day: number; time: string } }>;
   };
+  ai_description?: string; // Gemini-generated description from cache
   source?: 'google_places' | 'ticketmaster' | 'yelp';
   event_metadata?: any;
   yelp_metadata?: any;

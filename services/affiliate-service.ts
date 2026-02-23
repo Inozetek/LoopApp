@@ -14,6 +14,7 @@ import {
   type AttributionSource,
 } from '@/types/affiliate';
 import { Recommendation } from '@/types/activity';
+import { trackEvent } from '@/utils/analytics';
 
 /** Describes a matching affiliate partner for a recommendation */
 export interface MatchedPartner {
@@ -236,7 +237,12 @@ export async function openAffiliateLink(
   const urls = buildBookingUrl(partnerId, recommendation);
 
   // Track click (non-blocking)
-  trackAffiliateClick(userId, partnerId, recommendation, attributionSource).catch(() => {});
+  trackAffiliateClick(userId, partnerId, recommendation, attributionSource).catch((err) => {
+    console.warn('[affiliate] trackAffiliateClick failed:', err?.message);
+  });
+
+  // Analytics tracking
+  trackEvent('affiliate_link_clicked', { partnerId, activityName: recommendation.title, source: attributionSource }, userId);
 
   try {
     // Try deep link first

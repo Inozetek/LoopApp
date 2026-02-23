@@ -19,6 +19,7 @@ import {
   Text,
   StyleSheet,
   FlatList,
+  ScrollView,
   Dimensions,
   RefreshControl,
   ActivityIndicator,
@@ -64,6 +65,10 @@ import {
   groupIntoRows,
   recommendationToExploreItem,
 } from '@/services/explore-service';
+import { ScreenErrorBoundary } from '@/components/error-boundary';
+import { EmptyState } from '@/components/empty-state';
+import { ActivityCardSkeleton } from '@/components/skeleton-loader';
+import { trackEvent } from '@/utils/analytics';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const GRID_GAP = 3;
@@ -466,6 +471,7 @@ export default function ExploreScreen() {
         });
         // Convert to ExploreItems for rich tile rendering
         setSearchResults(filtered.map(recommendationToExploreItem));
+        trackEvent('search_performed', { query: text, resultCount: filtered.length }, user.id);
         // Save to recent searches
         addRecentSearch(text);
       } catch (error) {
@@ -694,6 +700,7 @@ export default function ExploreScreen() {
   const showSuggestions = isSearchFocused && searchQuery.length < 2;
 
   return (
+    <ScreenErrorBoundary screen="Explore">
     <SwipeableLayout disableLeftEdgeSwipe>
       <GestureDetector gesture={menuEdgeGesture}>
       <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -712,12 +719,15 @@ export default function ExploreScreen() {
         <View style={{ height: headerOffset }} />
 
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={BrandColors.loopBlue} />
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Finding activities...
-            </Text>
-          </View>
+          <ScrollView
+            contentContainerStyle={styles.gridContent}
+            showsVerticalScrollIndicator={false}
+          >
+            <ActivityCardSkeleton />
+            <ActivityCardSkeleton />
+            <ActivityCardSkeleton />
+            <ActivityCardSkeleton />
+          </ScrollView>
         ) : showSuggestions ? (
           // Search focused, empty query: show suggestions
           <SearchSuggestionsPanel
@@ -737,12 +747,20 @@ export default function ExploreScreen() {
           searchResults.length === 0 ? (
             <>
               <ListHeader />
-              <View style={styles.emptyContainer}>
-                <Ionicons name="search-outline" size={48} color={colors.textSecondary} />
-                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                  {isSearching ? 'Searching...' : 'No results found. Try a different search.'}
-                </Text>
-              </View>
+              {isSearching ? (
+                <View style={styles.emptyContainer}>
+                  <ActivityIndicator size="large" color={BrandColors.loopBlue} />
+                  <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+                    Searching...
+                  </Text>
+                </View>
+              ) : (
+                <EmptyState
+                  icon="magnifyingglass"
+                  title="No Results Found"
+                  message="Try adjusting your search or filters to find something new."
+                />
+              )}
             </>
           ) : (
             <FlatList
@@ -769,10 +787,13 @@ export default function ExploreScreen() {
                     );
                   }}
                   activeOpacity={0.7}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Set a radar alert for ${searchQuery}`}
+                  accessibilityHint="Creates a notification when new matching places appear"
                 >
                   <Ionicons name="radio-outline" size={16} color={BrandColors.loopOrange} />
                   <Text style={[styles.radarCtaText, { color: BrandColors.loopOrange }]}>
-                    Set a radar for "{searchQuery}"
+                    {'Set a radar for "' + searchQuery + '"'}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -783,12 +804,11 @@ export default function ExploreScreen() {
         ) : exploreRows.length === 0 ? (
           <>
             <ListHeader />
-            <View style={styles.emptyContainer}>
-              <Ionicons name="search-outline" size={48} color={colors.textSecondary} />
-              <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
-                No activities found in this area.
-              </Text>
-            </View>
+            <EmptyState
+              icon="magnifyingglass"
+              title="No Results Found"
+              message="Try adjusting your search or filters to find something new."
+            />
           </>
         ) : (
           // Explore mode: mixed content row-based grid
@@ -875,6 +895,7 @@ export default function ExploreScreen() {
       </View>
       </GestureDetector>
     </SwipeableLayout>
+    </ScreenErrorBoundary>
   );
 }
 

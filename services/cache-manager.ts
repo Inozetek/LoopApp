@@ -17,6 +17,7 @@
 
 import { supabase } from '@/lib/supabase';
 import { searchNearbyActivities, getPlaceDetails } from './google-places';
+import { generatePlaceDescriptions } from './gemini-service';
 import type { Activity } from '@/types/activity';
 
 export interface CacheStatus {
@@ -163,9 +164,10 @@ export async function seedCityData(
 
         console.log(`   Found ${places.length} ${category} places`);
 
-        // Filter for quality (rating >4.0, review count >50)
+        // Filter for quality (rating >= 3.5, review count >= 10)
+        // Relaxed from 4.0/50 to avoid empty caches in smaller cities
         const qualityPlaces = places.filter(place =>
-          (place.rating || 0) >= 4.0 && (place.reviewsCount || 0) >= 50
+          (place.rating || 0) >= 3.5 && (place.reviewsCount || 0) >= 10
         );
 
         console.log(`   Filtered to ${qualityPlaces.length} quality places`);
@@ -173,6 +175,20 @@ export async function seedCityData(
         if (qualityPlaces.length === 0) {
           console.log(`   ⚠️ No quality ${category} places found, skipping...`);
           continue;
+        }
+
+        // Generate AI descriptions for this batch (Gemini Flash, free tier)
+        // If Gemini fails or quota exhausted, returns empty map — templates take over
+        const aiDescriptions = await generatePlaceDescriptions(qualityPlaces, city);
+        if (aiDescriptions.size > 0) {
+          for (const place of qualityPlaces) {
+            const placeId = place.googlePlaceId || place.id;
+            const desc = aiDescriptions.get(placeId);
+            if (desc) {
+              place.aiDescription = desc;
+            }
+          }
+          console.log(`   ✨ Attached ${aiDescriptions.size} AI descriptions`);
         }
 
         // Insert into places_cache table

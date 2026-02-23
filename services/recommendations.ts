@@ -1,4 +1,4 @@
-// @ts-nocheck - JSONB type handling from Supabase
+// JSONB type handling from Supabase - typed via local interfaces
 /**
  * Recommendation Engine
  * Scores and ranks activities based on user preferences, location, and context
@@ -8,6 +8,9 @@
  * - Eventbrite API (events)
  * - Yelp API (enhanced ratings) - Phase 2
  */
+
+// Set to true to enable verbose per-place scoring logs (very noisy)
+const DEBUG_RECS = false;
 
 // Production-ready imports - NO MOCK DATA
 import { getCachedUnsplashImage } from './unsplash';
@@ -43,7 +46,58 @@ import {
 // NEW: Data source integrations (Day 1 Sprint)
 import { matchFacebookLikedPlace } from './facebook-graph';
 import { matchTimelineVisitedPlace, calculateFreshnessFactor } from './google-timeline';
-import type { FacebookData, GoogleTimelineData } from '@/types/user';
+import type { FacebookData, GoogleTimelineData, AIProfile, CalendarPattern } from '@/types/user';
+
+// ─── Supabase Json → typed helpers ──────────────────────────────────────
+// The DB `User` type stores interests/preferences/ai_profile as opaque `Json`.
+// These helpers cast them to the shapes the engine actually expects.
+
+import type { Json } from '@/types/database';
+
+/** Safely cast user.interests (Json) to string[] */
+function asInterests(raw: Json): string[] {
+  return Array.isArray(raw) ? (raw as string[]) : [];
+}
+
+/** Safely cast user.preferences (Json) to the expected shape */
+interface UserPrefsShape {
+  budget?: number;
+  max_distance_miles?: number;
+  preferred_times?: string[];
+  notification_enabled?: boolean;
+  discovery_style?: DiscoveryStyle;
+}
+function asPreferences(raw: Json): UserPrefsShape {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as unknown as UserPrefsShape;
+  return {};
+}
+
+/** Safely cast user.ai_profile (Json) to AIProfile-like shape */
+interface AIProfileShape {
+  preferred_distance_miles?: number;
+  budget_level?: number;
+  favorite_categories?: string[];
+  disliked_categories?: string[];
+  price_sensitivity?: string;
+  time_preferences?: string[];
+  distance_tolerance?: string;
+  calendar_patterns?: CalendarPattern[];
+}
+function asAIProfile(raw: Json): AIProfileShape {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) return raw as unknown as AIProfileShape;
+  return {};
+}
+
+/**
+ * Extended User that may carry optional OAuth/demographic fields
+ * not present in the Supabase schema type but attached at runtime.
+ */
+interface ExtendedUser extends User {
+  facebook_data?: FacebookData;
+  google_timeline?: GoogleTimelineData;
+  birth_year?: number | null;
+  age_bracket?: string | null;
+}
 
 // Generic place patterns to filter (unless user has positive feedback history)
 const GENERIC_PLACE_PATTERNS = [
@@ -100,7 +154,7 @@ function isGenericPlace(placeName: string): boolean {
 // Helper function: Check if user has positive feedback history for generic place type
 function userFrequentsGenericPlace(place: PlaceResult, user: User): boolean {
   // Check if user has favorite categories that match this place type
-  const userFavorites = user.ai_profile?.favorite_categories || [];
+  const userFavorites = asAIProfile(user.ai_profile).favorite_categories || [];
   const placeCategory = mapPlaceTypeToCategory(place.types);
 
   // If user has this category in favorites, allow generic places
@@ -127,8 +181,8 @@ function isPopularPlace(place: PlaceResult): boolean {
 // Helper function: Check if place matches user interests
 function matchesUserInterests(place: PlaceResult, user: User): boolean {
   const category = mapPlaceTypeToCategory(place.types);
-  const userInterests = user.interests || [];
-  const topInterests = user.ai_profile?.favorite_categories || userInterests.slice(0, 3);
+  const userInterests = asInterests(user.interests);
+  const topInterests = asAIProfile(user.ai_profile).favorite_categories || userInterests.slice(0, 3);
 
   return topInterests.includes(category) || userInterests.includes(category);
 }
@@ -257,10 +311,33 @@ function getPlacePhotoUrl(photoReference: string): string {
 /**
  * Enrich place with additional photos from Place Details API
  * Used for places with <2 photos to enable photo carousel
+ *
+ * Rate-limited + capped to avoid 429 quota errors.
+ * Circuit breaker: stops all enrichment on first 429.
  */
+let _enrichmentCallsThisBatch = 0;
+let _enrichmentBlocked = false;
+const MAX_ENRICHMENT_CALLS_PER_BATCH = 8;
+
+/** Call at the start of each recommendation batch to reset enrichment limits */
+function resetEnrichmentCounter() {
+  _enrichmentCallsThisBatch = 0;
+  _enrichmentBlocked = false;
+}
+
 async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_reference: string }>> {
   // ⭐ CRITICAL: Check kill switch first
   if (process.env.EXPO_PUBLIC_DISABLE_GOOGLE_PLACES_API === 'true') {
+    return [];
+  }
+
+  // Circuit breaker: stop if we hit a 429 earlier this batch
+  if (_enrichmentBlocked) {
+    return [];
+  }
+
+  // Cap total enrichment calls per batch to protect quota
+  if (_enrichmentCallsThisBatch >= MAX_ENRICHMENT_CALLS_PER_BATCH) {
     return [];
   }
 
@@ -271,25 +348,37 @@ async function enrichPlacePhotos(placeId: string): Promise<Array<{ photo_referen
     return [];
   }
 
+  _enrichmentCallsThisBatch++;
+
   try {
     // The new Places API (v1) requires resource name format: places/PLACE_ID
     // Convert plain place ID to resource name if needed
     const resourceName = placeId.startsWith('places/') ? placeId : `places/${placeId}`;
 
-    const response = await fetch(
-      `https://places.googleapis.com/v1/${resourceName}`,
-      {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Goog-Api-Key': API_KEY,
-          'X-Goog-FieldMask': 'photos', // Only request photos to minimize cost
-        },
-      }
+    // Use rate limiter to prevent 429 quota errors
+    const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
+
+    const response = await rateLimitedPlacesRequest(() =>
+      fetch(
+        `https://places.googleapis.com/v1/${resourceName}`,
+        {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Goog-Api-Key': API_KEY,
+            'X-Goog-FieldMask': 'photos', // Only request photos to minimize cost
+          },
+        }
+      )
     );
 
     if (!response.ok) {
-      // Log more details for debugging
+      // On 429 rate limit, activate circuit breaker to stop all further enrichment
+      if (response.status === 429) {
+        console.warn(`⚠️ Rate limited (429) on photo enrichment — pausing all enrichment this batch`);
+        _enrichmentBlocked = true;
+        return [];
+      }
       const errorText = await response.text().catch(() => 'Could not read error body');
       console.error(`❌ Failed to fetch place details for ${resourceName}: ${response.status}`);
       console.error(`   Error details: ${errorText.substring(0, 200)}`);
@@ -726,6 +815,7 @@ function activityToPlaceResult(activity: Activity): PlaceResult {
     vicinity: activity.location.address,
     formatted_address: activity.location.address,
     description: activity.description,
+    ai_description: activity.aiDescription,
     formatted_phone_number: activity.phone,
     website: activity.website,
     geometry: {
@@ -766,7 +856,7 @@ async function getRecentlyShownWithTimestamps(
   const map = new Map<string, { timestamp: number; hoursSince: number }>();
   const now = Date.now();
 
-  data?.forEach(row => {
+  data?.forEach((row: { google_place_id: string | null; last_shown_at: string }) => {
     if (row.google_place_id && !map.has(row.google_place_id)) {
       const timestamp = new Date(row.last_shown_at).getTime();
       const hoursSince = (now - timestamp) / (1000 * 60 * 60);
@@ -789,7 +879,7 @@ export async function generateRecommendations(
     userLocation,
     homeLocation,
     workLocation,
-    maxDistance = user.preferences?.max_distance_miles || 5,
+    maxDistance = asPreferences(user.preferences).max_distance_miles || 5,
     maxResults = 30, // Increased for infinite scroll feed
     timeOfDay,
     priceRange,
@@ -799,6 +889,9 @@ export async function generateRecommendations(
     date, // Search for specific date
     openNow, // Only show places that are currently open
   } = params;
+
+  // Reset photo enrichment circuit breaker for this batch
+  resetEnrichmentCounter();
 
   console.log('Generating recommendations for user:', user.id);
   console.log('User interests:', user.interests);
@@ -814,7 +907,8 @@ export async function generateRecommendations(
   // FIRST SESSION DETECTION: Use curated picks for instant personalization
   // If user has no AI profile and no prior activity, serve hand-curated picks
   // ========================================================================
-  const hasFavoriteCategories = user.ai_profile?.favorite_categories?.length > 0;
+  const aiProfile = asAIProfile(user.ai_profile);
+  const hasFavoriteCategories = (aiProfile.favorite_categories?.length ?? 0) > 0;
   const isFirstSession = !hasFavoriteCategories && !user.last_active_date;
 
   if (isFirstSession) {
@@ -829,8 +923,8 @@ export async function generateRecommendations(
 
       if (cityInfo) {
         const currentTOD = getCurrentTimeOfDay();
-        const ageBracket = getAgeBracketFromUser(user);
-        const userInterestList = (user.interests || []) as string[];
+        const ageBracket = getAgeBracketFromUser(user as unknown as ExtendedUser);
+        const userInterestList = asInterests(user.interests);
 
         const curatedPicks = await getCuratedRecommendations(
           cityInfo.city,
@@ -901,6 +995,15 @@ export async function generateRecommendations(
 
           // Sort by score and return
           scoredCurated.sort((a, b) => b.score - a.score);
+
+          // Fire-and-forget: seed city cache in background for next load
+          if (cityInfo) {
+            const userCategories = getUserCategoriesForCaching(asInterests(user.interests));
+            seedCityData(cityInfo.city, cityInfo.state, cityInfo.lat, cityInfo.lng, userCategories.slice(0, 10), 60)
+              .then(count => console.log(`🌱 Background seed complete: ${count} places cached`))
+              .catch(err => console.warn('⚠️ Background seed failed:', err));
+          }
+
           return scoredCurated.slice(0, maxResults);
         }
 
@@ -1123,7 +1226,7 @@ export async function generateRecommendations(
   ];
 
   // Map user interests to prioritize certain category groups
-  const userInterests = user.interests || [];
+  const userInterests = asInterests(user.interests);
   if (userInterests.length > 0) {
     console.log(`🎯 User interests: ${userInterests.join(', ')}`);
   }
@@ -1135,7 +1238,7 @@ export async function generateRecommendations(
   console.log(`🔄 Mode: ${isInfiniteScrollMode ? 'Infinite Scroll' : 'Fresh Load'} | ${isExploreMode ? 'Explore' : 'Curated'}`);
 
   // Read discovery style preference (defaults to 'balanced')
-  const discoveryStyle: DiscoveryStyle = user.preferences?.discovery_style || 'balanced';
+  const discoveryStyle: DiscoveryStyle = asPreferences(user.preferences).discovery_style || 'balanced';
   const styleConfig = DISCOVERY_STYLE_CONFIG[discoveryStyle];
 
   // Query category groups in parallel for variety
@@ -1173,7 +1276,7 @@ export async function generateRecommendations(
           radius: Math.min(radiusMeters, 50000),
           maxResults: fetchLimit,
           includedTypes: group.types,
-          userInterests: user.interests as string[],
+          userInterests: asInterests(user.interests),
         })
       );
       const placeArrays = await Promise.all(placePromises);
@@ -1201,7 +1304,7 @@ export async function generateRecommendations(
       if ((!cacheStatus.exists || cacheStatus.isStale) && !apiDisabled) {
         console.log(`🌱 Cache ${!cacheStatus.exists ? 'missing' : 'stale'} - seeding ${cityInfo.city}...`);
 
-        const userCategories = getUserCategoriesForCaching(user.interests as string[] || []);
+        const userCategories = getUserCategoriesForCaching(asInterests(user.interests) || []);
 
         // Seed cache with user's interested categories only
         const seedCount = await seedCityData(
@@ -1234,7 +1337,7 @@ export async function generateRecommendations(
 
       // ⭐ CRITICAL: Handle empty cache gracefully
       if (cachedActivities.length === 0) {
-        console.warn('⚠️ No cached activities found - returning empty recommendations');
+        console.warn(`⚠️ No cached activities for ${cityInfo.city}, ${cityInfo.state} after seed attempt — check RLS policies and API key`);
         return [];
       }
 
@@ -1252,7 +1355,7 @@ export async function generateRecommendations(
             location: userLocation,
             radius: Math.min(radiusMeters, 50000),
             maxResults: 20,
-            userInterests: user.interests as string[],
+            userInterests: asInterests(user.interests),
           });
 
           // Filter to only keep Ticketmaster events (exclude Google Places duplicates)
@@ -1278,7 +1381,7 @@ export async function generateRecommendations(
       location: userLocation,
       radius: Math.min(radiusMeters, 50000),
       maxResults: 20,
-      userInterests: user.interests as string[],
+      userInterests: asInterests(user.interests),
     });
   }
 
@@ -1331,7 +1434,7 @@ export async function generateRecommendations(
         radius: expansionRadius,
         maxResults: fetchLimit, // Use same limit as initial query
         includedTypes: group.types,
-        userInterests: user.interests as string[],
+        userInterests: asInterests(user.interests),
       })
     );
 
@@ -1410,7 +1513,7 @@ export async function generateRecommendations(
       }
 
       if (!matchesCategory) {
-        console.log(`⏭️  Skipping (category filter): ${place.name} (${category})`);
+        if (DEBUG_RECS) console.log(`⏭️  Skipping (category filter): ${place.name} (${category})`);
         continue;
       }
     }
@@ -1419,7 +1522,7 @@ export async function generateRecommendations(
     if (minRating && minRating > 0) {
       const placeRating = place.rating || 0;
       if (placeRating < minRating) {
-        console.log(`⏭️  Skipping (low rating): ${place.name} (${placeRating} < ${minRating})`);
+        if (DEBUG_RECS) console.log(`⏭️  Skipping (low rating): ${place.name} (${placeRating} < ${minRating})`);
         continue;
       }
     }
@@ -1428,7 +1531,7 @@ export async function generateRecommendations(
     if (openNow) {
       const isOpen = place.opening_hours?.open_now ?? false;
       if (!isOpen) {
-        console.log(`⏭️  Skipping (closed): ${place.name}`);
+        if (DEBUG_RECS) console.log(`⏭️  Skipping (closed): ${place.name}`);
         continue;
       }
     }
@@ -1446,7 +1549,7 @@ export async function generateRecommendations(
     // These are low-value recommendations that clutter the feed
     // Even if user has "Shopping" interest, they don't want Walmart recommendations
     if (isGeneric) {
-      console.log(`⏭️  Skipping generic place (absolute filter): ${place.name}`);
+      if (DEBUG_RECS) console.log(`⏭️  Skipping generic place (absolute filter): ${place.name}`);
       continue;
     }
 
@@ -1460,13 +1563,13 @@ export async function generateRecommendations(
       // 1. Free/unknown (price_level = 0) - always include
       // 2. At or below user's max price (price_level <= priceRange)
       if (placePrice > 0 && placePrice > priceRange) {
-        console.log(`⏭️  Skipping place outside price range: ${place.name} (${'$'.repeat(placePrice)} vs max ${'$'.repeat(priceRange)})`);
+        if (DEBUG_RECS) console.log(`⏭️  Skipping place outside price range: ${place.name} (${'$'.repeat(placePrice)} vs max ${'$'.repeat(priceRange)})`);
         continue;
       }
     }
 
     // Log place type for debugging (interest match vs discovery)
-    console.log(`${matchesInterests ? '⭐' : '📍'} ${isPopular ? 'Popular place' : 'Place'}: ${place.name}`);
+    if (DEBUG_RECS) console.log(`${matchesInterests ? '⭐' : '📍'} ${isPopular ? 'Popular place' : 'Place'}: ${place.name}`);
 
     // Calculate score (with recency penalty - Phase 1.3)
     const scoreBreakdown = calculateActivityScore({
@@ -1476,7 +1579,7 @@ export async function generateRecommendations(
       user,
       homeLocation,
       workLocation,
-      timeOfDay,
+      timeOfDay: Array.isArray(timeOfDay) ? timeOfDay[0] : timeOfDay,
       recentlyShown, // Pass recency map for soft exclusion penalty
       upcomingCalendarEvents, // NEW: Pass calendar events for context-aware location scoring
       discoveryStyle, // Discovery style preference shapes scoring
@@ -1489,11 +1592,11 @@ export async function generateRecommendations(
 
     // Log high-quality matches for debugging
     if (matchesInterests && isPopular) {
-      console.log(`✨ EXCELLENT match: ${place.name} (interest + popular, score: ${scoreBreakdown.finalScore})`);
+      if (DEBUG_RECS) console.log(`✨ EXCELLENT match: ${place.name} (interest + popular, score: ${scoreBreakdown.finalScore})`);
     } else if (matchesInterests) {
-      console.log(`✓ Interest match: ${place.name} (score: ${scoreBreakdown.finalScore})`);
+      if (DEBUG_RECS) console.log(`✓ Interest match: ${place.name} (score: ${scoreBreakdown.finalScore})`);
     } else if (isPopular) {
-      console.log(`⭐ Popular place: ${place.name} (score: ${scoreBreakdown.finalScore})`);
+      if (DEBUG_RECS) console.log(`⭐ Popular place: ${place.name} (score: ${scoreBreakdown.finalScore})`);
     }
 
     // Generate AI explanation
@@ -1557,7 +1660,8 @@ export async function generateRecommendations(
     const businessHoursInfo = getBusinessHours(place.opening_hours, category);
 
     // Suggest best time to visit based on business hours
-    const suggestedTime = suggestVisitTime(businessHoursInfo.hours, timeOfDay, new Date());
+    const normalizedTimeOfDay = (Array.isArray(timeOfDay) ? timeOfDay[0] : timeOfDay) as 'morning' | 'afternoon' | 'evening' | undefined;
+    const suggestedTime = suggestVisitTime(businessHoursInfo.hours, normalizedTimeOfDay, new Date());
 
     scoredRecommendations.push({
       place,
@@ -1581,11 +1685,11 @@ export async function generateRecommendations(
   // Step 3.5: Add slight randomization to introduce variety on refresh
   // Keep top-scored items near the top, but shuffle middle/lower items more
   // IMPORTANT: Skip randomization for events - they need precise urgency ranking
-  const shuffledRecommendations = scoredRecommendations.map((rec, index) => {
+  let shuffledRecommendations = scoredRecommendations.map((rec, index) => {
     // Events need precise urgency ranking - NO randomization
     // Concert tonight must stay ranked above concert next week
     if (rec.place.source === 'ticketmaster') {
-      console.log(`🎫 Event (no randomization): ${rec.place.name} - score: ${rec.score}`);
+      if (DEBUG_RECS) console.log(`🎫 Event (no randomization): ${rec.place.name} - score: ${rec.score}`);
       return rec;
     }
 
@@ -1640,12 +1744,12 @@ export async function generateRecommendations(
           );
 
           if (scheduledPlaceIds.size > 0) {
-            console.log(`📅 Filtering out ${scheduledPlaceIds.size} activities already scheduled for today`);
+            if (DEBUG_RECS) console.log(`📅 Filtering out ${scheduledPlaceIds.size} activities already scheduled for today`);
 
             // Filter out recommendations matching today's scheduled activities
             shuffledRecommendations = shuffledRecommendations.filter(rec => {
               if (scheduledPlaceIds.has(rec.place.place_id)) {
-                console.log(`  ⏭️ Skipping "${rec.place.name}" (already scheduled today)`);
+                if (DEBUG_RECS) console.log(`  ⏭️ Skipping "${rec.place.name}" (already scheduled today)`);
                 return false;
               }
               return true;
@@ -1660,7 +1764,7 @@ export async function generateRecommendations(
   }
 
   // Step 4: Apply business rules (discovery style shapes category diversity)
-  const finalRecommendations = applyBusinessRules(shuffledRecommendations, maxResults, discoveryStyle);
+  const finalRecommendations = applyBusinessRules(shuffledRecommendations, maxResults, discoveryStyle, user, priceRange);
 
   console.log(`Returning ${finalRecommendations.length} recommendations`);
 
@@ -1755,8 +1859,8 @@ function calculateActivityScore(params: {
 
   // === BASE SCORE (50 → 55 points max for events) ===
   // Interest match guides scoring but doesn't filter - allow discovery
-  const userInterests = user.interests || [];
-  const topInterests = user.ai_profile?.favorite_categories || userInterests.slice(0, 3);
+  const userInterests = asInterests(user.interests);
+  const topInterests = asAIProfile(user.ai_profile).favorite_categories || userInterests.slice(0, 3);
   const { discoveryMode = 'for_you' } = params;
   const isEvent = place.source === 'ticketmaster';
 
@@ -1794,7 +1898,7 @@ function calculateActivityScore(params: {
   baseScore = Math.min(baseScore, 55); // Cap at 55 (raised from 50 to accommodate event bonus)
 
   // === LOCATION SCORE (20 points max) ===
-  const userMaxDistance = user.preferences?.max_distance_miles || 5;
+  const userMaxDistance = asPreferences(user.preferences).max_distance_miles || 5;
 
   if (distance <= 0.5) {
     locationScore = 20; // Very close
@@ -1825,7 +1929,7 @@ function calculateActivityScore(params: {
           !calendarEvent.location.coordinates ||
           !Array.isArray(calendarEvent.location.coordinates) ||
           calendarEvent.location.coordinates.length < 2) {
-        console.log(`⚠️ Skipping calendar event "${calendarEvent.title}" - invalid location data`);
+        if (DEBUG_RECS) console.log(`⚠️ Skipping calendar event "${calendarEvent.title}" - invalid location data`);
         continue;
       }
 
@@ -1843,7 +1947,7 @@ function calculateActivityScore(params: {
           // Very close to upcoming event (within 0.5 miles)
           const timeRelevance = hoursUntilEvent <= 24 ? 15 : 10; // Higher if event is tomorrow
           futureContextBonus = Math.max(futureContextBonus, timeRelevance);
-          console.log(`🎯 Near "${calendarEvent.title}" (${distanceFromEvent.toFixed(2)}mi): +${timeRelevance}`);
+          if (DEBUG_RECS) console.log(`🎯 Near "${calendarEvent.title}" (${distanceFromEvent.toFixed(2)}mi): +${timeRelevance}`);
         } else if (distanceFromEvent <= 1.5) {
           // Nearby upcoming event (within 1.5 miles)
           const timeRelevance = hoursUntilEvent <= 24 ? 10 : 6;
@@ -1860,7 +1964,7 @@ function calculateActivityScore(params: {
   const currentTimeOfDay = timeOfDay || getCurrentTimeOfDay();
 
   // Check user's time preferences
-  const preferredTimes = user.preferences?.preferred_times || [];
+  const preferredTimes = asPreferences(user.preferences).preferred_times || [];
   if (preferredTimes.includes(currentTimeOfDay)) {
     timeScore += 5;
   }
@@ -1880,8 +1984,9 @@ function calculateActivityScore(params: {
 
   // === DATA SOURCE INTEGRATIONS (Day 1 Sprint) ===
   // Source 1 & 2: Facebook Liked Places (EXACT match = +30, category only = +15)
-  if (user.facebook_data) {
-    const facebookData = user.facebook_data as FacebookData;
+  const extUser = user as unknown as ExtendedUser;
+  if (extUser.facebook_data) {
+    const facebookData = extUser.facebook_data;
     if (facebookData.liked_places && facebookData.liked_places.length > 0) {
       const facebookMatch = matchFacebookLikedPlace(
         facebookData.liked_places[0], // TODO: Check all liked places, not just first
@@ -1891,17 +1996,17 @@ function calculateActivityScore(params: {
 
       if (facebookMatch.type === 'exact') {
         facebookExactPlaceBoost = 30;
-        console.log(`🎯 FB EXACT MATCH: ${place.name} (+30 points)`);
+        if (DEBUG_RECS) console.log(`🎯 FB EXACT MATCH: ${place.name} (+30 points)`);
       } else if (facebookMatch.type === 'category') {
         facebookCategoryBoost = 15;
-        console.log(`📂 FB CATEGORY MATCH: ${category} (+15 points)`);
+        if (DEBUG_RECS) console.log(`📂 FB CATEGORY MATCH: ${category} (+15 points)`);
       }
     }
   }
 
   // Source 3 & 4: Google Timeline Visited Places (+20-35 for exact, +10-20 for category frequency)
-  if (user.google_timeline) {
-    const timelineData = user.google_timeline as GoogleTimelineData;
+  if (extUser.google_timeline) {
+    const timelineData = extUser.google_timeline;
     if (timelineData.visited_places && timelineData.visited_places.length > 0) {
       const timelineMatch = matchTimelineVisitedPlace(
         timelineData,
@@ -1913,7 +2018,7 @@ function calculateActivityScore(params: {
         if (timelineMatch.visitCount >= 1) {
           // This is an exact place match or strong category match
           googleTimelineVisitBoost = timelineMatch.boost;
-          console.log(`📍 TIMELINE MATCH: ${place.name} (${timelineMatch.visitCount} visits, +${timelineMatch.boost} points)`);
+          if (DEBUG_RECS) console.log(`📍 TIMELINE MATCH: ${place.name} (${timelineMatch.visitCount} visits, +${timelineMatch.boost} points)`);
 
           // Apply freshness factor (prefer recent visits)
           const visitedPlace = timelineData.visited_places.find(
@@ -1922,12 +2027,12 @@ function calculateActivityScore(params: {
           if (visitedPlace) {
             const freshness = calculateFreshnessFactor(visitedPlace.last_visit);
             googleTimelineVisitBoost = Math.round(googleTimelineVisitBoost * freshness);
-            console.log(`  ⏰ Freshness factor: ${freshness}x → ${googleTimelineVisitBoost} points`);
+            if (DEBUG_RECS) console.log(`  ⏰ Freshness factor: ${freshness}x → ${googleTimelineVisitBoost} points`);
           }
         } else {
           // Category frequency match
           googleTimelineCategoryBoost = timelineMatch.boost;
-          console.log(`📊 CATEGORY FREQUENCY: ${category} (+${timelineMatch.boost} points)`);
+          if (DEBUG_RECS) console.log(`📊 CATEGORY FREQUENCY: ${category} (+${timelineMatch.boost} points)`);
         }
       }
     }
@@ -1935,10 +2040,11 @@ function calculateActivityScore(params: {
 
   // Source 5: Calendar Patterns (time-based boosting based on user's schedule)
   // Analyze user's calendar for recurring patterns (e.g., "Dinner every Friday 7pm")
-  if (user.ai_profile?.calendar_patterns) {
-    const patterns = user.ai_profile.calendar_patterns;
+  const aiProfileData = asAIProfile(user.ai_profile);
+  if (aiProfileData.calendar_patterns) {
+    const patterns = aiProfileData.calendar_patterns;
     const now = new Date();
-    const currentDay = now.toLocaleDateString('en-US', { weekday: 'lowercase' });
+    const currentDay = now.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
     const currentHour = now.getHours();
 
     for (const pattern of patterns) {
@@ -1953,37 +2059,37 @@ function calculateActivityScore(params: {
         // Strong match if within 2 hours of usual time
         if (Math.abs(currentHour - patternHour) <= 2) {
           calendarPatternBoost = 25;
-          console.log(`📅 STRONG CALENDAR PATTERN: ${category} on ${currentDay} at ${pattern.time} (+25 points)`);
+          if (DEBUG_RECS) console.log(`📅 STRONG CALENDAR PATTERN: ${category} on ${currentDay} at ${pattern.time} (+25 points)`);
           break;
         }
         // Moderate match if same day
         else {
           calendarPatternBoost = Math.max(calendarPatternBoost, 15);
-          console.log(`📅 CALENDAR PATTERN: ${category} on ${currentDay} (+15 points)`);
+          if (DEBUG_RECS) console.log(`📅 CALENDAR PATTERN: ${category} on ${currentDay} (+15 points)`);
         }
       }
     }
   }
 
   // Source 6: Budget/Price Matching (inferred from user's budget level)
-  const userBudgetLevel = user.ai_profile?.budget_level || user.preferences?.budget || 2;
+  const userBudgetLevel = aiProfileData.budget_level || asPreferences(user.preferences).budget || 2;
   const placePriceLevel = place.price_level || 0;
 
   if (placePriceLevel > 0) {
     // Perfect match (same price level)
     if (placePriceLevel === userBudgetLevel) {
       budgetBoost = 15;
-      console.log(`💰 PERFECT PRICE MATCH: ${'$'.repeat(placePriceLevel)} (+15 points)`);
+      if (DEBUG_RECS) console.log(`💰 PERFECT PRICE MATCH: ${'$'.repeat(placePriceLevel)} (+15 points)`);
     }
     // One level off (acceptable)
     else if (Math.abs(placePriceLevel - userBudgetLevel) === 1) {
       budgetBoost = 5;
-      console.log(`💵 CLOSE PRICE MATCH: ${'$'.repeat(placePriceLevel)} vs ${'$'.repeat(userBudgetLevel)} (+5 points)`);
+      if (DEBUG_RECS) console.log(`💵 CLOSE PRICE MATCH: ${'$'.repeat(placePriceLevel)} vs ${'$'.repeat(userBudgetLevel)} (+5 points)`);
     }
     // Two levels off (too expensive or too cheap)
     else if (Math.abs(placePriceLevel - userBudgetLevel) >= 2) {
       budgetBoost = -10;
-      console.log(`💸 PRICE MISMATCH: ${'$'.repeat(placePriceLevel)} vs ${'$'.repeat(userBudgetLevel)} (-10 points)`);
+      if (DEBUG_RECS) console.log(`💸 PRICE MISMATCH: ${'$'.repeat(placePriceLevel)} vs ${'$'.repeat(userBudgetLevel)} (-10 points)`);
     }
   }
 
@@ -2016,7 +2122,7 @@ function calculateActivityScore(params: {
         rawBoost = 15; // Been here once (1 visit)
       }
       loopVisitHistoryBoost = Math.round(rawBoost * styleConfig.visitMultiplier);
-      console.log(`🔄 LOOP VISIT: ${place.name} (${visitCount} visits, +${loopVisitHistoryBoost} pts, ${discoveryStyle} ×${styleConfig.visitMultiplier})`);
+      if (DEBUG_RECS) console.log(`🔄 LOOP VISIT: ${place.name} (${visitCount} visits, +${loopVisitHistoryBoost} pts, ${discoveryStyle} ×${styleConfig.visitMultiplier})`);
     }
   }
 
@@ -2031,32 +2137,32 @@ function calculateActivityScore(params: {
       // Strong positive feedback
       if (netRating >= 2) {
         loopFeedbackBoost = 20; // Multiple thumbs up
-        console.log(`👍👍 LOVED THIS: ${place.name} (+${thumbsUp}, -${thumbsDown}, +20 points)`);
+        if (DEBUG_RECS) console.log(`👍👍 LOVED THIS: ${place.name} (+${thumbsUp}, -${thumbsDown}, +20 points)`);
       } else if (netRating === 1) {
         loopFeedbackBoost = 15; // Positive overall
-        console.log(`👍 LIKED THIS: ${place.name} (+${thumbsUp}, -${thumbsDown}, +15 points)`);
+        if (DEBUG_RECS) console.log(`👍 LIKED THIS: ${place.name} (+${thumbsUp}, -${thumbsDown}, +15 points)`);
       }
       // Neutral feedback (mixed reviews)
       else if (netRating === 0) {
         loopFeedbackBoost = 0; // Neutral
-        console.log(`😐 MIXED FEELINGS: ${place.name} (+${thumbsUp}, -${thumbsDown}, 0 points)`);
+        if (DEBUG_RECS) console.log(`😐 MIXED FEELINGS: ${place.name} (+${thumbsUp}, -${thumbsDown}, 0 points)`);
       }
       // Negative feedback
       else if (netRating === -1) {
         loopFeedbackBoost = -10; // Slight dislike
-        console.log(`👎 DISLIKED: ${place.name} (+${thumbsUp}, -${thumbsDown}, -10 points)`);
+        if (DEBUG_RECS) console.log(`👎 DISLIKED: ${place.name} (+${thumbsUp}, -${thumbsDown}, -10 points)`);
       } else {
         loopFeedbackBoost = -20; // Strong negative
-        console.log(`👎👎 DID NOT LIKE: ${place.name} (+${thumbsUp}, -${thumbsDown}, -20 points)`);
+        if (DEBUG_RECS) console.log(`👎👎 DID NOT LIKE: ${place.name} (+${thumbsUp}, -${thumbsDown}, -20 points)`);
 
         // Extra penalty if specific negative tags match this category
         if (tags.includes('Too expensive') && placePriceLevel >= 3) {
           loopFeedbackBoost -= 5;
-          console.log(`  💸 User said "too expensive" before → -5 more`);
+          if (DEBUG_RECS) console.log(`  💸 User said "too expensive" before → -5 more`);
         }
         if (tags.includes('Too far') && distance > 3) {
           loopFeedbackBoost -= 5;
-          console.log(`  🚗 User said "too far" before → -5 more`);
+          if (DEBUG_RECS) console.log(`  🚗 User said "too far" before → -5 more`);
         }
       }
     }
@@ -2075,19 +2181,19 @@ function calculateActivityScore(params: {
     // Friend visit boost: +25 if any friend visited in last 7 days
     if (socialContext.recentFriendVisits > 0) {
       friendVisitBoost = 25;
-      console.log(`\ud83d\udc65 FRIEND VISITED: ${place.name} (${socialContext.recentFriendVisits} recent visits, +25 points)`);
+      if (DEBUG_RECS) console.log(`\ud83d\udc65 FRIEND VISITED: ${place.name} (${socialContext.recentFriendVisits} recent visits, +25 points)`);
     }
 
     // Friend photo boost: +15 if place has friend moments
     if (socialContext.hasFriendMoments) {
       friendPhotoBoost = 15;
-      console.log(`\ud83d\udcf8 FRIEND MOMENT: ${place.name} (${socialContext.friendMomentsCount} moments, +15 points)`);
+      if (DEBUG_RECS) console.log(`\ud83d\udcf8 FRIEND MOMENT: ${place.name} (${socialContext.friendMomentsCount} moments, +15 points)`);
     }
 
     // Trending with friends: +20 if 2+ friends visited this week
     if (socialContext.recentFriendVisits >= 2) {
       trendingFriendsBoost = 20;
-      console.log(`\ud83d\udd25 TRENDING WITH FRIENDS: ${place.name} (${socialContext.recentFriendVisits} friends, +20 points)`);
+      if (DEBUG_RECS) console.log(`\ud83d\udd25 TRENDING WITH FRIENDS: ${place.name} (${socialContext.recentFriendVisits} friends, +20 points)`);
     }
   }
 
@@ -2115,12 +2221,12 @@ function calculateActivityScore(params: {
     },
   };
 
-  const userAgeBracket = getAgeBracketFromUser(user);
+  const userAgeBracket = getAgeBracketFromUser(extUser);
   if (userAgeBracket && AGE_BRACKET_PREFERENCES[userAgeBracket]) {
     const prefs = AGE_BRACKET_PREFERENCES[userAgeBracket];
     ageBracketBoost = prefs[category] || 0;
     if (ageBracketBoost !== 0) {
-      console.log(`🎂 AGE BRACKET (${userAgeBracket}): ${category} → ${ageBracketBoost > 0 ? '+' : ''}${ageBracketBoost} points`);
+      if (DEBUG_RECS) console.log(`🎂 AGE BRACKET (${userAgeBracket}): ${category} → ${ageBracketBoost > 0 ? '+' : ''}${ageBracketBoost} points`);
     }
   }
 
@@ -2163,7 +2269,7 @@ function calculateActivityScore(params: {
     }
     recencyPenalty = Math.round(rawPenalty * styleConfig.recencyMultiplier);
     if (recencyPenalty !== 0) {
-      console.log(`⏱️  ${place.name}: ${recencyPenalty} pts (shown ${hoursSince.toFixed(1)}h ago, ${discoveryStyle} ×${styleConfig.recencyMultiplier})`);
+      if (DEBUG_RECS) console.log(`⏱️  ${place.name}: ${recencyPenalty} pts (shown ${hoursSince.toFixed(1)}h ago, ${discoveryStyle} ×${styleConfig.recencyMultiplier})`);
     }
     // After 72h: no penalty (fully eligible)
   }
@@ -2177,27 +2283,27 @@ function calculateActivityScore(params: {
     if (hoursUntilEvent < 0) {
       // Event already passed - exclude from results
       eventUrgencyScore = -100;
-      console.log(`⏳ Event passed: -100 (removed from feed)`);
+      if (DEBUG_RECS) console.log(`⏳ Event passed: -100 (removed from feed)`);
     } else if (hoursUntilEvent <= 24) {
       // Event TODAY or tomorrow - MAXIMUM urgency
       eventUrgencyScore = 15;
-      console.log(`🚨 URGENT (${hoursUntilEvent.toFixed(1)}h): +15`);
+      if (DEBUG_RECS) console.log(`🚨 URGENT (${hoursUntilEvent.toFixed(1)}h): +15`);
     } else if (hoursUntilEvent <= 72) {
       // Event in 1-3 days - HIGH urgency
       eventUrgencyScore = 12;
-      console.log(`⏰ Soon (${(hoursUntilEvent/24).toFixed(1)}d): +12`);
+      if (DEBUG_RECS) console.log(`⏰ Soon (${(hoursUntilEvent/24).toFixed(1)}d): +12`);
     } else if (hoursUntilEvent <= 168) {
       // Event this week (3-7 days) - MODERATE urgency
       eventUrgencyScore = 8;
-      console.log(`📅 This week: +8`);
+      if (DEBUG_RECS) console.log(`📅 This week: +8`);
     } else if (hoursUntilEvent <= 720) {
       // Event this month (7-30 days) - MILD urgency
       eventUrgencyScore = 4;
-      console.log(`📆 This month: +4`);
+      if (DEBUG_RECS) console.log(`📆 This month: +4`);
     } else {
       // Event 30+ days away - LOW urgency
       eventUrgencyScore = 2;
-      console.log(`🗓️  Distant: +2`);
+      if (DEBUG_RECS) console.log(`🗓️  Distant: +2`);
     }
   }
 
@@ -2513,8 +2619,8 @@ function generateExplanation(params: {
     }
 
     // Interest match for events
-    const interests = user.interests || [];
-    const matchingInterest = interests.find(interest =>
+    const interests = asInterests(user.interests);
+    const matchingInterest = interests.find((interest: string) =>
       category.toLowerCase().includes(interest.toLowerCase()) ||
       place.name.toLowerCase().includes(interest.toLowerCase())
     );
@@ -2540,7 +2646,7 @@ function generateExplanation(params: {
   // REGULAR PLACE EXPLANATIONS (Google Places, restaurants, etc.)
   // v4.0 - Richer "why" explanations with feedback awareness and specificity
 
-  const interests = user.interests || [];
+  const interests = asInterests(user.interests);
   const rating = place.rating || 0;
   const reviewCount = place.user_ratings_total || 0;
   const isOnRoute = scoreBreakdown.locationScore >= 15;
@@ -2548,7 +2654,7 @@ function generateExplanation(params: {
   const hour = now.getHours();
 
   // Find matching interest
-  const matchingInterest = interests.find(interest =>
+  const matchingInterest = interests.find((interest: string) =>
     category.toLowerCase().includes(interest.toLowerCase()) ||
     place.name.toLowerCase().includes(interest.toLowerCase())
   );
@@ -2561,7 +2667,10 @@ function generateExplanation(params: {
   const specificType = getSpecificPlaceType(place, category);
 
   // 1. BUILD COMPELLING OPENING (what makes this special)
-  if (matchingInterest && rating >= 4.5 && reviewCount >= 100) {
+  // Priority: Use Gemini AI description if available (cached at seed time)
+  if (place.ai_description) {
+    parts.push(place.ai_description);
+  } else if (matchingInterest && rating >= 4.5 && reviewCount >= 100) {
     // Strong match: interest + highly rated + popular
     parts.push(`Perfect for your ${matchingInterest} craving — ${rating}★ with ${reviewCount.toLocaleString()}+ reviews`);
   } else if (matchingInterest && rating >= 4.0) {
@@ -2655,9 +2764,9 @@ function deduplicateEventsByNameAndDate(
         const existing = seen.get(uniqueKey)!;
         if (rec.score > existing.score) {
           seen.set(uniqueKey, rec);
-          console.log(`🔄 Duplicate event replaced: ${rec.place.name} on ${dateKey} (higher score)`);
+          if (DEBUG_RECS) console.log(`🔄 Duplicate event replaced: ${rec.place.name} on ${dateKey} (higher score)`);
         } else {
-          console.log(`🔄 Duplicate event removed: ${rec.place.name} on ${dateKey}`);
+          if (DEBUG_RECS) console.log(`🔄 Duplicate event removed: ${rec.place.name} on ${dateKey}`);
         }
       } else {
         seen.set(uniqueKey, rec);
@@ -2693,7 +2802,7 @@ function preventConsecutiveDuplicates(
       result.push(rec);
       lastPlaceId = rec.place.place_id;
     } else {
-      console.log(`⏭️ Skipping consecutive duplicate: ${rec.place.name}`);
+      if (DEBUG_RECS) console.log(`⏭️ Skipping consecutive duplicate: ${rec.place.name}`);
     }
   }
 
@@ -2710,6 +2819,8 @@ function applyBusinessRules(
   recommendations: ScoredRecommendation[],
   maxResults: number,
   discoveryStyle: DiscoveryStyle = 'balanced',
+  user?: User,
+  priceRange?: 'any' | 1 | 2 | 3 | 4,
 ): ScoredRecommendation[] {
   // Rule 1: Max 2 sponsored activities in top 5
   const top5 = recommendations.slice(0, 5);
@@ -2853,7 +2964,7 @@ function applyBusinessRules(
   // Rule 6: Soft budget filter — exclude places 2+ levels above user's budget
   // Only applies when no explicit UI price filter is set
   if (!priceRange || priceRange === 'any') {
-    const userBudget = user.ai_profile?.budget_level || user.preferences?.budget || 2;
+    const userBudget = (user ? asAIProfile(user.ai_profile).budget_level : undefined) || (user ? asPreferences(user.preferences).budget : undefined) || 2;
     const beforeCount = balancedRecommendations.length;
     balancedRecommendations = balancedRecommendations.filter(rec => {
       const price = rec.place?.price_level || 0;
@@ -2895,7 +3006,7 @@ export async function getRecommendationsByCategory(
   const places = await searchNearbyPlaces({
     location: userLocation,
     radius: Math.min(radiusMeters, 50000),
-    type: placeType,
+    includedTypes: [placeType],
     maxResults: 20,
   });
 
@@ -2994,7 +3105,7 @@ export async function generateGroupRecommendations(
   const places = await searchNearbyPlaces({
     location: midpoint,
     radius: Math.min(radiusMeters, 50000),
-    type: typeFilter.size > 0 ? [...typeFilter][0] : undefined,
+    includedTypes: typeFilter.size > 0 ? [...typeFilter] : undefined,
     maxResults: 50,
   });
 

@@ -58,7 +58,7 @@ export function CombinedMapView({
       return;
     }
 
-    const allCoordinates: Array<{ latitude: number; longitude: number }> = [];
+    const allCoordinates: { latitude: number; longitude: number }[] = [];
 
     // Add user location
     if (userLocation) {
@@ -113,7 +113,7 @@ export function CombinedMapView({
   const fitMapToMarkers = () => {
     if (!mapRef.current) return;
 
-    const coordinates: Array<{ latitude: number; longitude: number }> = [];
+    const coordinates: { latitude: number; longitude: number }[] = [];
 
     if (userLocation) coordinates.push(userLocation);
 

@@ -8,14 +8,26 @@
 
 import { Platform } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
-import {
-  GoogleSignin,
-  isSuccessResponse,
-  isErrorWithCode,
-  statusCodes,
-} from '@react-native-google-signin/google-signin';
 import { supabase } from '@/lib/supabase';
 import { extractGoogleInterests, type ExtractedGoogleData } from '@/services/google-data';
+
+// Lazy-load Google Sign-In to avoid crash in Expo Go (no native RNGoogleSignin module)
+let GoogleSignin: any = null;
+let isSuccessResponse: any = null;
+let isErrorWithCode: any = null;
+let statusCodes: any = null;
+let googleSignInAvailable = false;
+
+try {
+  const googleModule = require('@react-native-google-signin/google-signin');
+  GoogleSignin = googleModule.GoogleSignin;
+  isSuccessResponse = googleModule.isSuccessResponse;
+  isErrorWithCode = googleModule.isErrorWithCode;
+  statusCodes = googleModule.statusCodes;
+  googleSignInAvailable = true;
+} catch {
+  console.warn('⚠️ @react-native-google-signin/google-signin not available (expected in Expo Go). Google native sign-in disabled.');
+}
 
 // ============================================================================
 // CONFIGURATION
@@ -32,6 +44,10 @@ let googleConfigured = false;
  */
 export function configureGoogleSignIn(): void {
   if (googleConfigured) return;
+  if (!googleSignInAvailable) {
+    console.warn('⚠️ Google Sign-In native module not available, skipping configuration');
+    return;
+  }
 
   try {
     GoogleSignin.configure({
@@ -73,6 +89,11 @@ export interface GoogleSignInResult {
  * Extracts user interests from YouTube subscriptions
  */
 export async function signInWithGoogleNative(): Promise<GoogleSignInResult> {
+  if (!googleSignInAvailable) {
+    console.log('Google native sign-in not available, falling back to OAuth redirect');
+    return signInWithGoogleOAuth();
+  }
+
   try {
     // Ensure Google is configured
     configureGoogleSignIn();
@@ -196,6 +217,7 @@ async function signInWithGoogleOAuth(): Promise<GoogleSignInResult> {
  * Sign out from Google
  */
 export async function signOutFromGoogle(): Promise<void> {
+  if (!googleSignInAvailable) return;
   try {
     await GoogleSignin.signOut();
   } catch (error) {
@@ -207,6 +229,7 @@ export async function signOutFromGoogle(): Promise<void> {
  * Check if user is currently signed in with Google
  */
 export async function isGoogleSignedIn(): Promise<boolean> {
+  if (!googleSignInAvailable) return false;
   try {
     return await (GoogleSignin as any).isSignedIn();
   } catch {

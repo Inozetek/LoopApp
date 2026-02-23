@@ -14,6 +14,7 @@ import {
 import { type ExtractedGoogleData } from '@/services/google-data';
 import { registerPushToken } from '@/services/radar-push-service';
 import { checkAndUpdateStreak } from '@/services/gamification-service';
+import { trackSignUp, trackLogin, trackEvent } from '@/utils/analytics';
 
 // Required for OAuth redirect
 WebBrowser.maybeCompleteAuthSession();
@@ -135,7 +136,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         // Catch any unexpected errors and clear state
         console.log('🔄 Auth initialization error, clearing state');
-        await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+        await supabase.auth.signOut({ scope: 'local' }).catch((err: unknown) => {
+          console.warn('[auth] signOut during error recovery failed:', (err as Error)?.message);
+        });
         setSession(null);
         setUser(null);
         setLoading(false);
@@ -204,7 +207,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else if (data) {
         setUser(data);
         // Register push token for notifications (non-blocking)
-        registerPushToken(data.id).catch(() => {});
+        registerPushToken(data.id).catch((err) => {
+          console.warn('[auth] Push token registration failed:', err?.message);
+        });
         // Check/update daily streak (non-blocking)
         void checkAndUpdateStreak(data.id);
         // Fetch business profile if account_type is 'business'
@@ -253,6 +258,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Note: User profile will be created during onboarding
+      if (data.user) {
+        trackSignUp(data.user.id, 'email');
+      }
       return { error: null, user: data.user };
     } catch (error) {
       console.error('Sign up error:', error);
@@ -279,12 +287,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signIn(email: string, password: string) {
     try {
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
       });
 
       if (error) throw error;
+
+      if (data.session?.user) {
+        trackLogin(data.session.user.id, 'email');
+      }
 
       return { error: null };
     } catch (error) {
@@ -312,6 +324,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
+      // Track Google sign-in (userId available from native sign-in result)
+      if (result.user?.id) {
+        trackLogin(result.user.id, 'google');
+      }
+
       return { error: null, extractedData: result.extractedData };
     } catch (error) {
       console.error('Google sign in error:', error);
@@ -327,6 +344,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await signInWithAppleNative();
 
       if (error) throw error;
+
+      // Track Apple sign-in (get userId from current session)
+      const { data: { session: appleSession } } = await supabase.auth.getSession();
+      if (appleSession?.user?.id) {
+        trackLogin(appleSession.user.id, 'apple');
+      }
 
       return { error: null };
     } catch (error) {
@@ -383,9 +406,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signOut() {
     try {
+      // Capture user ID before sign-out clears the state
+      const signingOutUserId = user?.id;
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
       setUser(null);
+      if (signingOutUserId) {
+        trackEvent('user_signed_out', {}, signingOutUserId);
+      }
       return { error: null };
     } catch (error) {
       console.error('Sign out error:', error);

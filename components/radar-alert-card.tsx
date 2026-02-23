@@ -32,8 +32,8 @@ import { LinearGradient } from 'expo-linear-gradient';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ThemeColors, BrandColors, Shadows, Spacing, BorderRadius } from '@/constants/brand';
-import type { HookNotification } from '@/types/radar';
-import type { RadarMatch } from '@/types/radar';
+import type { HookNotification , RadarMatch } from '@/types/radar';
+
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const CARD_MARGIN = 8;
@@ -95,7 +95,9 @@ export function RadarAlertCard({
   const handleGetTickets = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     if (hasTicketUrl && event?.ticketUrl) {
-      Linking.openURL(event.ticketUrl).catch(() => {});
+      Linking.openURL(event.ticketUrl).catch((err) => {
+        console.warn('[radar-alert] failed to open ticket URL:', err?.message);
+      });
     }
     onGetTickets?.();
   };
@@ -136,7 +138,12 @@ export function RadarAlertCard({
             <Ionicons name="radio-outline" size={14} color={BrandColors.loopPurple} />
             <Text style={styles.radarBadgeText}>ON YOUR RADAR</Text>
           </View>
-          <Pressable onPress={handleDismiss} hitSlop={12}>
+          <Pressable
+            onPress={handleDismiss}
+            hitSlop={12}
+            accessibilityLabel="Dismiss radar alert"
+            accessibilityRole="button"
+          >
             <Ionicons name="close" size={18} color={colors.textSecondary} />
           </Pressable>
         </View>
@@ -234,12 +241,22 @@ export function RadarAlertCard({
         {/* Action buttons */}
         <View style={styles.actionRow}>
           {isPlaceResult ? (
-            <Pressable style={styles.primaryButton} onPress={handleSave}>
+            <Pressable
+              style={styles.primaryButton}
+              onPress={handleSave}
+              accessibilityLabel={`View details for ${isPlaceResult ? place!.name : (event?.name || notification.title)}`}
+              accessibilityRole="button"
+            >
               <Ionicons name="add-circle-outline" size={16} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>View Details</Text>
             </Pressable>
           ) : hasTicketUrl ? (
-            <Pressable style={styles.primaryButton} onPress={handleGetTickets}>
+            <Pressable
+              style={styles.primaryButton}
+              onPress={handleGetTickets}
+              accessibilityLabel={`Get tickets for ${event?.name || notification.title}`}
+              accessibilityRole="button"
+            >
               <Ionicons name="ticket-outline" size={16} color="#FFFFFF" />
               <Text style={styles.primaryButtonText}>Get Tickets</Text>
             </Pressable>
@@ -247,6 +264,8 @@ export function RadarAlertCard({
           <Pressable
             style={[styles.secondaryButton, { borderColor: colors.border }]}
             onPress={handleSave}
+            accessibilityLabel={`Save ${isPlaceResult ? place!.name : (event?.name || notification.title)}`}
+            accessibilityRole="button"
           >
             <Ionicons name="bookmark-outline" size={16} color={colors.text} />
             <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Save</Text>

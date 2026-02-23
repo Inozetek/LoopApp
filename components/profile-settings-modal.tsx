@@ -18,7 +18,7 @@ import {
   TextInput,
   ScrollView,
   Alert,
-} from 'react-native';
+ Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
@@ -31,7 +31,7 @@ import {
   getLocationPermissionStatus,
   requestLocationPermissions,
 } from '@/services/location-service';
-import { Linking } from 'react-native';
+
 import { handleError, validateRequired } from '@/utils/error-handler';
 import { ONBOARDING_INTERESTS, INTEREST_GROUPS } from '@/constants/activity-categories';
 import { DragHandle } from '@/components/drag-handle';

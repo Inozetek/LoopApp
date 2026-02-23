@@ -161,7 +161,7 @@ export async function loadRecommendationsFromDB(
       }
 
       console.log(`📥 Loaded ${staleFiltered.length} stale recommendations as fallback (older than 24h, mode=${discoveryMode})`);
-      return staleFiltered.map((record: any) => {
+      const staleRecs = staleFiltered.map((record: any) => {
         const rec = record.recommendation_data as Recommendation;
         if (!rec.scoreBreakdown && rec.score) {
           rec.scoreBreakdown = {
@@ -176,6 +176,17 @@ export async function loadRecommendationsFromDB(
         }
         return rec;
       });
+      // Reconstruct photos for stale recs too
+      const staleApiKey = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+      for (const rec of staleRecs) {
+        if ((!rec.imageUrl || rec.imageUrl === '') && rec.photoReferences?.length && staleApiKey) {
+          const ref = rec.photoReferences.find((r: string) => r?.startsWith('places/') && r.includes('/photos/'));
+          if (ref) {
+            rec.imageUrl = `https://places.googleapis.com/v1/${ref}/media?key=${staleApiKey}&maxHeightPx=400&maxWidthPx=600`;
+          }
+        }
+      }
+      return staleRecs;
     }
 
     // DISCOVERY MODE FILTER: Only return recs matching the current mode
@@ -226,11 +237,34 @@ export async function loadRecommendationsFromDB(
       return rec;
     });
 
-    // Check if cached recommendations have photos
-    const withoutPhotos = recommendations.filter((r: any) => !r.imageUrl || r.imageUrl === '');
-    if (withoutPhotos.length > 0) {
-      console.log(`⚠️ ${withoutPhotos.length} cached recommendations missing photos - refresh recommended`);
-      console.log(`   Tip: Pull to refresh to get fresh recommendations with photos`);
+    // Reconstruct photos from cached photo references (zero API calls - just URL construction)
+    const API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
+    let reconstructedCount = 0;
+    for (const rec of recommendations) {
+      if ((!rec.imageUrl || rec.imageUrl === '') && rec.photoReferences && rec.photoReferences.length > 0 && API_KEY) {
+        // Rebuild photo URLs from stored references (no API call - just string concatenation)
+        const validRefs = rec.photoReferences.filter(
+          (ref: string) => ref && ref.startsWith('places/') && ref.includes('/photos/')
+        );
+        if (validRefs.length > 0) {
+          rec.imageUrl = `https://places.googleapis.com/v1/${validRefs[0]}/media?key=${API_KEY}&maxHeightPx=400&maxWidthPx=600`;
+          if (validRefs.length >= 2) {
+            rec.photos = validRefs.map(
+              (ref: string) => `https://places.googleapis.com/v1/${ref}/media?key=${API_KEY}&maxHeightPx=400&maxWidthPx=600`
+            );
+          }
+          reconstructedCount++;
+        }
+      }
+    }
+    if (reconstructedCount > 0) {
+      console.log(`🔧 Reconstructed photos for ${reconstructedCount} cached recommendations from stored references`);
+    }
+
+    // Report any remaining without photos (old cache without references)
+    const stillMissing = recommendations.filter((r: any) => !r.imageUrl || r.imageUrl === '');
+    if (stillMissing.length > 0) {
+      console.log(`⚠️ ${stillMissing.length} cached recommendations still missing photos (no stored references)`);
     }
 
     return recommendations;

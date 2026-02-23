@@ -108,7 +108,9 @@ export async function trackImpression(businessProfileId: string): Promise<void> 
     table_name: 'business_profiles',
     field_name: 'total_impressions',
     row_id: businessProfileId,
-  }).catch(() => {});
+  }).catch((err: unknown) => {
+    console.warn('[business] increment_field(total_impressions) failed:', (err as Error)?.message);
+  });
 }
 
 export async function trackClick(businessProfileId: string): Promise<void> {
@@ -119,7 +121,9 @@ export async function trackClick(businessProfileId: string): Promise<void> {
     .upsert(
       { business_profile_id: businessProfileId, date: today, clicks: 1 },
       { onConflict: 'business_profile_id,date' }
-    ).catch(() => {});
+    ).catch((err: unknown) => {
+      console.warn('[business] trackClick upsert failed:', (err as Error)?.message);
+    });
 }
 
 export async function trackCalendarAdd(businessProfileId: string): Promise<void> {
@@ -130,5 +134,7 @@ export async function trackCalendarAdd(businessProfileId: string): Promise<void>
     .upsert(
       { business_profile_id: businessProfileId, date: today, calendar_adds: 1 },
       { onConflict: 'business_profile_id,date' }
-    ).catch(() => {});
+    ).catch((err: unknown) => {
+      console.warn('[business] trackCalendarAdd upsert failed:', (err as Error)?.message);
+    });
 }

@@ -1,4 +1,5 @@
 import { Activity, GooglePlaceResult, GooglePlaceDetails, Location } from '@/types/activity';
+import { safeFetch } from '@/utils/safe-fetch';
 
 const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY;
 // New Places API (New) endpoints
@@ -54,7 +55,7 @@ export async function searchNearbyActivities(
     }
 
     const response = await rateLimitedPlacesRequest(() =>
-      fetch(`${PLACES_API_BASE}:searchNearby`, {
+      safeFetch(`${PLACES_API_BASE}:searchNearby`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -62,7 +63,7 @@ export async function searchNearbyActivities(
           'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location,places.rating,places.userRatingCount,places.priceLevel,places.types,places.photos,places.currentOpeningHours,places.editorialSummary,places.reviews',
         },
         body: JSON.stringify(requestBody),
-      })
+      }, { context: 'google-places:searchNearby' })
     );
 
     const data = await response.json();
@@ -102,14 +103,14 @@ export async function getPlaceDetails(placeId: string): Promise<GooglePlaceDetai
 
     // New Places API (New) format with rate limiting
     const response = await rateLimitedPlacesRequest(() =>
-      fetch(`${PLACES_API_BASE}/${placeId}`, {
+      safeFetch(`${PLACES_API_BASE}/${placeId}`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
           'X-Goog-FieldMask': 'id,displayName,formattedAddress,internationalPhoneNumber,websiteUri,rating,userRatingCount,priceLevel,location,photos,currentOpeningHours,types,reviews,editorialSummary',
         },
-      })
+      }, { context: 'google-places:getPlaceDetails' })
     );
 
     const data = await response.json();
@@ -516,7 +517,7 @@ export async function getPlaceReviews(placeId: string): Promise<PlaceReview[]> {
     const { rateLimitedPlacesRequest } = await import('@/utils/api-rate-limiter');
 
     const response = await rateLimitedPlacesRequest(() =>
-      fetch(
+      safeFetch(
         `${PLACES_API_BASE}/${placeId}`,
         {
           method: 'GET',
@@ -525,7 +526,8 @@ export async function getPlaceReviews(placeId: string): Promise<PlaceReview[]> {
             'X-Goog-Api-Key': GOOGLE_PLACES_API_KEY,
             'X-Goog-FieldMask': 'reviews', // Only request reviews field to minimize cost
           },
-        }
+        },
+        { context: 'google-places:getPlaceReviews' },
       )
     );
 
