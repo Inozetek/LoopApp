@@ -1,4 +1,6 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import * as Network from 'expo-network';
+import { AppState } from 'react-native';
 
 interface NetworkContextType {
   isConnected: boolean;
@@ -14,24 +16,28 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   const [isConnected, setIsConnected] = useState(true);
   const [isInternetReachable, setIsInternetReachable] = useState<boolean | null>(true);
 
-  useEffect(() => {
-    let unsubscribe: (() => void) | undefined;
-
+  const checkNetwork = useCallback(async () => {
     try {
-      // Dynamic require so the app doesn't crash if native module isn't linked yet
-      // (requires a dev build rebuild after installing @react-native-community/netinfo)
-      const NetInfo = require('@react-native-community/netinfo').default;
-      unsubscribe = NetInfo.addEventListener((state: any) => {
-        setIsConnected(state.isConnected ?? true);
-        setIsInternetReachable(state.isInternetReachable);
-      });
+      const state = await Network.getNetworkStateAsync();
+      setIsConnected(state.isConnected ?? true);
+      setIsInternetReachable(state.isInternetReachable ?? null);
     } catch {
-      // Native module not available (needs dev build rebuild) — assume connected
-      console.warn('[NetworkProvider] NetInfo native module not available. Rebuild your dev client to enable offline detection.');
+      // Assume connected if check fails
     }
-
-    return () => unsubscribe?.();
   }, []);
+
+  useEffect(() => {
+    checkNetwork();
+
+    // Re-check when app comes back to foreground
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        checkNetwork();
+      }
+    });
+
+    return () => subscription.remove();
+  }, [checkNetwork]);
 
   return (
     <NetworkContext.Provider value={{ isConnected, isInternetReachable }}>
